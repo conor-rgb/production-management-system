@@ -22,5 +22,7 @@ echo "==> Frontend"
 cd "$ROOT_DIR/frontend"
 npm install
 npm run build
+sudo rsync -a --delete dist/ /var/www/agent/
+sudo systemctl reload nginx
 
-echo "Build complete. Ensure your web server serves frontend/dist."
+echo "Build complete. Nginx reloaded and /var/www/agent updated."

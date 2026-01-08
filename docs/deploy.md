@@ -4,7 +4,7 @@
 
 This server runs:
 - Backend API on port 3000
-- Frontend built assets in `frontend/dist` (serve via web server)
+- Frontend built assets served by Nginx at `/var/www/agent`
 
 ## Update + Redeploy (Manual)
 
@@ -21,9 +21,11 @@ npm run start
 cd /srv/production-management-system/frontend
 npm install
 npm run build
+sudo rsync -a --delete dist/ /var/www/agent/
+sudo systemctl reload nginx
 ```
 
-Serve `frontend/dist` with Nginx/PM2/static hosting.
+Nginx site: `/etc/nginx/sites-available/agent.unlimited.bond`
 
 ## Recommended: Basic Deploy Script
 
