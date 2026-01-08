@@ -1,0 +1,242 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN_PRODUCER
+  PRODUCER
+  COORDINATOR
+  ACCOUNTANT
+  CLIENT
+}
+
+enum UserType {
+  INTERNAL_STAFF
+  CLIENT_PORTAL
+  SUPPLIER_PORTAL
+  TALENT_PORTAL
+}
+
+enum ProjectType {
+  EVENT
+  STILLS
+  MOTION
+  HYBRID
+}
+
+enum ProjectStatus {
+  INQUIRY
+  CONFIRMED
+  IN_PRODUCTION
+  DELIVERED
+  INVOICED
+  CLOSED
+  ARCHIVED
+}
+
+enum ClientType {
+  DIRECT_BRAND
+  AGENCY
+  CORPORATE
+}
+
+enum SupplierCategory {
+  VENUE
+  CATERING
+  EQUIPMENT_RENTAL
+  TRANSPORT
+  POST_PRODUCTION
+  TALENT_AGENCY
+  CREW_AGENCY
+  PRINTING
+  PROPS
+  WARDROBE
+  OTHER
+}
+
+
+enum TaxStatus {
+  PAYE
+  SELF_EMPLOYED
+  LTD_COMPANY
+}
+
+enum TalentType {
+  MODEL
+  ACTOR
+  PRESENTER
+  INFLUENCER
+  HAND_MODEL
+  DANCER
+  VOICE_ARTIST
+  EXTRA
+}
+
+model User {
+  id                  String   @id @default(uuid())
+  email               String   @unique
+  passwordHash        String   @map("password_hash")
+  fullName            String   @map("full_name")
+  phone               String?
+  role                UserRole
+  userType            UserType @default(INTERNAL_STAFF) @map("user_type")
+  active              Boolean  @default(true)
+  passwordResetToken  String?  @map("password_reset_token")
+  passwordResetExpires DateTime? @map("password_reset_expires")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  projectsOwned       Project[]          @relation("ProjectOwner")
+  projectAssignments  ProjectAssignment[]
+  refreshTokens       RefreshToken[]
+
+  @@map("users")
+}
+
+model Client {
+  id                  String     @id @default(uuid())
+  companyName         String     @map("company_name")
+  clientType          ClientType @map("client_type")
+  primaryContactName  String     @map("primary_contact_name")
+  primaryContactEmail String     @map("primary_contact_email")
+  primaryContactPhone String?    @map("primary_contact_phone")
+  freeagentContactId  String?    @unique @map("freeagent_contact_id")
+  active              Boolean    @default(true)
+  createdAt           DateTime   @default(now()) @map("created_at")
+  updatedAt           DateTime   @updatedAt @map("updated_at")
+
+  projects            Project[]
+
+  @@index([primaryContactEmail])
+  @@map("clients")
+}
+
+model Supplier {
+  id           String           @id @default(uuid())
+  companyName  String           @map("company_name")
+  category     SupplierCategory
+  freeagentContactId String?    @unique @map("freeagent_contact_id")
+  email        String?
+  phone        String?
+  active       Boolean          @default(true)
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@map("suppliers")
+}
+
+model Project {
+  id               String        @id @default(uuid())
+  code             String        @unique
+  name             String
+  description      String?       @db.Text
+  type             ProjectType
+  status           ProjectStatus @default(INQUIRY)
+  clientId         String        @map("client_id")
+  ownerId          String        @map("owner_id")
+  archivedAt       DateTime?     @map("archived_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  client           Client        @relation(fields: [clientId], references: [id])
+  owner            User          @relation("ProjectOwner", fields: [ownerId], references: [id])
+  assignments      ProjectAssignment[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([ownerId])
+  @@map("projects")
+}
+
+model ProjectAssignment {
+  id            String   @id @default(uuid())
+  projectId     String   @map("project_id")
+  userId        String   @map("user_id")
+  roleOnProject String   @map("role_on_project")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+  @@map("project_assignments")
+}
+
+
+
+model CrewMember {
+  id               String    @id @default(uuid())
+  fullName         String    @map("full_name")
+  email            String    @unique
+  mobile           String?
+  primaryRole      String    @map("primary_role")
+  experienceLevel  String?   @map("experience_level")
+  taxStatus        TaxStatus? @map("tax_status")
+  dayRate          Decimal?  @map("day_rate") @db.Decimal(10, 2)
+  halfDayRate      Decimal?  @map("half_day_rate") @db.Decimal(10, 2)
+  overtimeRate     Decimal?  @map("overtime_rate") @db.Decimal(10, 2)
+  kitFee           Decimal?  @map("kit_fee") @db.Decimal(10, 2)
+  notes            String?   @db.Text
+  active           Boolean   @default(true)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@index([email])
+  @@index([primaryRole])
+  @@map("crew_members")
+}
+
+model TalentProfile {
+  id               String      @id @default(uuid())
+  fullName         String      @map("full_name")
+  stageName        String?     @map("stage_name")
+  email            String?
+  phone            String?
+  talentType       TalentType  @map("talent_type")
+  experienceLevel  String?     @map("experience_level")
+  dayRate          Decimal?    @map("day_rate") @db.Decimal(10, 2)
+  halfDayRate      Decimal?    @map("half_day_rate") @db.Decimal(10, 2)
+  hourlyRate       Decimal?    @map("hourly_rate") @db.Decimal(10, 2)
+  notes            String?     @db.Text
+  active           Boolean     @default(true)
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  @@index([talentType])
+  @@map("talent_profiles")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model FreeAgentCredential {
+  id           String   @id @default("default")
+  accessToken  String   @map("access_token")
+  refreshToken String   @map("refresh_token")
+  expiresAt    DateTime @map("expires_at")
+  accountId    String?  @map("account_id")
+  oauthState   String?  @map("oauth_state")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("freeagent_credentials")
+}
