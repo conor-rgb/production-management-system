@@ -1,0 +1,41 @@
+import { Router, Request, Response } from "express";
+import prisma from "../prisma";
+
+const router = Router();
+
+router.get("/", async (_req: Request, res: Response): Promise<void> => {
+  const items = await prisma.opportunity.findMany({
+    orderBy: { createdAt: "desc" },
+    include: { contact: true, company: true },
+  });
+  res.json(items);
+});
+
+router.get("/:id", async (req: Request, res: Response): Promise<void> => {
+  const item = await prisma.opportunity.findUnique({
+    where: { id: req.params.id },
+    include: { contact: true, company: true, productions: true },
+  });
+  if (!item) { res.status(404).json({ error: "Not found" }); return; }
+  res.json(item);
+});
+
+router.post("/", async (req: Request, res: Response): Promise<void> => {
+  const item = await prisma.opportunity.create({ data: req.body });
+  res.status(201).json(item);
+});
+
+router.patch("/:id", async (req: Request, res: Response): Promise<void> => {
+  const item = await prisma.opportunity.update({
+    where: { id: req.params.id },
+    data: req.body,
+  });
+  res.json(item);
+});
+
+router.delete("/:id", async (req: Request, res: Response): Promise<void> => {
+  await prisma.opportunity.delete({ where: { id: req.params.id } });
+  res.status(204).end();
+});
+
+export default router;

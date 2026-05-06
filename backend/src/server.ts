@@ -1,74 +1,71 @@
+import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-import express, { Request, Response } from "express";
 import helmet from "helmet";
 import morgan from "morgan";
-import authRoutes from "./routes/auth";
-import usersRoutes from "./routes/users";
-import projectsRoutes from "./routes/projects";
-import clientsRoutes from "./routes/clients";
-import suppliersRoutes from "./routes/suppliers";
-import crewRoutes from "./routes/crew";
-import talentRoutes from "./routes/talent";
-import projectAssignmentsRoutes from "./routes/project-assignments";
-import dashboardRoutes from "./routes/dashboard";
-import freeagentRoutes from "./routes/freeagent";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import { Pool } from "pg";
 
-dotenv.config();
+import authRoutes from "./routes/auth";
+import dashboardRoutes from "./routes/dashboard";
+import opportunitiesRoutes from "./routes/opportunities";
+import productionsRoutes from "./routes/productions";
+import budgetsRoutes from "./routes/budgets";
+import contactsRoutes from "./routes/contacts";
+import companiesRoutes from "./routes/companies";
+import filesRoutes from "./routes/files";
+import emailRoutes from "./routes/email";
+import settingsRoutes from "./routes/settings";
+import { requireAuth } from "./middleware/auth";
+
+const PgSession = connectPgSimple(session);
 
 export function createServer() {
   const app = express();
 
-  app.use(helmet());
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+  });
+
+  app.use(helmet({ contentSecurityPolicy: false }));
   app.use(
     cors({
-      origin: process.env.FRONTEND_URL?.split(",") ?? "*",
-      credentials: true
+      origin: process.env.FRONTEND_URL ?? "http://localhost:5173",
+      credentials: true,
     })
   );
   app.use(express.json({ limit: "2mb" }));
-  app.use(morgan("combined"));
+  app.use(morgan("dev"));
 
-  app.get("/api/health", (_req: Request, res: Response) => {
-    res.json({
-      success: true,
-      data: {
-        status: "ok",
-        service: "production-management-api",
-        time: new Date().toISOString()
-      }
-    });
-  });
+  app.use(
+    session({
+      store: new PgSession({ pool, tableName: "pms_sessions", createTableIfMissing: true }),
+      secret: process.env.SESSION_SECRET ?? "dev-secret-change-me",
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      },
+    })
+  );
 
-  app.get("/api/version", (_req: Request, res: Response) => {
-    res.json({
-      success: true,
-      data: {
-        version: process.env.APP_VERSION ?? "0.1.0"
-      }
-    });
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", time: new Date().toISOString() });
   });
 
   app.use("/api/auth", authRoutes);
-  app.use("/api/users", usersRoutes);
-  app.use("/api/projects", projectsRoutes);
-  app.use("/api/projects/:projectId/assignments", projectAssignmentsRoutes);
-  app.use("/api/dashboard", dashboardRoutes);
-  app.use("/api/clients", clientsRoutes);
-  app.use("/api/suppliers", suppliersRoutes);
-  app.use("/api/crew", crewRoutes);
-  app.use("/api/talent", talentRoutes);
-  app.use("/api/freeagent", freeagentRoutes);
-
-  app.use((_req, res) => {
-    res.status(404).json({
-      success: false,
-      error: {
-        code: "NOT_FOUND",
-        message: "Route not found"
-      }
-    });
-  });
+  app.use("/api/dashboard", requireAuth, dashboardRoutes);
+  app.use("/api/opportunities", requireAuth, opportunitiesRoutes);
+  app.use("/api/productions", requireAuth, productionsRoutes);
+  app.use("/api/budgets", requireAuth, budgetsRoutes);
+  app.use("/api/contacts", requireAuth, contactsRoutes);
+  app.use("/api/companies", requireAuth, companiesRoutes);
+  app.use("/api/files", requireAuth, filesRoutes);
+  app.use("/api/email", requireAuth, emailRoutes);
+  app.use("/api/settings", requireAuth, settingsRoutes);
 
   return app;
 }
