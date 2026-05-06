@@ -13,6 +13,13 @@ const fullInclude = {
   activityNotes: { orderBy: { createdAt: "asc" as const } },
   tasks: { orderBy: { createdAt: "asc" as const } },
   productions: { select: { id: true, title: true, jobCode: true, status: true } },
+  emailThreads: {
+    include: {
+      messages: { orderBy: { sentAt: "asc" as const } },
+      linkedContact: true,
+      linkedProduction: true,
+    },
+  },
 };
 
 const productionSelect = {

@@ -92,6 +92,7 @@ export interface Opportunity extends OpportunityListItem {
   activityNotes: OpportunityNote[];
   tasks: OpportunityTask[];
   productions: { id: string; title: string; jobCode?: string; status: string }[];
+  emailThreads: EmailThread[];
 }
 
 export const STAGE_LABELS: Record<Stage, string> = {

@@ -11,6 +11,8 @@ import type {
   CrewMember,
   CrewRole,
   CrewStatus,
+  EmailThread,
+  EmailThreadsResponse,
   FreeAgentInvoiceStatus,
   PmsJobType,
   Production,
@@ -640,13 +642,27 @@ function CrewForm({ productionId, roles, onClose, onSaved }: { productionId: str
 function CommsTab({ production, onReload }: { production: Production; onReload: () => void }) {
   const [mode, setMode] = useState<"note" | "task">("note");
   const [body, setBody] = useState("");
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [emailSearch, setEmailSearch] = useState("");
+  const [emailResults, setEmailResults] = useState<EmailThread[]>([]);
 
   const timeline = useMemo(() => {
     const notes = (production.activityNotes ?? []).map((item) => ({ kind: "note" as const, at: item.createdAt, item }));
     const tasks = (production.activityTasks ?? []).map((item) => ({ kind: "task" as const, at: item.createdAt, item }));
-    const emails = production.emailThreads.flatMap((thread) => thread.messages.map((message) => ({ kind: "email" as const, at: message.sentAt ?? message.createdAt, item: message, thread })));
+    const emails = production.emailThreads.map((thread) => ({ kind: "email" as const, at: thread.lastMessageAt ?? thread.messages.at(-1)?.sentAt ?? thread.updatedAt, item: thread }));
     return [...notes, ...tasks, ...emails].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   }, [production]);
+
+  useEffect(() => {
+    if (!linkOpen || !emailSearch.trim()) {
+      setEmailResults([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      api.get<EmailThreadsResponse>(`/api/email/threads?search=${encodeURIComponent(emailSearch)}`).then((data) => setEmailResults(data.threads)).catch(console.error);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [linkOpen, emailSearch]);
 
   async function add() {
     if (!body.trim()) return;
@@ -665,23 +681,62 @@ function CommsTab({ production, onReload }: { production: Production; onReload: 
     onReload();
   }
 
+  async function linkThread(threadId: string) {
+    await api.patch(`/api/email/threads/${threadId}/link`, { productionId: production.id });
+    setLinkOpen(false);
+    setEmailSearch("");
+    onReload();
+  }
+
+  async function unlinkThread(threadId: string) {
+    await api.patch(`/api/email/threads/${threadId}/unlink`, {});
+    onReload();
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-gray-200 p-3">
-        <div className="mb-2 flex rounded-lg bg-gray-100 p-1">
-          {(["note", "task"] as const).map((item) => (
-            <button key={item} onClick={() => setMode(item)} className={`min-h-11 flex-1 rounded-md text-sm font-medium ${mode === item ? "bg-white shadow-sm" : "text-gray-600"}`}>
-              {item === "note" ? "Note" : "Task"}
-            </button>
-          ))}
+        <div className="mb-2 flex items-center gap-2">
+          <div className="flex flex-1 rounded-lg bg-gray-100 p-1">
+            {(["note", "task"] as const).map((item) => (
+              <button key={item} onClick={() => setMode(item)} className={`min-h-11 flex-1 rounded-md text-sm font-medium ${mode === item ? "bg-white shadow-sm" : "text-gray-600"}`}>
+                {item === "note" ? "Note" : "Task"}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setLinkOpen(!linkOpen)} className="min-h-11 rounded-lg border border-gray-200 px-3 text-xs text-gray-700">Link email</button>
         </div>
+        {linkOpen && (
+          <div className="mb-3 rounded-lg bg-gray-50 p-3">
+            <input value={emailSearch} onChange={(e) => setEmailSearch(e.target.value)} placeholder="Search subject or sender" className="min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm" />
+            <div className="mt-2 divide-y divide-gray-100">
+              {emailResults.map((thread) => (
+                <button key={thread.id} onClick={() => linkThread(thread.id)} className="min-h-11 w-full text-left text-sm">
+                  <span className="block truncate font-medium text-gray-900">{thread.subject}</span>
+                  <span className="block truncate text-xs text-gray-500">{thread.latestPreview}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} className="w-full resize-none rounded-lg border border-gray-200 p-3 text-sm outline-none" placeholder={mode === "note" ? "Add a note" : "Add a task"} />
         <button onClick={add} className="mt-2 min-h-11 w-full rounded-lg bg-gray-900 px-4 text-sm font-medium text-white">Add {mode}</button>
       </div>
       {timeline.length === 0 ? <Empty text="No timeline activity yet." /> : timeline.map((entry) => {
         if (entry.kind === "note") return <TimelineShell key={`n-${entry.item.id}`} icon={<FileText size={14} />} at={entry.at}><p className="whitespace-pre-wrap text-sm text-gray-700">{entry.item.body}</p><button onClick={() => removeNote(entry.item)} className="mt-1 text-xs text-red-500">Delete</button></TimelineShell>;
         if (entry.kind === "task") return <TimelineShell key={`t-${entry.item.id}`} icon={<Check size={14} />} at={entry.at}><button onClick={() => toggleTask(entry.item)} className={`flex min-h-11 items-center gap-2 text-left text-sm ${entry.item.completed ? "text-gray-400 line-through" : "text-gray-800"}`}><span className={`grid h-5 w-5 place-items-center rounded border ${entry.item.completed ? "bg-gray-900 text-white" : "border-gray-300"}`}>{entry.item.completed && <Check size={12} />}</span>{entry.item.body}</button></TimelineShell>;
-        return <TimelineShell key={`e-${entry.item.id}`} icon={<Mail size={14} />} at={entry.at}><a href={`mailto:${entry.item.from}`} className="block text-sm font-medium text-indigo-700">{entry.item.subject || entry.thread.subject || "Email"}</a><p className="text-xs text-gray-500">{entry.item.from}</p></TimelineShell>;
+        return <TimelineShell key={`e-${entry.item.id}`} icon={<Mail size={14} />} at={entry.at}>
+          <button onClick={() => { window.location.href = `/email?thread=${entry.item.id}`; }} className="block w-full rounded-lg border border-gray-100 bg-white p-3 text-left">
+            <div className="flex items-start gap-2">
+              {!entry.item.isRead && <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-blue-500" />}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-gray-900">{entry.item.subject || "Email"}</p>
+                <p className="truncate text-xs text-gray-500">{entry.item.latestPreview ?? entry.item.messages.at(-1)?.bodyText?.slice(0, 60)}</p>
+              </div>
+              <span onClick={(event) => { event.stopPropagation(); unlinkThread(entry.item.id); }} className="grid min-h-8 min-w-8 place-items-center text-gray-400 hover:text-red-500"><X size={14} /></span>
+            </div>
+          </button>
+        </TimelineShell>;
       })}
     </div>
   );

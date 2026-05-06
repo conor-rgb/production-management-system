@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { api } from "../../lib/api";
-import type { Opportunity, OpportunityNote, OpportunityTask } from "../../lib/types";
+import type { EmailThread, EmailThreadsResponse, Opportunity, OpportunityNote, OpportunityTask } from "../../lib/types";
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, daysOverdue } from "../../lib/types";
 import {
   X, Edit2, Plus, Check, Trash2, AlertCircle,
-  Calendar, Building2, User, TrendingUp, ChevronDown,
+  Calendar, Building2, User, TrendingUp, ChevronDown, Mail,
 } from "lucide-react";
 
 interface Props {
@@ -22,7 +22,8 @@ type DetailTab = "Overview" | "Comms" | "Budget";
 
 type TimelineItem =
   | { kind: "note"; item: OpportunityNote }
-  | { kind: "task"; item: OpportunityTask };
+  | { kind: "task"; item: OpportunityTask }
+  | { kind: "email"; item: EmailThread };
 
 export default function OpportunityDetail({ opportunityId, onEdit, onClose, onStageChange, onRefresh, initialTab = "Overview", onOpenBudget }: Props) {
   const [opp, setOpp] = useState<Opportunity | null>(null);
@@ -33,6 +34,9 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
   const [addText, setAddText] = useState("");
   const [addDueDate, setAddDueDate] = useState("");
   const [stageOpen, setStageOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [emailSearch, setEmailSearch] = useState("");
+  const [emailResults, setEmailResults] = useState<EmailThread[]>([]);
   const addRef = useRef<HTMLTextAreaElement>(null);
 
   function reload() {
@@ -43,6 +47,16 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
   useEffect(() => {
     if (addMode && addRef.current) addRef.current.focus();
   }, [addMode]);
+  useEffect(() => {
+    if (!linkOpen || !emailSearch.trim()) {
+      setEmailResults([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      api.get<EmailThreadsResponse>(`/api/email/threads?search=${encodeURIComponent(emailSearch)}`).then((data) => setEmailResults(data.threads)).catch(console.error);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [linkOpen, emailSearch]);
 
   if (!opp) {
     return <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Loading…</div>;
@@ -51,7 +65,12 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
   const timeline: TimelineItem[] = [
     ...opp.activityNotes.map((n) => ({ kind: "note" as const, item: n as OpportunityNote })),
     ...opp.tasks.map((t) => ({ kind: "task" as const, item: t as OpportunityTask })),
-  ].sort((a, b) => new Date(a.item.createdAt).getTime() - new Date(b.item.createdAt).getTime());
+    ...(opp.emailThreads ?? []).map((thread) => ({ kind: "email" as const, item: thread as EmailThread })),
+  ].sort((a, b) => {
+    const aDate = a.kind === "email" ? a.item.lastMessageAt : a.item.createdAt;
+    const bDate = b.kind === "email" ? b.item.lastMessageAt : b.item.createdAt;
+    return new Date(bDate).getTime() - new Date(aDate).getTime();
+  });
 
   const oppId = opp.id;
   const overdue = opp.followUpDate ? daysOverdue(opp.followUpDate) > 0 : false;
@@ -105,6 +124,18 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
 
   async function handleDeleteTask(taskId: string) {
     await api.delete(`/api/opportunities/${opportunityId}/tasks/${taskId}`);
+    reload();
+  }
+
+  async function linkThread(threadId: string) {
+    await api.patch(`/api/email/threads/${threadId}/link`, { opportunityId });
+    setLinkOpen(false);
+    setEmailSearch("");
+    reload();
+  }
+
+  async function unlinkThread(threadId: string) {
+    await api.patch(`/api/email/threads/${threadId}/unlink`, {});
     reload();
   }
 
@@ -251,6 +282,12 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Activity</p>
             <div className="flex gap-1">
               <button
+                onClick={() => setLinkOpen(!linkOpen)}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors text-gray-600 hover:bg-gray-100"
+              >
+                <Mail size={11} /> Link email
+              </button>
+              <button
                 onClick={() => { setAddMode(addMode === "note" ? null : "note"); setAddText(""); setAddDueDate(""); }}
                 className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors ${addMode === "note" ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-100"}`}
               >
@@ -264,6 +301,19 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
               </button>
             </div>
           </div>
+          {linkOpen && (
+            <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <input value={emailSearch} onChange={(e) => setEmailSearch(e.target.value)} placeholder="Search subject or sender" className="min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm" />
+              <div className="mt-2 divide-y divide-gray-100">
+                {emailResults.map((thread) => (
+                  <button key={thread.id} onClick={() => linkThread(thread.id)} className="min-h-11 w-full text-left text-sm">
+                    <span className="block truncate font-medium text-gray-900">{thread.subject}</span>
+                    <span className="block truncate text-xs text-gray-500">{thread.latestPreview}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Quick-add form */}
           {addMode && (
@@ -322,7 +372,7 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
                     onCancel={() => setEditingNoteId(null)}
                     onDelete={() => handleDeleteNote(entry.item.id)}
                   />
-                ) : (
+                ) : entry.kind === "task" ? (
                   <TaskItem
                     key={entry.item.id}
                     task={entry.item}
@@ -333,6 +383,21 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
                     onCancel={() => setEditingTaskId(null)}
                     onDelete={() => handleDeleteTask(entry.item.id)}
                   />
+                ) : (
+                  <div key={entry.item.id} className="rounded-xl border border-gray-200 bg-white p-3">
+                    <button onClick={() => { window.location.href = `/email?thread=${entry.item.id}`; }} className="w-full text-left">
+                      <div className="flex items-start gap-2">
+                        <Mail size={16} className="mt-0.5 text-gray-400" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-gray-900">{entry.item.subject}</p>
+                          <p className="truncate text-xs text-gray-500">{entry.item.latestPreview ?? entry.item.messages.at(-1)?.bodyText?.slice(0, 60)}</p>
+                          <p className="mt-1 text-xs text-gray-400">{new Date(entry.item.lastMessageAt).toLocaleString("en-GB")}</p>
+                        </div>
+                        {!entry.item.isRead && <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-blue-500" />}
+                        <span onClick={(event) => { event.stopPropagation(); unlinkThread(entry.item.id); }} className="grid min-h-8 min-w-8 place-items-center text-gray-400 hover:text-red-500"><X size={14} /></span>
+                      </div>
+                    </button>
+                  </div>
                 )
               )}
             </div>
