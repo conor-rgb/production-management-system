@@ -1,5 +1,36 @@
 # Phase 3 Handover — Productions, Crew, and Production Dates
 
+## Bug fix before Phase 4
+
+### Opportunity Won flow fixed
+- Fixed the blocker where marking an Opportunity as Won could flash a modal without completing production creation.
+- Frontend now opens a confirmation modal before any stage-change API request is made.
+- Confirming Won now sends `PATCH /api/opportunities/:id` with `{ stage: "WON" }`.
+- Backend `PATCH /api/opportunities/:id` now handles stage transitions and runs the same business logic as the legacy `/stage` endpoint.
+- Backend Won transition now:
+  - Loads the source Opportunity
+  - Generates the job code from `Settings.jobCodeYear` and `Settings.jobCodeSequence`
+  - Creates the Production with title, client, brand, job type, quoted value, contact, source opportunity, job code, and `PRE_PRO` status
+  - Returns the new Production record in the API response
+  - Reuses an existing linked Production instead of duplicating one if the Opportunity is already Won
+- Frontend receives the returned production ID and navigates directly to `/productions?production=<id>`.
+- The legacy `POST /api/opportunities/:id/stage` endpoint remains, but now delegates to the same shared transition logic.
+
+### Verification of bug fix
+- Backend build passes with `npm run build`.
+- Frontend build passes with `npm run build`.
+- Live PM2 API was reloaded after build.
+- Frontend build was copied to `/var/www/agent`.
+- Tested against the live HTTPS API:
+  - Created disposable test Opportunity `Won Flow Live Test`
+  - Sent `PATCH /api/opportunities/:id` with `{ "stage": "WON" }`
+  - API returned a new Production with job code `2647`, client `Test Client`, brand `Test Brand`, status `PRE_PRO`, and quoted value `12345`
+  - Fetched the Production record successfully through `/api/productions/:id`
+  - Deleted the disposable Opportunity and Production after verification
+  - Reset `Settings.jobCodeSequence` back to `46`, so the next real job code is still `2647`
+
+Phase 4 is ready to begin.
+
 ## What was built this session
 
 ### Backend
@@ -89,7 +120,7 @@
 
 ### Opportunities
 - Phase 2 CRUD/Kanban/list remains in place.
-- Marking an opportunity Won creates a Phase 3 production with a Settings-generated job code.
+- Marking an opportunity Won is now confirmed first, then creates a Phase 3 production with a Settings-generated job code and navigates straight to that production record.
 - Opportunity tap-through from dashboard uses `/opportunities?opportunity=<id>`.
 
 ### Productions
@@ -150,6 +181,7 @@
 - There is no optimistic update/error toast system yet; most actions reload after successful API calls and errors currently fall to console or basic text.
 - Date contact attachment only links existing contacts. Creating a new date attendee directly from the date form is not built.
 - Crew inline day rate/days edits save on every field change event currently fired by the input handler, which is functional but can be refined to save on blur.
+- Browser automation tooling is not installed in the repo, so the Won flow UI was validated by TypeScript build and code path review; the live backend behavior was verified through HTTPS API calls.
 
 ## Exact next step for Phase 4
 
