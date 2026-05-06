@@ -1,241 +1,207 @@
-# Phase 4 Handover — File System
+# Phase 5 Handover — Budgets, Bid Estimates, Catalog, and Revisions
 
-## What Was Built
+## Built
 
-### Backend File Storage
-- Base job storage path is `/srv/production-management-system/backend/storage/jobs/`.
-- Every new Production now gets a physical job folder named `YYNN — Client Brand`.
-- Each job folder is auto-created with:
-  - `Briefs/`
-  - `Estimates/`
-  - `Budgets/`
-  - `Contracts/`
-  - `Crew Deals/`
-  - `Receipts/`
-  - `References/`
-  - `Selects/`
-  - `Delivery/`
-- Folder creation is automatic in both production creation paths:
-  - Direct `POST /api/productions`
-  - Opportunity Won flow creating a Production
-- Folder creation is idempotent. Existing folders are skipped silently.
-- `Production.storagePath` stores the absolute job folder path.
-- Existing productions without `storagePath` are backfilled lazily when their file tree or upload endpoint is used.
+### Backend Schema And Migration
+- Added Phase 5 budget schema through Prisma migration `20260506180000_phase5_budgets_catalog_revisions`.
+- Added `Budget`, `BudgetRevision`, `BudgetSection`, expanded `BudgetLineItem`, `LineItemInvoice`, `CatalogItem`, `CatalogGroup`, and `CatalogGroupItem`.
+- Budgets can belong to either a Production or an Opportunity. The service enforces one parent only.
+- Added `BudgetRevisionStatus` and `InvoiceStatus` enums.
+- Added `Opportunity.budgets` and `JobFile.invoices` relations.
+- Existing Phase 4 file metadata remains intact.
 
-### Backend File Metadata
-- Replaced the Phase 1 placeholder `JobFile` shape with the Phase 4 metadata model:
-  - `productionId`
-  - `folder`
-  - `originalFilename`
-  - `storedFilename`
-  - `mimeType`
-  - `sizeBytes`
-  - `uploadedAt`
-  - `linkedBudgetLineId`
-  - `isReceipt`
-  - `receiptVendor`
-  - `receiptAmount`
-  - `receiptDate`
-  - `notes`
-- Added relation from `JobFile.linkedBudgetLineId` to `BudgetLineItem`.
-- Added Prisma migration `20260506170000_phase4_file_storage`.
-- Installed backend dependencies:
-  - `multer`
-  - `mime-types`
-  - `@types/multer`
-  - `@types/mime-types`
+### Budget Service
+- Added `backend/src/services/budgetService.ts`.
+- Implemented:
+  - `getOrCreateBudget`
+  - `getRevision`
+  - `createRevision`
+  - `calculateRevisionTotals`
+  - `syncProductionTotals`
+  - `cloneBudgetToProduction`
+  - `recalculateLineItem`
+  - `insertCatalogItem`
+  - `insertCatalogGroup`
+- All totals are calculated server-side:
+  - internal total
+  - client total
+  - production fee
+  - client grand total
+  - actual total
+  - variance
+  - over-budget flag
+  - per-section totals
+- Production `value` syncs to the current revision client grand total for production budgets.
+- Opportunity Won flow now clones the opportunity bid budget into the new production and returns `budgetCloned`.
 
-### Backend File API
-- Replaced `/api/files` placeholder routes with:
-  - `GET /api/files/production/:productionId/tree`
-  - `POST /api/files/production/:productionId/upload`
-  - `GET /api/files/:fileId/download`
-  - `GET /api/files/:fileId/preview`
-  - `PATCH /api/files/:fileId`
-  - `DELETE /api/files/:fileId`
-  - `GET /api/files/all`
-  - `GET /api/files/storage-info`
-- Uploads use multipart form data through Multer.
-- Upload limit is 100MB per file with clear JSON `413` response.
-- Server detects MIME type using `mime-types` from the uploaded filename; it does not trust the browser content type.
-- Stored filenames use UUIDs plus extension to avoid collisions.
-- Disk write happens before database record creation; if DB creation fails, the disk file is removed.
-- Moving a file to a new folder physically moves it on disk and updates the DB.
-- Delete removes the physical file and then the DB row.
-- Preview behavior:
-  - Images stream inline.
-  - PDFs stream inline.
-  - Other file types return metadata with `previewable: false`.
-- Cross-job browser supports `folder`, `search`, `productionId`, and `page` query params with 50 files per page.
-- Added hook functions in `backend/src/services/fileStorage.ts`:
-  - `autoFileDocument(productionId, folder, buffer, filename, mimeType, options)`
-  - `autoFileReceipt(productionId, buffer, filename, mimeType, options)`
-- These hooks are ready for Phase 5 budget PDF export and Phase 7 receipt capture.
+### Catalog
+- Added `backend/src/services/aicp.ts` with all 16 AICP sections and the requested seed item list.
+- Added `backend/src/services/catalogSeed.ts`; first app boot seeds the catalog if empty.
+- Added `/api/catalog` routes:
+  - List active items grouped by AICP section
+  - Create/update/soft-delete/reorder items
+  - List/create/update/delete groups
+  - Add/remove items from groups
 
-### Production Files Tab
-- Replaced the Production detail Files placeholder with a working file browser.
-- Folder navigation:
-  - All nine folders always shown.
-  - File count badges per folder.
-  - Current folder highlighted.
-  - Mobile uses horizontal scrolling folder tabs.
-  - Desktop uses a left folder rail.
-- File list:
-  - Shows file type icon, filename, size, upload date.
-  - Rows are at least 52px high.
-  - Desktop hover shows Rename, Move, Download, Delete actions.
-  - Mobile swipe-left or More button reveals Rename, Move, Download, Delete actions.
-- Upload:
-  - Upload button is always visible.
-  - Desktop supports file picker and drag/drop over the list area.
-  - Mobile shows Camera, Photo Library, and Files App choices.
-  - Multiple files can be uploaded.
-  - Upload progress is shown as per-file “Uploading…” rows.
-  - Uploaded files appear after API completion without a full page reload.
-- Preview:
-  - Desktop opens a right-side panel.
-  - Mobile opens full-screen.
-  - Images render inline.
-  - PDFs render in an iframe via the preview endpoint.
-  - Other files show icon, filename, metadata, and Download button.
-  - Notes field saves on blur.
-  - Budget line dropdown is present with Phase 5 placeholder.
-  - Receipt metadata section appears for receipt files and is read-only until Phase 7.
-- Empty folders show an empty state and upload button.
-- Briefs is selected by default on first open.
+### Budget API
+- Replaced budget placeholder routes with:
+  - `GET /api/budgets/production/:productionId`
+  - `GET /api/budgets/opportunity/:opportunityId`
+  - `GET /api/budgets/:budgetId/revisions`
+  - `GET /api/budgets/revisions/:revisionId`
+  - `POST /api/budgets/:budgetId/revisions`
+  - `PATCH /api/budgets/revisions/:revisionId`
+  - `POST /api/budgets/revisions/:revisionId/sections/:sectionId/lines`
+  - `POST /api/budgets/revisions/:revisionId/catalog-item`
+  - `POST /api/budgets/revisions/:revisionId/catalog-group`
+  - `PATCH /api/budgets/lines/:lineItemId`
+  - `POST /api/budgets/lines/:lineItemId/duplicate`
+  - `DELETE /api/budgets/lines/:lineItemId`
+  - `PATCH /api/budgets/lines/:lineItemId/reorder`
+  - `POST /api/budgets/lines/:lineItemId/invoices`
+  - `PATCH /api/budgets/invoices/:invoiceId`
+  - `DELETE /api/budgets/invoices/:invoiceId`
+  - `POST /api/budgets/revisions/:revisionId/export-pdf`
 
-### Cross-Job Files Screen
-- Replaced the main Files placeholder page with a working cross-job file browser.
-- Search by filename across all jobs.
-- Filter by folder.
-- Filter by production/job.
-- File list shows:
-  - File type icon
-  - Filename
-  - Job code and client/title
-  - Folder
-  - Size
-  - Upload date
-- Tapping opens the same preview panel used by the Production Files tab.
-- Supports “Load more” pagination.
-- Empty state explains that files uploaded to productions appear there.
+### PDF Export
+- Installed `pdfkit` and `@types/pdfkit`.
+- Added `backend/src/services/budgetPdf.ts`.
+- Client PDF excludes internal costs, actuals, and variance.
+- Internal PDF includes internal/client/actual/variance data and an `INTERNAL` watermark.
+- Export increments revision version and auto-files the PDF into the production job `Estimates/` folder via Phase 4 `autoFileDocument()`.
+- Filename format is `YYNN_Estimate_R{revisionNumber}_V{version}_{client|internal}.pdf`.
 
-### Settings Storage Section
-- Added Settings storage summary:
-  - Total storage used
-  - Number of files
-  - Base storage path
+### Full-Screen Budget UI
+- Added `frontend/src/components/budgets/BudgetView.tsx`.
+- Production Budget tab now navigates to `/productions?production=<id>&view=budget`.
+- Opportunity Budget tab now navigates to `/opportunities?opportunity=<id>&view=budget`.
+- Full-screen budget view includes:
+  - top bar with back button, revision selector, internal/client toggle, export button
+  - action bar with print, email placeholder, revision history, add line
+  - pinned summary metrics
+  - desktop stage indicator
+  - AICP section table
+  - internal and client column layouts
+  - mobile compact rows
+  - line item editor modal/bottom-sheet style view
+  - catalog side panel
+  - revision history sheet
+  - desktop info/revision side panel
+  - bottom totals bar
+- The Production Overview tab now includes a budget summary row with an “Open budget” link.
+- Production Budget tab summary is no longer a placeholder; it shows client estimate, actual spend, variance, warning state, and an open button.
+- Opportunity detail now has Overview/Comms/Budget tabs, with Budget opening the full-screen bid view.
+- Opportunity cards and list rows show current budget grand total when a budget exists.
 
-## Key Decisions
+### Files Integration
+- The Production Files preview panel now fetches the current production budget and populates the budget-line dropdown with real section/line/description options.
+- Linking a file calls `PATCH /api/files/:fileId`.
+- If the file is a receipt and has a parsed amount, linking it creates a pending `LineItemInvoice` against the selected budget line.
 
-- Kept storage local to the VPS under `backend/storage/jobs` per the brief.
-- Used absolute `Production.storagePath` to make later file-system operations direct and avoid recalculating names if client/brand changes later.
-- Used UUID stored filenames to avoid disk collisions while preserving the original filename in metadata.
-- Kept folder names as plain strings in Prisma rather than an enum so future folders can be added without an enum migration.
-- Kept receipt-specific metadata on `JobFile` now, but Phase 7 will populate it.
-- Kept budget-line linking nullable; Phase 5 will populate the dropdown with real budget lines.
-- Kept the same preview panel for Production Files and global Files to avoid duplicate UI behavior.
-- Used Prisma migration diff tooling and `prisma migrate deploy` because `prisma migrate dev` is not usable in this non-interactive environment.
-- The production database had no `_prisma_migrations` table even though the Phase 3 schema was present. I baselined the existing local migration folders with `prisma migrate resolve --applied`, then applied the Phase 4 migration normally.
+### Settings
+- Added an Item Catalog section to Settings.
+- Catalog Items view lists all 16 AICP sections, active items, add item controls, inline description/client rate edits, and soft delete.
+- Line Item Groups view lists existing groups and item counts.
+- Existing crew roles, storage info, and password settings remain.
+
+## Decisions
+
+- Budget screens are full-screen because the table cannot work inside the narrow production detail panel.
+- The Budget tab still exists in detail panels, but clicking it opens the full-screen budget route.
+- Server-side calculations are the source of truth; the frontend displays returned totals and does not calculate financial summaries.
+- Monetary values are stored as `Float` in pounds, matching the Phase 5 prompt.
+- AICP sections are seeded as data and also shared as constants for predictable section creation.
+- PDF generation uses `pdfkit` only. No Puppeteer dependency was added.
+- Revisions deep-copy sections and line items, but not invoices, so actuals start fresh on each revision.
+- The Settings catalog manager is intentionally compact; it exposes the core create/edit/delete workflow without building a heavy drag UI yet.
 
 ## Verification
 
-- Prisma schema validated.
-- Phase 4 migration applied with `npx prisma migrate deploy`.
-- Prisma Client regenerated.
-- Backend build passes with `npm run build`.
-- Frontend build passes with `npm run build`.
-- Live PM2 API reloaded.
-- Frontend build copied to `/var/www/agent`.
-- Live HTTPS API test completed:
-  - Created disposable Production `Phase 4 File Test`.
-  - Verified folder tree created on disk at `backend/storage/jobs/2647 — Test Client File System`.
-  - Uploaded `phase4-upload.txt` to `Briefs`.
-  - Verified `tree` endpoint showed the file and all empty folders.
-  - Verified non-previewable preview response for `text/plain`.
-  - Renamed and moved the file to `Receipts`.
-  - Verified physical file moved on disk.
-  - Downloaded file and confirmed contents.
-  - Verified `/api/files/all` returned the file with production context.
-  - Deleted file through API.
-  - Deleted disposable Production.
-  - Removed disposable job folder.
-  - Reset `Settings.jobCodeSequence` back to `46`; next real job code remains `2647`.
-  - Verified `/api/files/storage-info` returns storage totals and base path.
+- `npx prisma migrate deploy` applied the Phase 5 migration.
+- `npx prisma generate` completed.
+- Backend build passes: `npm run build`.
+- Frontend build passes: `npm run build`.
+- PM2 API reloaded.
+- Frontend build deployed to `/var/www/agent`.
+- Live HTTPS smoke test 1:
+  - Created disposable Production.
+  - Created/get current budget.
+  - Inserted a catalog item.
+  - Exported client PDF.
+  - Verified the PDF appeared in the job `Estimates/` folder tree.
+  - Deleted file and disposable Production.
+- Live HTTPS smoke test 2:
+  - Created disposable Opportunity.
+  - Created opportunity budget.
+  - Inserted a catalog item.
+  - Marked Opportunity Won.
+  - Verified API returned `budgetCloned: true`.
+  - Verified new Production budget contained the cloned line item.
+  - Deleted disposable Production and Opportunity.
+- Test cleanup completed:
+  - Removed disposable job folders.
+  - Reset Settings to `jobCodeYear: 2026`, `jobCodeSequence: 46`; next real job code remains `2647`.
 
 ## Current Module State
 
 ### Dashboard
-- Phase 2 opportunity widgets and Phase 3 production widgets remain working.
-- File-system storage is not surfaced on dashboard.
-- Receipt capture remains Phase 7.
+- Phase 2 and Phase 3 dashboard widgets remain.
+- Production financial widgets now read live budget-derived production figures where budgets exist.
 
 ### Opportunities
-- Won flow is fixed from the prior bugfix:
-  - Confirmation first
-  - `PATCH /api/opportunities/:id`
-  - Production creation
-  - Direct navigation to `/productions?production=<id>`
-- Won-created productions now also receive their physical folder structure automatically.
+- Opportunity CRUD and follow-ups remain.
+- Won flow creates Production and now clones any active bid budget.
+- Budget full-screen view is available from Opportunity detail.
+- Kanban/list cards show current budget grand total if present.
 
 ### Productions
-- Phase 3 production core remains in place.
-- Files tab is now a working file browser.
-- New productions automatically create storage folders.
-- Existing productions get folders lazily when files are opened/uploaded.
-- Budget tab remains Phase 5 placeholder.
-
-### Production Dates
-- CRUD and dashboard agenda remain in place.
-- No calendar sync yet.
-
-### Crew
-- CRUD and Settings-managed roles remain in place.
-- Call sheet export is not built.
-
-### Contacts
-- Phase 2 contacts remain in place.
-- Supplier auto-create from crew remains in place.
+- Production CRUD, dates, crew, comms, files remain.
+- Production financials are budget-aware.
+- Budget full-screen view is available from Production detail.
+- Budget PDFs auto-file to `Estimates/`.
 
 ### Files
-- Phase 4 file system is implemented:
-  - Production-scoped browser
-  - Cross-job browser
-  - Upload/download/preview/rename/move/delete
-  - Physical disk storage
-  - DB metadata
-- File upload and preview behavior is browser-native; advanced image zoom controls are not custom-built.
+- Phase 4 file system remains.
+- File preview budget-line linking now uses real budget data.
+- Receipt-to-invoice auto-create is prepared for Phase 7 parsed receipt metadata.
 
 ### Settings
-- Account password and crew roles remain.
-- Storage info section added.
-- Job code sequence is stored but still has no UI editor.
+- Account, crew roles, storage info remain.
+- Item Catalog manager added.
+- Group management is list-only in the UI for now; API supports full group mutation.
 
 ### Budgets
-- Still placeholder UI.
-- `BudgetLineItem.actualCost` exists from Phase 3.
-- `JobFile.linkedBudgetLineId` is ready for Phase 5 budget-line linking.
+- Schema, service, API, full-screen budget shell, catalog insertion, line editing, revisions, invoice API, PDF export, and file linking are in place.
+- The UI supports single-line editing and duplication/deletion.
+- Bulk select currently supports delete selected; move/duplicate selected is still technical debt.
 
 ### Email
-- Still placeholder UI.
-- Email attachment save-to-file-system will be Phase 6.
+- Still placeholder.
+- “Email estimate” is a UI placeholder awaiting Phase 6 email composer/attachment support.
 
 ## Known Issues And Technical Debt
 
-- Browser automation tooling is not installed, so I did not run Playwright mobile screenshots at 390px. Frontend build and manual responsive class review passed.
-- Mobile upload choice opens browser file inputs; exact Camera/Photo Library/Files behavior depends on iOS Safari.
-- Swipe actions are implemented with a simple horizontal touch threshold; they are functional but not animated.
-- Upload progress is per-file state text, not byte-level progress. Fetch does not expose upload progress without XHR.
-- MIME detection uses `mime-types` based on filename because that is what the required package provides. Content sniffing could be added later if stronger validation is needed.
-- Deleting a Production cascades DB file records but does not automatically remove the physical production folder. Phase 4 explicit file delete removes disk files correctly. A future cleanup hook can remove entire production folders if desired.
+- Browser automation tooling is not installed, so I did not run Playwright screenshots at 390px. TypeScript production build passed and mobile-first classes were reviewed.
+- The line item edit interaction is modal/full-screen rather than true inline expansion on desktop. The data flow is complete, but the interaction can be refined later.
+- Invoice sub-panel UI per line item is not fully built yet, although invoice API routes exist.
+- Catalog group insertion API exists, but the current catalog panel focuses on individual item insertion.
+- Revision read-only historical viewing and “make current from old revision” are not fully surfaced in UI.
+- PDF layout is functional and auto-filed, but visual polish can be improved before client use.
+- The PM2 error log contains old session-table noise from earlier runs. Current HTTPS login and authenticated API calls work.
 - Existing unrelated worktree changes remain untouched: deleted repo metadata/docs files and untracked `BRIEF.md` / `CLAUDE.md`.
 
-## Exact Next Step For Phase 5
+## Commits
 
-Start Phase 5 with the Budget backend and schema:
-1. Expand `Budget`, `BudgetSection`, and `BudgetLineItem` to the AICP model from `BRIEF.md`.
-2. Add internal/client rates, quantity, days/units labels, actual cost, variance, markup, and invoice metadata.
-3. Build budget totals service so Production quoted value and actual spend are driven by budget data.
-4. Add Budget API routes for sections, line items, reordering, totals, and linked file/receipt lookups.
-5. Then replace the Production Budget placeholder with the internal/client-facing budget UI.
-6. Use the Phase 4 `autoFileDocument()` hook when exporting estimate PDFs into the job’s `Estimates/` folder.
+- `Build Phase 5 budget schema`
+- `ab01212 Build Phase 5 budget service and APIs`
+- `acb4b2a build Phase 5 full screen budget UI`
+
+## Exact Next Step For Phase 6
+
+Start Phase 6 with the Email Client:
+1. Build real email account connection/configuration in Settings.
+2. Implement inbox/thread list, message detail, and composer.
+3. Support outbound email with the unlimited.bond signature.
+4. Add linking of email threads/messages to Contacts, Opportunities, and Productions.
+5. Make Production and Opportunity Comms tabs show linked email records from the real email client.
+6. Wire “Email estimate” in the full-screen budget view to generate/export the client PDF, attach it, and open the composer addressed to the client contact.
