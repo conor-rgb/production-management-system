@@ -23,8 +23,11 @@ const PgSession = connectPgSimple(session);
 export function createServer() {
   const app = express();
 
+  // Trust Nginx reverse proxy so X-Forwarded-Proto is respected (needed for secure cookies)
+  app.set("trust proxy", 1);
+
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: process.env.DATABASE_URL?.split("?")[0], // strip Prisma-only query params
   });
 
   app.use(helmet({ contentSecurityPolicy: false }));
@@ -37,6 +40,8 @@ export function createServer() {
   app.use(express.json({ limit: "2mb" }));
   app.use(morgan("dev"));
 
+  const isProd = process.env.NODE_ENV === "production";
+
   app.use(
     session({
       store: new PgSession({ pool, tableName: "pms_sessions", createTableIfMissing: true }),
@@ -45,9 +50,9 @@ export function createServer() {
       saveUninitialized: false,
       cookie: {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: isProd,
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-        sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+        sameSite: isProd ? "strict" : "lax",
       },
     })
   );

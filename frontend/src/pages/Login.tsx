@@ -1,115 +1,75 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-
-const apiUrl = import.meta.env.VITE_API_URL ?? "/api";
-
-type LoginResponse = {
-  success: boolean;
-  data?: {
-    user: {
-      id: string;
-      email: string;
-      fullName: string;
-      role: string;
-    };
-    tokens: {
-      accessToken: string;
-      refreshToken: string;
-    };
-  };
-  error?: {
-    message: string;
-  };
-};
+import { useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
+  const { login } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    setIsSubmitting(true);
-
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
     try {
-      const response = await fetch(`${apiUrl}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
-      });
-      const payload = (await response.json()) as LoginResponse;
-
-      if (!response.ok || !payload.success || !payload.data) {
-        throw new Error(payload.error?.message ?? "Login failed");
-      }
-
-      localStorage.setItem("pms_access_token", payload.data.tokens.accessToken);
-      localStorage.setItem("pms_refresh_token", payload.data.tokens.refreshToken);
-      localStorage.setItem("pms_user", JSON.stringify(payload.data.user));
-
-      navigate("/dashboard");
+      await login(email, password);
+      navigate("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen px-6 py-12">
-      <div className="mx-auto flex max-w-md flex-col gap-6 rounded-3xl border border-white/70 bg-white/90 p-8 shadow-[0_30px_60px_rgba(12,18,33,0.12)]">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-dusk/60">Unlimited Bond</p>
-          <h1 className="mt-2 font-display text-3xl font-semibold text-ink">Sign in</h1>
-          <p className="mt-2 text-sm text-dusk/70">Access the production hub.</p>
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <h1 className="text-2xl font-semibold text-white">Production Manager</h1>
+          <p className="text-gray-400 mt-1 text-sm">Sign in to continue</p>
         </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <label className="block text-sm font-medium text-ink">
-            Email
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Email</label>
             <input
-              className="mt-2 w-full rounded-2xl border border-dusk/10 bg-white px-4 py-3 text-sm focus:border-accentDeep focus:outline-none"
               type="email"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@unlimited.bond"
+              onChange={(e) => setEmail(e.target.value)}
               required
+              autoFocus
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              placeholder="you@example.com"
             />
-          </label>
+          </div>
 
-          <label className="block text-sm font-medium text-ink">
-            Password
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Password</label>
             <input
-              className="mt-2 w-full rounded-2xl border border-dusk/10 bg-white px-4 py-3 text-sm focus:border-accentDeep focus:outline-none"
               type="password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               required
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              placeholder="••••••••"
             />
-          </label>
+          </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && (
+            <p className="text-red-400 text-sm">{error}</p>
+          )}
 
           <button
             type="submit"
-            className="w-full rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-dusk"
-            disabled={isSubmitting}
+            disabled={loading}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium py-2 rounded-lg transition-colors"
           >
-            {isSubmitting ? "Signing in..." : "Sign in"}
+            {loading ? "Signing in…" : "Sign in"}
           </button>
         </form>
-
-        <div className="flex items-center justify-between text-xs text-dusk/70">
-          <Link className="hover:text-ink" to="/reset-password">
-            Forgot password?
-          </Link>
-          <Link className="hover:text-ink" to="/">
-            Back to overview
-          </Link>
-        </div>
       </div>
     </div>
   );

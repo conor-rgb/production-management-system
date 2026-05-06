@@ -1,198 +1,46 @@
-import { Link, Route, Routes } from "react-router-dom";
-import Home from "./pages/Home";
-import Login from "./pages/Login";
-import ResetPassword from "./pages/ResetPassword";
-import Dashboard from "./pages/Dashboard";
-import Projects from "./pages/Projects";
-import ProjectDetail from "./pages/ProjectDetail";
-import Clients from "./pages/Clients";
-import ClientDetail from "./pages/ClientDetail";
-import Suppliers from "./pages/Suppliers";
-import Crew from "./pages/Crew";
-import Talent from "./pages/Talent";
-import SupplierDetail from "./pages/SupplierDetail";
-import CrewDetail from "./pages/CrewDetail";
-import TalentDetail from "./pages/TalentDetail";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
-import Topbar from "./components/Topbar";
-import { ToastProvider } from "./components/ToastProvider";
+import AppLayout from "./components/AppLayout";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import Email from "./pages/Email";
+import Opportunities from "./pages/Opportunities";
+import Productions from "./pages/Productions";
+import Budgets from "./pages/Budgets";
+import Contacts from "./pages/Contacts";
+import Files from "./pages/Files";
+import SettingsPage from "./pages/SettingsPage";
 
-function PublicNav() {
+function AuthedRoutes() {
   return (
-    <nav className="flex items-center justify-between px-6 py-4 text-sm text-dusk/80">
-      <Link className="font-display text-lg font-semibold text-ink" to="/">
-        Unlimited Bond
-      </Link>
-      <div className="flex items-center gap-4">
-        <Link className="hover:text-ink" to="/">
-          Overview
-        </Link>
-        <Link className="hover:text-ink" to="/login">
-          Sign in
-        </Link>
-        <Link className="hover:text-ink" to="/reset-password">
-          Reset
-        </Link>
-      </div>
-    </nav>
+    <ProtectedRoute>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="email" element={<Email />} />
+          <Route path="opportunities" element={<Opportunities />} />
+          <Route path="productions" element={<Productions />} />
+          <Route path="budgets" element={<Budgets />} />
+          <Route path="contacts" element={<Contacts />} />
+          <Route path="files" element={<Files />} />
+          <Route path="settings" element={<SettingsPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </ProtectedRoute>
   );
 }
 
 export default function App() {
   return (
-    <ToastProvider>
-      <div className="min-h-screen">
+    <BrowserRouter>
+      <AuthProvider>
         <Routes>
-          <Route
-            path="/"
-            element={
-              <>
-                <PublicNav />
-                <Home />
-              </>
-            }
-          />
-          <Route
-            path="/login"
-            element={
-              <>
-                <PublicNav />
-                <Login />
-              </>
-            }
-          />
-          <Route
-            path="/reset-password"
-            element={
-              <>
-                <PublicNav />
-                <ResetPassword />
-              </>
-            }
-          />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Topbar />
-                  <Dashboard />
-                </>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/projects"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Topbar />
-                  <Projects />
-                </>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/projects/:projectId"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Topbar />
-                  <ProjectDetail />
-                </>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/clients"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Topbar />
-                  <Clients />
-                </>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/clients/:clientId"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Topbar />
-                  <ClientDetail />
-                </>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/suppliers"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Topbar />
-                  <Suppliers />
-                </>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/suppliers/:supplierId"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Topbar />
-                  <SupplierDetail />
-                </>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/crew"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Topbar />
-                  <Crew />
-                </>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/crew/:crewId"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Topbar />
-                  <CrewDetail />
-                </>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/talent"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Topbar />
-                  <Talent />
-                </>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/talent/:talentId"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Topbar />
-                  <TalentDetail />
-                </>
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/login" element={<Login />} />
+          <Route path="/*" element={<AuthedRoutes />} />
         </Routes>
-      </div>
-    </ToastProvider>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }

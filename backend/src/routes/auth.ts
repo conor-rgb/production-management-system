@@ -26,7 +26,14 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
 
   req.session.userId = settings.id;
   req.session.email = settings.email;
-  res.json({ ok: true, email: settings.email });
+  req.session.save((err) => {
+    if (err) {
+      console.error("Session save error:", err);
+      res.status(500).json({ error: "Session error" });
+      return;
+    }
+    res.json({ ok: true, email: settings.email });
+  });
 });
 
 router.post("/logout", (req: Request, res: Response): void => {
