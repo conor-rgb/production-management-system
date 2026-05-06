@@ -313,7 +313,7 @@ export function PreviewPanel({ file, productionId, folders, onClose, onPatch }: 
         supplierName: file.receiptVendor || file.originalFilename,
         amount: file.receiptAmount / 100,
         dateReceived: file.receiptDate,
-        status: "PENDING",
+        status: "PAID",
         jobFileId: file.id,
       });
       setLinkMessage("Receipt invoice created.");

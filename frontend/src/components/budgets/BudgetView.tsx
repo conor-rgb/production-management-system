@@ -25,6 +25,8 @@ import type {
   CatalogSection,
   Production,
   OpportunityListItem,
+  PurchaseOrder,
+  PurchaseOrderStatus,
 } from "../../lib/types";
 import { formatCurrency } from "../../lib/types";
 
@@ -49,15 +51,29 @@ function entityLabel(entity: Entity) {
   return entity.data?.title ?? "Opportunity";
 }
 
-function displayVariance(value?: number) {
-  return -(value ?? 0);
+function formatPercent(value?: number) {
+  return `${Number(value ?? 0).toFixed(1)}%`;
 }
 
-function varianceColor(value?: number) {
-  const shown = displayVariance(value);
-  if (shown > 0) return "green";
-  if (shown < 0) return "red";
-  return "muted";
+function remainingColor(lineOrTotal: { remainingAccrual?: number; totalRemaining?: number; internalSubtotal?: number; totalAccrual?: number }) {
+  const remaining = lineOrTotal.remainingAccrual ?? lineOrTotal.totalRemaining ?? 0;
+  const accrual = lineOrTotal.internalSubtotal ?? lineOrTotal.totalAccrual ?? 0;
+  if (remaining <= 0) return "red";
+  if (accrual > 0 && remaining / accrual <= 0.2) return "amber";
+  return "green";
+}
+
+async function closeLine(line: BudgetLineItem, onSave: (line: BudgetLineItem, patch: Partial<BudgetLineItem>) => Promise<void>, onRefresh: () => Promise<void>) {
+  const hasOpenPos = line.purchaseOrders.some((po) => po.status === "OPEN");
+  if (hasOpenPos) {
+    window.alert("Close all Open POs before closing this line.");
+    return;
+  }
+  const released = Number(line.internalSubtotal ?? 0) - Number(line.totalCommitted ?? 0);
+  const ok = window.confirm(`Close this line item?\n\nAccrual held: ${formatCurrency(line.internalSubtotal)}\nTotal committed: ${formatCurrency(line.totalCommitted)}\nReleased to margin: ${formatCurrency(released)}`);
+  if (!ok) return;
+  await onSave(line, { isClosed: true });
+  await onRefresh();
 }
 
 export default function BudgetView({ entity, onBack }: { entity: Entity; onBack: () => void }) {
@@ -86,8 +102,9 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
 
   useEffect(() => { load().catch((err) => setError(err instanceof Error ? err.message : "Failed to load budget")); }, [load]);
 
-  const isProduction = entity.type === "production";
   const totals = revision?.totals;
+  const budgetMode = totals?.mode ?? (entity.type === "production" ? "production" : "bidding");
+  const isProduction = budgetMode === "production";
 
   async function reloadRevision(revisionId = revision?.id) {
     if (!revisionId) return;
@@ -205,17 +222,23 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
         </button>
       </div>
 
-      <div className="sticky top-0 z-20 grid shrink-0 grid-cols-2 gap-4 border-b border-gray-200 bg-white px-5 py-5 md:grid-cols-4">
-        <Metric label="Client estimate" value={formatCurrency(totals?.clientGrandTotal)} strong />
-        <Metric label="Actual spend" value={isProduction ? formatCurrency(totals?.actualTotal) : "—"} muted={!isProduction} />
-        <Metric
-          label="Variance"
-          value={isProduction ? formatCurrency(displayVariance(totals?.variance)) : formatCurrency(0)}
-          danger={isProduction && varianceColor(totals?.variance) === "red"}
-          good={isProduction && varianceColor(totals?.variance) === "green"}
-          muted={!isProduction || varianceColor(totals?.variance) === "muted"}
-        />
-        <Metric label="Production fee" value={`${revision.productionFeePercent}%`} />
+      <div className={`sticky top-0 z-20 grid shrink-0 grid-cols-2 gap-4 border-b border-gray-200 bg-white px-5 py-5 ${isProduction ? "md:grid-cols-5" : "md:grid-cols-4"}`}>
+        {isProduction ? (
+          <>
+            <Metric label="Client value" value={formatCurrency(totals?.clientGrandTotal)} strong />
+            <Metric label="Accrual held" value={formatCurrency(totals?.totalAccrual)} />
+            <Metric label="Committed" value={formatCurrency(totals?.totalCommitted)} />
+            <Metric label="Remaining" value={formatCurrency(totals?.totalRemaining)} danger={remainingColor({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual }) === "red"} good={remainingColor({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual }) === "green"} />
+            <Metric label="Projected margin" value={`${formatCurrency(totals?.projectedMargin)} (${formatPercent(totals?.projectedMarginPercent)})`} good={Number(totals?.projectedMargin ?? 0) > 0} danger={Number(totals?.projectedMargin ?? 0) <= 0} />
+          </>
+        ) : (
+          <>
+            <Metric label="Client estimate" value={formatCurrency(totals?.clientGrandTotal)} strong />
+            <Metric label="Internal cost" value={formatCurrency(totals?.internalTotal)} />
+            <Metric label="Total margin" value={formatCurrency(totals?.totalMarginAmount)} good={Number(totals?.totalMarginAmount ?? 0) > 0} danger={Number(totals?.totalMarginAmount ?? 0) <= 0} />
+            <Metric label="Margin %" value={formatPercent(totals?.totalMarginPercent)} good={Number(totals?.totalMarginPercent ?? 0) > 0} danger={Number(totals?.totalMarginPercent ?? 0) <= 0} />
+          </>
+        )}
       </div>
 
       <div className="hidden shrink-0 border-b border-gray-100 px-4 py-2 md:block">
@@ -240,6 +263,7 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
             onDelete={deleteLine}
             onSaveCell={saveLine}
             onSaveError={showSaveError}
+            onRefresh={() => reloadRevision()}
           />
         </div>
         <InfoPanel entity={entity} revisions={revisions} currentId={revision.id} onNewRevision={createRevision} onOpenRevision={(id) => reloadRevision(id)} />
@@ -255,9 +279,21 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
 
       <div className="fixed bottom-0 left-0 right-0 z-20 grid min-h-[52px] items-center gap-1 border-t border-gray-200 bg-white px-6 py-2 text-[13px] shadow-sm md:left-13 md:grid-cols-4">
         <span><span className="text-gray-500">Advances:</span> <span className="text-sm font-medium">£0.00</span></span>
-        {mode === "internal" && <span><span className="text-gray-500">Internal Total:</span> <span className="text-sm font-medium">{formatCurrency(totals?.internalTotal)}</span></span>}
-        <span><span className="text-gray-500">Fees Total:</span> <span className="text-sm font-medium">{formatCurrency(totals?.clientTotal)}</span></span>
-        <span><span className="text-gray-500">Subtotal:</span> <span className="text-sm font-medium">{formatCurrency(totals?.clientGrandTotal)}</span></span>
+        {isProduction ? (
+          <>
+            <span><span className="text-gray-500">Accrual:</span> <span className="text-sm font-medium">{formatCurrency(totals?.totalAccrual)}</span></span>
+            <span><span className="text-gray-500">Committed:</span> <span className="text-sm font-medium">{formatCurrency(totals?.totalCommitted)}</span></span>
+            <span><span className="text-gray-500">Remaining:</span> <span className="text-sm font-medium">{formatCurrency(totals?.totalRemaining)}</span></span>
+            <span><span className="text-gray-500">Subtotal:</span> <span className="text-sm font-medium">{formatCurrency(totals?.clientGrandTotal)}</span></span>
+          </>
+        ) : (
+          <>
+            {mode === "internal" && <span><span className="text-gray-500">Internal Total:</span> <span className="text-sm font-medium">{formatCurrency(totals?.internalTotal)}</span></span>}
+            <span><span className="text-gray-500">Fees Total:</span> <span className="text-sm font-medium">{formatCurrency(totals?.clientTotal)}</span></span>
+            <span><span className="text-gray-500">Subtotal:</span> <span className="text-sm font-medium">{formatCurrency(totals?.clientGrandTotal)}</span></span>
+            <span><span className="text-gray-500">Margin:</span> <span className="text-sm font-medium">{formatCurrency(totals?.totalMarginAmount)} ({formatPercent(totals?.totalMarginPercent)})</span></span>
+          </>
+        )}
       </div>
 
       {selectedLine && (
@@ -299,7 +335,7 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
   );
 }
 
-function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, onAddLine, onBrowseCatalog, onDuplicate, onDelete, onSaveCell, onSaveError }: {
+function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, onAddLine, onBrowseCatalog, onDuplicate, onDelete, onSaveCell, onSaveError, onRefresh }: {
   revision: BudgetRevision;
   mode: ViewMode;
   selectedIds: string[];
@@ -311,11 +347,23 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
   onDelete: (line: BudgetLineItem) => void;
   onSaveCell: (line: BudgetLineItem, patch: Partial<BudgetLineItem>) => Promise<void>;
   onSaveError: () => void;
+  onRefresh: () => Promise<void>;
 }) {
+  const productionMode = revision.totals.mode === "production";
+  const [openPoLineId, setOpenPoLineId] = useState<string | null>(null);
+  const internalGrid = productionMode
+    ? "grid-cols-[32px_minmax(260px,1fr)_90px_100px_90px_80px_80px_80px_90px_90px_52px]"
+    : "grid-cols-[32px_minmax(260px,1fr)_90px_90px_60px_60px_70px_80px_100px_110px_100px_90px_48px]";
+
   return (
     <div className="min-w-full">
-      <div className={`sticky top-0 z-10 hidden h-9 border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500 md:grid ${mode === "internal" ? "grid-cols-[32px_minmax(260px,1fr)_90px_90px_60px_60px_70px_80px_100px_110px_100px_100px_48px]" : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
-        {mode === "internal" ? ["", "Description", "Int. Rate", "Client Rate", "Qty", "Days", "Unit", "Markup", "Int. Total", "Client Total", "Actual", "Variance", "Inv."].map((h) => <div key={h} className="px-4 py-3 text-right first:text-left nth-[2]:text-left">{h}</div>) : ["Description", "Rate", "Qty", "Days", "Unit", "Total"].map((h) => <div key={h} className="px-4 py-3 text-right first:text-left">{h}</div>)}
+      <div className={`sticky top-0 z-10 hidden h-9 border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500 md:grid ${mode === "internal" ? internalGrid : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
+        {mode === "internal"
+          ? (productionMode
+            ? ["", "Description", "Client Rate", "Client Total", "Accrual", "POs", "Invoiced", "Paid", "Remaining", "Margin £", ""]
+            : ["", "Description", "Int. Rate", "Client Rate", "Qty", "Days", "Unit", "Markup", "Int. Total", "Client Total", "Margin £", "Margin %", ""])
+            .map((h) => <div key={h} className="px-4 py-3 text-right first:text-left nth-[2]:text-left">{h}</div>)
+          : ["Description", "Rate", "Qty", "Days", "Unit", "Total"].map((h) => <div key={h} className="px-4 py-3 text-right first:text-left">{h}</div>)}
       </div>
       {revision.sections.map((section) => {
         const sectionTotal = revision.totals.sectionTotals.find((item) => item.sectionId === section.id);
@@ -342,11 +390,21 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
                 onDelete={() => onDelete(line)}
                 onSaveCell={onSaveCell}
                 onSaveError={onSaveError}
+                productionMode={productionMode}
+                openPoPanel={openPoLineId === line.id}
+                onTogglePoPanel={() => setOpenPoLineId(openPoLineId === line.id ? null : line.id)}
+                onRefresh={onRefresh}
               />
             ))}
             {section.lineItems.length > 0 && (
-              <div className="hidden min-h-10 border-b border-gray-100 bg-gray-50 text-xs font-medium text-gray-500 md:grid md:grid-cols-[32px_minmax(260px,1fr)_90px_90px_60px_60px_70px_80px_100px_110px_100px_100px_48px]">
-                <div /><div className="py-3 pl-5 pr-4 italic">Section total</div><div /><div /><div /><div /><div /><div /><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.internalTotal)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.clientTotal)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.actualTotal)}</div><div /><div />
+              <div className={`hidden min-h-10 border-b border-gray-100 bg-gray-50 text-xs font-medium text-gray-500 md:grid ${mode === "internal" ? internalGrid : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
+                {mode === "internal" && productionMode ? (
+                  <><div /><div className="py-3 pl-5 pr-4 italic">Section total</div><div /><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.clientTotal)}</div><div className="px-4 py-3 text-right italic tabular-nums">{formatCurrency(sectionTotal?.accrual)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.totalPOs)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.totalInvoiced)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.totalPaid)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.remaining)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.marginAmount)}</div><div /></>
+                ) : mode === "internal" ? (
+                  <><div /><div className="py-3 pl-5 pr-4 italic">Section total</div><div /><div /><div /><div /><div /><div /><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.internalTotal)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.clientTotal)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.marginAmount)}</div><div className="px-4 py-3 text-right tabular-nums">{formatPercent(sectionTotal?.marginPercent)}</div><div /></>
+                ) : (
+                  <><div className="py-3 pl-5 pr-4 italic">Section total</div><div /><div /><div /><div /><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.clientTotal)}</div></>
+                )}
               </div>
             )}
           </div>
@@ -356,7 +414,7 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
   );
 }
 
-function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, onSaveCell, onSaveError }: {
+function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, onSaveCell, onSaveError, productionMode, openPoPanel, onTogglePoPanel, onRefresh }: {
   line: BudgetLineItem;
   mode: ViewMode;
   checked: boolean;
@@ -366,6 +424,10 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
   onDelete: () => void;
   onSaveCell: (line: BudgetLineItem, patch: Partial<BudgetLineItem>) => Promise<void>;
   onSaveError: () => void;
+  productionMode: boolean;
+  openPoPanel: boolean;
+  onTogglePoPanel: () => void;
+  onRefresh: () => Promise<void>;
 }) {
   async function saveCell(field: EditableLineField, value: string | number) {
     const patch: Partial<BudgetLineItem> = { [field]: value } as Partial<BudgetLineItem>;
@@ -378,7 +440,7 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
   }
 
   return (
-    <div className="group relative border-b border-gray-100 hover:bg-gray-50">
+    <div className={`group relative border-b border-gray-100 hover:bg-gray-50 ${line.isClosed ? "bg-gray-50 text-gray-400" : ""} ${productionMode && line.isOverBudget ? "border-l-[3px] border-l-red-900" : productionMode && line.isOverAccrual ? "border-l-[3px] border-l-red-600" : productionMode && Number(line.accrualUsedPercent ?? 0) > 80 ? "border-l-[3px] border-l-amber-500" : ""}`}>
       <div className="flex min-h-[52px] items-center gap-3 px-4 md:hidden">
         <div className="min-w-0 flex-1">
           <InlineTextCell line={line} field="description" value={line.description} align="left" onSave={saveCell} />
@@ -387,8 +449,28 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
         <button onClick={onEdit} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-400"><MoreHorizontal size={16} /></button>
         <p className="text-sm font-semibold tabular-nums">{formatCurrency(line.clientSubtotal)}</p>
       </div>
-      <div className={`hidden min-h-[52px] items-center text-[13px] tabular-nums md:grid ${mode === "internal" ? "grid-cols-[32px_minmax(260px,1fr)_90px_90px_60px_60px_70px_80px_100px_110px_100px_100px_48px]" : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
+      <div className={`hidden min-h-[52px] items-center text-[13px] tabular-nums md:grid ${mode === "internal" ? productionMode ? "grid-cols-[32px_minmax(260px,1fr)_90px_100px_90px_80px_80px_80px_90px_90px_52px]" : "grid-cols-[32px_minmax(260px,1fr)_90px_90px_60px_60px_70px_80px_100px_110px_100px_90px_48px]" : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
         {mode === "internal" ? (
+          productionMode ? (
+          <>
+            <div className="px-2"><input type="checkbox" checked={checked} onChange={onCheck} className="opacity-0 group-hover:opacity-100" /></div>
+            <div className="min-w-0 pl-5 pr-4 text-left">
+              <InlineTextCell line={line} field="description" value={line.description} align="left" onSave={saveCell} muted={line.isClosed} />
+              {line.publicMemo && <span className="block truncate text-xs italic text-gray-500">{line.publicMemo}</span>}
+              {line.isClosed && <span className="text-[11px] text-gray-400">Closed</span>}
+              {!line.isClosed && line.purchaseOrders.length > 0 && line.purchaseOrders.every((po) => po.status !== "OPEN") && <button onClick={() => closeLine(line, onSaveCell, onRefresh).catch(onSaveError)} className="text-[11px] text-indigo-600">All POs settled — close this line?</button>}
+            </div>
+            <InlineNumberCell line={line} field="clientUnitCost" value={line.clientUnitCost} onSave={saveCell} />
+            <Cell strong>{formatCurrency(line.clientSubtotal)}</Cell>
+            <Cell muted><span className="italic">{formatCurrency(line.internalSubtotal)}</span></Cell>
+            <button onClick={onTogglePoPanel} className="px-4 text-right text-[13px] tabular-nums text-gray-800 hover:underline">{formatCurrency(line.totalPOs)} <span className="ml-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px]">{line.purchaseOrders.length}</span></button>
+            <Cell>{formatCurrency(line.totalInvoiced)}</Cell>
+            <Cell>{formatCurrency(line.totalPaid)}</Cell>
+            <Cell color={remainingColor({ remainingAccrual: line.remainingAccrual, internalSubtotal: line.internalSubtotal })}>{formatCurrency(line.remainingAccrual)}</Cell>
+            <Cell color={line.marginAmount > 0 ? "green" : "red"}>{formatCurrency(line.marginAmount)}</Cell>
+            <button onClick={onEdit} className="mx-auto rounded-full bg-gray-100 px-2 py-1 text-xs">•••</button>
+          </>
+          ) : (
           <>
             <div className="px-2"><input type="checkbox" checked={checked} onChange={onCheck} className="opacity-0 group-hover:opacity-100" /></div>
             <div className="min-w-0 pl-5 pr-4 text-left">
@@ -400,8 +482,8 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
             <InlineNumberCell line={line} field="quantity" value={line.quantity} onSave={saveCell} plain />
             <InlineNumberCell line={line} field="daysUnits" value={line.daysUnits} onSave={saveCell} plain />
             <UnitDropdown value={line.unitLabel} onSave={(value) => saveCell("unitLabel", value)} />
-            <Cell>{formatCurrency(line.agencyMarkup)}</Cell><Cell muted>{formatCurrency(line.internalSubtotal)}</Cell><Cell strong>{formatCurrency(line.clientSubtotal)}</Cell><Cell>{formatCurrency(line.actualCost)}</Cell><Cell color={varianceColor(line.variance)}>{formatCurrency(displayVariance(line.variance))}</Cell>
-            <button onClick={onEdit} className="mx-auto rounded-full bg-gray-100 px-2 py-1 text-xs">{line.invoices.length}</button>
+            <Cell>{formatCurrency(line.agencyMarkup)}</Cell><Cell muted>{formatCurrency(line.internalSubtotal)}</Cell><Cell strong>{formatCurrency(line.clientSubtotal)}</Cell><Cell color={line.marginAmount > 0 ? "green" : "red"}>{formatCurrency(line.marginAmount)}</Cell><Cell color={line.marginAmount > 0 ? "green" : "red"}>{formatPercent(line.marginPercent)}</Cell>
+            <button onClick={onEdit} className="mx-auto rounded-full bg-gray-100 px-2 py-1 text-xs">•••</button>
             <div className="absolute right-12 top-1.5 hidden gap-1 rounded-lg bg-white/90 p-1 shadow-sm group-hover:flex">
               <button
                 onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
@@ -419,6 +501,7 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
               </button>
             </div>
           </>
+          )
         ) : (
           <>
             <div className="min-w-0 pl-5 pr-4 text-left"><InlineTextCell line={line} field="description" value={line.description} align="left" onSave={saveCell} />{line.publicMemo && <span className="block truncate text-xs italic text-gray-500">{line.publicMemo}</span>}</div>
@@ -430,21 +513,23 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
           </>
         )}
       </div>
+      {openPoPanel && <PoPanel line={line} onChanged={onRefresh} />}
     </div>
   );
 }
 
-function Cell({ children, muted, strong, center, color }: { children: ReactNode; muted?: boolean; strong?: boolean; center?: boolean; color?: "red" | "green" | "blue" | "muted" }) {
-  const colorClass = color === "red" ? "text-red-600" : color === "green" ? "text-emerald-700" : color === "blue" ? "text-blue-700" : muted || color === "muted" ? "text-gray-500" : "text-gray-800";
+function Cell({ children, muted, strong, center, color }: { children: ReactNode; muted?: boolean; strong?: boolean; center?: boolean; color?: "red" | "green" | "blue" | "muted" | "amber" }) {
+  const colorClass = color === "red" ? "text-red-600" : color === "green" ? "text-emerald-700" : color === "blue" ? "text-blue-700" : color === "amber" ? "text-amber-600" : muted || color === "muted" ? "text-gray-500" : "text-gray-800";
   return <div className={`px-4 ${center ? "text-center" : "text-right"} ${strong ? "font-medium" : ""} ${colorClass}`}>{children}</div>;
 }
 
-function InlineTextCell({ line, field, value, align, onSave }: {
+function InlineTextCell({ line, field, value, align, onSave, muted }: {
   line: BudgetLineItem;
   field: EditableLineField;
   value: string;
   align: "left" | "right";
   onSave: (field: EditableLineField, value: string) => Promise<void>;
+  muted?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -477,7 +562,7 @@ function InlineTextCell({ line, field, value, align, onSave }: {
           if (e.key === "Enter") e.currentTarget.blur();
           if (e.key === "Escape") { setDraft(value); setEditing(false); }
         }}
-        className={`w-full border-0 bg-transparent p-0 text-sm text-gray-900 outline-none shadow-none ${align === "right" ? "text-right" : "text-left"}`}
+        className={`w-full border-0 bg-transparent p-0 text-sm outline-none shadow-none ${muted ? "text-gray-400 line-through" : "text-gray-900"} ${align === "right" ? "text-right" : "text-left"}`}
       />
     );
   }
@@ -485,7 +570,7 @@ function InlineTextCell({ line, field, value, align, onSave }: {
   return (
     <button
       onClick={() => setEditing(true)}
-      className={`block w-full cursor-text truncate border-0 bg-transparent p-0 text-sm text-gray-900 group-hover:underline group-hover:decoration-gray-300 group-hover:underline-offset-4 ${align === "right" ? "text-right" : "text-left"}`}
+      className={`block w-full cursor-text truncate border-0 bg-transparent p-0 text-sm group-hover:underline group-hover:decoration-gray-300 group-hover:underline-offset-4 ${muted ? "text-gray-400 line-through" : "text-gray-900"} ${align === "right" ? "text-right" : "text-left"}`}
     >
       {value}
     </button>
@@ -585,6 +670,156 @@ function UnitDropdown({ value, onSave }: { value: string; onSave: (value: string
       )}
     </div>
   );
+}
+
+function PoPanel({ line, onChanged }: { line: BudgetLineItem; onChanged: () => Promise<void> }) {
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<PurchaseOrder | null>(null);
+  const [error, setError] = useState("");
+  const openTotal = line.purchaseOrders.filter((po) => po.status === "OPEN").reduce((sum, po) => sum + po.agreedAmount, 0);
+  const invoicedTotal = line.purchaseOrders.filter((po) => po.status === "INVOICED").reduce((sum, po) => sum + po.agreedAmount, 0);
+  const paidPoTotal = line.purchaseOrders.filter((po) => po.status === "PAID").reduce((sum, po) => sum + po.agreedAmount, 0);
+  const poTotal = line.purchaseOrders.reduce((sum, po) => sum + po.agreedAmount, 0);
+
+  async function remove(po: PurchaseOrder) {
+    if (!window.confirm(`Delete ${po.poNumber}?`)) return;
+    setError("");
+    try {
+      await api.delete(`/api/budgets/pos/${po.id}`);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete PO");
+    }
+  }
+
+  return (
+    <div className="border-t border-gray-200 bg-gray-50 p-3 md:ml-8 md:p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-gray-900">Purchase Orders</h3>
+        <button onClick={() => { setAdding(true); setEditing(null); }} className="min-h-11 rounded-lg bg-gray-900 px-3 text-sm font-medium text-white">+ Add PO</button>
+      </div>
+      {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+      <div className="space-y-2">
+        {line.purchaseOrders.map((po) => (
+          <div key={po.id} className="rounded-lg border border-gray-200 bg-white p-3">
+            {editing?.id === po.id ? (
+              <PoForm lineId={line.id} po={po} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-gray-900 px-2 py-1 font-mono text-xs text-white">{po.poNumber}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-gray-900">{po.supplierName}</p>
+                  {po.description && <p className="truncate text-xs text-gray-500">{po.description}</p>}
+                  <p className="text-xs text-gray-400">{new Date(po.dateRaised).toLocaleDateString("en-GB")}</p>
+                </div>
+                <span className="text-sm font-semibold tabular-nums">{formatCurrency(po.agreedAmount)}</span>
+                <StatusPill status={po.status} />
+                <button onClick={() => setEditing(po)} className="min-h-11 rounded-lg px-3 text-sm text-gray-600">Edit</button>
+                {po.status === "OPEN" && <button onClick={() => remove(po)} className="min-h-11 rounded-lg px-3 text-sm text-red-600">Delete</button>}
+              </div>
+            )}
+          </div>
+        ))}
+        {line.purchaseOrders.length === 0 && <p className="rounded-lg border border-dashed border-gray-200 bg-white p-4 text-center text-sm text-gray-400">No purchase orders yet.</p>}
+      </div>
+      {adding && <PoForm lineId={line.id} onCancel={() => setAdding(false)} onSaved={() => { setAdding(false); onChanged(); }} />}
+      <div className="mt-3 grid gap-2 rounded-lg bg-white p-3 text-sm md:grid-cols-4">
+        <MiniTotal label="Total agreed" value={poTotal} />
+        <MiniTotal label="Open POs" value={openTotal} />
+        <MiniTotal label="Invoiced" value={invoicedTotal} />
+        <MiniTotal label="Paid" value={paidPoTotal} />
+      </div>
+      <div className="mt-3 rounded-lg bg-white p-3 text-sm">
+        <div className="flex justify-between"><span className="text-gray-500">Accrual held</span><span>{formatCurrency(line.internalSubtotal)}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Total committed</span><span>{formatCurrency(line.totalCommitted)}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Remaining</span><span>{formatCurrency(line.remainingAccrual)}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Client total</span><span>{formatCurrency(line.clientSubtotal)}</span></div>
+        <div className="flex justify-between font-medium"><span className="text-gray-500">Margin</span><span>{formatCurrency(line.marginAmount)}</span></div>
+      </div>
+    </div>
+  );
+}
+
+function PoForm({ lineId, po, onCancel, onSaved }: { lineId: string; po?: PurchaseOrder; onCancel: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({
+    supplierName: po?.supplierName ?? "",
+    description: po?.description ?? "",
+    agreedAmount: String(po?.agreedAmount ?? ""),
+    dateRaised: po?.dateRaised?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    status: po?.status ?? "OPEN" as PurchaseOrderStatus,
+    invoiceNumber: po?.invoiceNumber ?? "",
+    invoiceDate: po?.invoiceDate?.slice(0, 10) ?? "",
+    notes: po?.notes ?? "",
+  });
+  const [error, setError] = useState("");
+  const showInvoiceFields = form.status === "INVOICED" || form.status === "PAID";
+
+  async function save() {
+    if (!form.supplierName.trim() || !form.agreedAmount) return;
+    setError("");
+    try {
+      const payload = {
+        ...form,
+        agreedAmount: Number(form.agreedAmount),
+        invoiceNumber: showInvoiceFields ? form.invoiceNumber : undefined,
+        invoiceDate: showInvoiceFields ? form.invoiceDate : undefined,
+      };
+      if (po) await api.patch(`/api/budgets/pos/${po.id}`, payload);
+      else await api.post(`/api/budgets/lines/${lineId}/pos`, payload);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save PO");
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+      {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+      <div className="grid gap-2 md:grid-cols-2">
+        <PlainField label="Supplier" value={form.supplierName} onChange={(supplierName) => setForm({ ...form, supplierName })} />
+        <PlainField label="Agreed amount" type="number" value={form.agreedAmount} onChange={(agreedAmount) => setForm({ ...form, agreedAmount })} />
+        <PlainField label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
+        <PlainField label="Date raised" type="date" value={form.dateRaised} onChange={(dateRaised) => setForm({ ...form, dateRaised })} />
+        {po && (
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Status</span>
+            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as PurchaseOrderStatus })} className="min-h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
+              <option value="OPEN">Open</option>
+              <option value="INVOICED">Invoiced</option>
+              <option value="PAID">Paid</option>
+            </select>
+          </label>
+        )}
+        {showInvoiceFields && (
+          <>
+            <PlainField label="Invoice number" value={form.invoiceNumber} onChange={(invoiceNumber) => setForm({ ...form, invoiceNumber })} />
+            <PlainField label="Invoice date" type="date" value={form.invoiceDate} onChange={(invoiceDate) => setForm({ ...form, invoiceDate })} />
+          </>
+        )}
+        <label className="block md:col-span-2">
+          <span className="mb-1 block text-xs font-medium text-gray-500">Notes</span>
+          <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="w-full rounded-lg border border-gray-200 p-3 text-sm" />
+        </label>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button onClick={onCancel} className="min-h-11 rounded-lg px-4 text-sm text-gray-600">Cancel</button>
+        <button onClick={save} className="min-h-11 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white">Save</button>
+      </div>
+    </div>
+  );
+}
+
+function PlainField({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
+  return <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">{label}</span><input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm" /></label>;
+}
+
+function StatusPill({ status }: { status: PurchaseOrderStatus }) {
+  const cls = status === "PAID" ? "bg-emerald-100 text-emerald-700" : status === "INVOICED" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700";
+  return <span className={`rounded-full px-2 py-1 text-xs font-medium ${cls}`}>{status.toLowerCase()}</span>;
+}
+
+function MiniTotal({ label, value }: { label: string; value: number }) {
+  return <div><p className="text-xs text-gray-500">{label}</p><p className="font-medium tabular-nums text-gray-900">{formatCurrency(value)}</p></div>;
 }
 
 function LineEditor({ line, mode, onClose, onSave, onDuplicate, onDelete }: {

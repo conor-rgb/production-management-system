@@ -11,6 +11,7 @@ export type CrewStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFI
 export type JobFolder = "Briefs" | "Estimates" | "Budgets" | "Contracts" | "Crew Deals" | "Receipts" | "References" | "Selects" | "Delivery";
 export type BudgetRevisionStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED" | "SUPERSEDED";
 export type InvoiceStatus = "PENDING" | "PAID";
+export type PurchaseOrderStatus = "OPEN" | "INVOICED" | "PAID";
 
 export interface Company {
   id: string;
@@ -295,14 +296,42 @@ export interface StorageInfo {
 }
 
 export interface BudgetTotals {
+  mode: "bidding" | "production";
   internalTotal: number;
   clientTotal: number;
   productionFeeAmount: number;
   clientGrandTotal: number;
-  actualTotal: number;
-  variance: number;
+  totalMarginAmount: number;
+  totalMarginPercent: number;
+  totalAccrual?: number;
+  totalPOs?: number;
+  totalInvoiced?: number;
+  totalPaid?: number;
+  totalCommitted?: number;
+  totalRemaining?: number;
+  projectedMargin?: number;
+  projectedMarginPercent?: number;
+  isOverAccrual?: boolean;
+  isOverBudget?: boolean;
+  actualTotal?: number;
+  variance?: number;
   overBudget: boolean;
-  sectionTotals: { sectionId: string; code: string; name: string; internalTotal: number; clientTotal: number; actualTotal: number }[];
+  sectionTotals: {
+    sectionId: string;
+    code: string;
+    name: string;
+    internalTotal: number;
+    clientTotal: number;
+    marginAmount: number;
+    marginPercent: number;
+    accrual: number;
+    totalPOs: number;
+    totalInvoiced: number;
+    totalPaid: number;
+    totalCommitted: number;
+    remaining: number;
+    releasedToMargin: number;
+  }[];
 }
 
 export interface BudgetLineInvoice {
@@ -334,8 +363,11 @@ export interface BudgetLineItem {
   agencyMarkup: number;
   internalSubtotal: number;
   clientSubtotal: number;
+  marginAmount: number;
+  marginPercent: number;
   actualCost: number;
   variance: number;
+  isClosed: boolean;
   isTaxable: boolean;
   hasPW: boolean;
   hasHealthSafety: boolean;
@@ -345,6 +377,34 @@ export interface BudgetLineItem {
   catalogItemId?: string;
   order: number;
   invoices: BudgetLineInvoice[];
+  purchaseOrders: PurchaseOrder[];
+  totalPOs?: number;
+  totalInvoiced?: number;
+  totalPaid?: number;
+  totalCommitted?: number;
+  remainingAccrual?: number;
+  isOverAccrual?: boolean;
+  isOverBudget?: boolean;
+  accrualUsedPercent?: number;
+  releasedToMargin?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  lineItemId: string;
+  productionId: string;
+  poNumber: string;
+  supplierName: string;
+  description?: string;
+  agreedAmount: number;
+  status: PurchaseOrderStatus;
+  dateRaised: string;
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  invoiceFileId?: string;
+  notes?: string;
   createdAt: string;
   updatedAt: string;
 }
