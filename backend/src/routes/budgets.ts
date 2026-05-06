@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { BudgetRevisionStatus, InvoiceStatus, Prisma } from "@prisma/client";
+import { BudgetRevisionStatus, InvoiceStatus, Prisma, PurchaseOrderStatus } from "@prisma/client";
 import prisma from "../prisma";
 import {
   calculateRevisionTotals,
@@ -9,6 +9,7 @@ import {
   getRevision,
   insertCatalogGroup,
   insertCatalogItem,
+  generatePoNumber,
   syncProductionTotals,
   updateLineItem,
 } from "../services/budgetService";
@@ -19,6 +20,11 @@ const router = Router();
 function numberValue(value: unknown): number | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   return Number(value);
+}
+
+function dateValue(value: unknown): Date | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  return new Date(String(value));
 }
 
 function lineData(body: Record<string, unknown>): Prisma.BudgetLineItemUncheckedCreateInput {
@@ -38,6 +44,9 @@ function lineData(body: Record<string, unknown>): Prisma.BudgetLineItemUnchecked
     clientSubtotal: 0,
     actualCost: numberValue(body.actualCost) ?? 0,
     variance: 0,
+    marginAmount: 0,
+    marginPercent: 0,
+    isClosed: Boolean(body.isClosed ?? false),
     isTaxable: Boolean(body.isTaxable ?? false),
     hasPW: Boolean(body.hasPW ?? false),
     hasHealthSafety: Boolean(body.hasHealthSafety ?? false),
@@ -47,6 +56,15 @@ function lineData(body: Record<string, unknown>): Prisma.BudgetLineItemUnchecked
     catalogItemId: body.catalogItemId as string | undefined,
     order: numberValue(body.order) ?? 0,
   };
+}
+
+async function syncLineProduction(lineItemId: string) {
+  const line = await prisma.budgetLineItem.findUnique({
+    where: { id: lineItemId },
+    select: { section: { select: { revision: { select: { budget: { select: { productionId: true } } } } } } },
+  });
+  const productionId = line?.section.revision.budget.productionId;
+  if (productionId) await syncProductionTotals(productionId);
 }
 
 router.get("/production/:productionId", async (req: Request, res: Response): Promise<void> => {
@@ -176,8 +194,11 @@ router.post("/lines/:lineItemId/duplicate", async (req: Request, res: Response):
       agencyMarkup: line.agencyMarkup,
       internalSubtotal: line.internalSubtotal,
       clientSubtotal: line.clientSubtotal,
+      marginAmount: line.marginAmount,
+      marginPercent: line.marginPercent,
       actualCost: line.actualCost,
       variance: line.variance,
+      isClosed: false,
       isTaxable: line.isTaxable,
       hasPW: line.hasPW,
       hasHealthSafety: line.hasHealthSafety,
@@ -187,7 +208,7 @@ router.post("/lines/:lineItemId/duplicate", async (req: Request, res: Response):
       catalogItemId: line.catalogItemId,
       order: line.order + 1,
     },
-    include: { invoices: true },
+    include: { invoices: true, purchaseOrders: true },
   });
   const revision = await getRevision(line.section.revisionId);
   res.status(201).json({ line: duplicate, revision });
@@ -222,10 +243,12 @@ router.post("/lines/:lineItemId/invoices", async (req: Request, res: Response): 
       notes: req.body.notes,
     },
   });
+  await syncLineProduction(req.params.lineItemId);
   res.status(201).json(invoice);
 });
 
 router.patch("/invoices/:invoiceId", async (req: Request, res: Response): Promise<void> => {
+  const current = await prisma.lineItemInvoice.findUnique({ where: { id: req.params.invoiceId }, select: { lineItemId: true } });
   const invoice = await prisma.lineItemInvoice.update({
     where: { id: req.params.invoiceId },
     data: {
@@ -238,11 +261,91 @@ router.patch("/invoices/:invoiceId", async (req: Request, res: Response): Promis
       notes: req.body.notes,
     },
   });
+  if (current) await syncLineProduction(current.lineItemId);
   res.json(invoice);
 });
 
 router.delete("/invoices/:invoiceId", async (req: Request, res: Response): Promise<void> => {
+  const current = await prisma.lineItemInvoice.findUnique({ where: { id: req.params.invoiceId }, select: { lineItemId: true } });
   await prisma.lineItemInvoice.delete({ where: { id: req.params.invoiceId } });
+  if (current) await syncLineProduction(current.lineItemId);
+  res.status(204).end();
+});
+
+router.get("/lines/:lineItemId/pos", async (req: Request, res: Response): Promise<void> => {
+  const purchaseOrders = await prisma.purchaseOrder.findMany({
+    where: { lineItemId: req.params.lineItemId },
+    orderBy: { dateRaised: "asc" },
+    include: { invoiceFile: true },
+  });
+  res.json(purchaseOrders);
+});
+
+router.post("/lines/:lineItemId/pos", async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.body.supplierName) { res.status(400).json({ error: "supplierName required" }); return; }
+    const agreedAmount = numberValue(req.body.agreedAmount);
+    if (agreedAmount === undefined) { res.status(400).json({ error: "agreedAmount required" }); return; }
+
+    const line = await prisma.budgetLineItem.findUnique({
+      where: { id: req.params.lineItemId },
+      include: { section: { include: { revision: { include: { budget: true } } } } },
+    });
+    const productionId = line?.section.revision.budget.productionId;
+    if (!line || !productionId) { res.status(400).json({ error: "Purchase orders can only be created for production budgets" }); return; }
+
+    const purchaseOrder = await prisma.purchaseOrder.create({
+      data: {
+        lineItemId: req.params.lineItemId,
+        productionId,
+        poNumber: await generatePoNumber(productionId),
+        supplierName: String(req.body.supplierName),
+        description: req.body.description as string | undefined,
+        agreedAmount,
+        dateRaised: dateValue(req.body.dateRaised),
+        notes: req.body.notes as string | undefined,
+      },
+      include: { invoiceFile: true },
+    });
+    await syncProductionTotals(productionId);
+    res.status(201).json(purchaseOrder);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to create purchase order" });
+  }
+});
+
+router.patch("/pos/:poId", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const purchaseOrder = await prisma.purchaseOrder.update({
+      where: { id: req.params.poId },
+      data: {
+        supplierName: req.body.supplierName as string | undefined,
+        description: req.body.description as string | null | undefined,
+        agreedAmount: numberValue(req.body.agreedAmount),
+        status: req.body.status as PurchaseOrderStatus | undefined,
+        invoiceNumber: req.body.invoiceNumber as string | null | undefined,
+        invoiceDate: req.body.invoiceDate !== undefined ? (req.body.invoiceDate ? new Date(req.body.invoiceDate) : null) : undefined,
+        invoiceFileId: req.body.invoiceFileId as string | null | undefined,
+        notes: req.body.notes as string | null | undefined,
+      },
+      include: { invoiceFile: true },
+    });
+    await syncProductionTotals(purchaseOrder.productionId);
+    res.json(purchaseOrder);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to update purchase order" });
+  }
+});
+
+router.delete("/pos/:poId", async (req: Request, res: Response): Promise<void> => {
+  const purchaseOrder = await prisma.purchaseOrder.findUnique({ where: { id: req.params.poId } });
+  if (!purchaseOrder) { res.status(404).json({ error: "Purchase order not found" }); return; }
+  if (purchaseOrder.status !== PurchaseOrderStatus.OPEN) {
+    res.status(400).json({ error: "Only Open purchase orders can be deleted" });
+    return;
+  }
+  await prisma.purchaseOrder.delete({ where: { id: req.params.poId } });
+  await syncProductionTotals(purchaseOrder.productionId);
   res.status(204).end();
 });
 

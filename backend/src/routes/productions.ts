@@ -30,7 +30,7 @@ const productionInclude = {
       contact: { include: { company: { select: { id: true, name: true } } } },
     },
   },
-  budgets: { include: { currentRevision: { include: { sections: { include: { lineItems: true } } } } } },
+  budgets: { include: { currentRevision: { include: { sections: { include: { lineItems: { include: { invoices: true, purchaseOrders: true } } } } } } } },
     jobFiles: true,
   emailThreads: { include: { messages: { orderBy: { sentAt: "asc" as const } } } },
   opportunity: true,
@@ -48,24 +48,31 @@ function numberOrNull(value: unknown): number | null | undefined {
 }
 
 function productionFinancials(production: Prisma.ProductionGetPayload<{ include: typeof productionInclude }>) {
-  const actualSpend = production.budgets.reduce((budgetSum, budget) => (
-    budgetSum + (budget.currentRevision?.sections.reduce((sectionSum, section) => (
-      sectionSum + section.lineItems.reduce((lineSum, line) => lineSum + Number(line.actualCost ?? 0), 0)
-    ), 0) ?? 0)
-  ), 0);
   const currentRevision = production.budgets[0]?.currentRevision;
   const clientTotal = currentRevision?.sections.reduce((sectionSum, section) => (
     sectionSum + section.lineItems.reduce((lineSum, line) => lineSum + Number(line.clientSubtotal ?? 0), 0)
   ), 0) ?? Number(production.value ?? 0);
+  const accrual = currentRevision?.sections.reduce((sectionSum, section) => (
+    sectionSum + section.lineItems.reduce((lineSum, line) => lineSum + Number(line.internalSubtotal ?? 0), 0)
+  ), 0) ?? 0;
+  const actualSpend = currentRevision?.sections.reduce((sectionSum, section) => (
+    sectionSum + section.lineItems.reduce((lineSum, line) => {
+      const paid = line.invoices.filter((invoice) => invoice.status === "PAID").reduce((sum, invoice) => sum + Number(invoice.amount ?? 0), 0);
+      if (line.isClosed) return lineSum + paid;
+      const pos = line.purchaseOrders.reduce((sum, po) => sum + Number(po.agreedAmount ?? 0), 0);
+      const invoiced = line.invoices.filter((invoice) => invoice.status === "PENDING").reduce((sum, invoice) => sum + Number(invoice.amount ?? 0), 0);
+      return lineSum + pos + invoiced + paid;
+    }, 0)
+  ), 0) ?? 0;
   const quotedValue = currentRevision ? clientTotal * (1 + currentRevision.productionFeePercent / 100) : Number(production.value ?? 0);
-  const variance = actualSpend - quotedValue;
+  const variance = accrual - actualSpend;
 
   return {
     actualSpend,
     quotedValue,
     variance,
-    variancePercent: quotedValue > 0 ? (variance / quotedValue) * 100 : 0,
-    overBudget: variance > 0,
+    variancePercent: accrual > 0 ? (variance / accrual) * 100 : 0,
+    overBudget: actualSpend > quotedValue,
   };
 }
 

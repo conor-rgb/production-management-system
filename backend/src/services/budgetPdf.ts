@@ -79,8 +79,8 @@ async function renderPdf(revision: FullRevision, mode: "client" | "internal") {
   doc.moveDown();
   if (mode === "internal") {
     doc.text(`Internal total: ${money(totals.internalTotal)}`);
-    doc.text(`Actual total: ${money(totals.actualTotal)}`);
-    doc.text(`Variance: ${money(totals.variance)}`);
+    doc.text(`Actual total: ${money(totals.actualTotal ?? totals.totalCommitted ?? 0)}`);
+    doc.text(`Variance: ${money(totals.variance ?? totals.totalRemaining ?? 0)}`);
   }
   doc.text(`Fees total: ${money(totals.clientTotal)}`);
   doc.text(`Production fee ${revision.productionFeePercent}%: ${money(totals.productionFeeAmount)}`);

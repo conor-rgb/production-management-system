@@ -60,7 +60,7 @@ router.get("/", async (_req: Request, res: Response): Promise<void> => {
       orderBy: { updatedAt: "desc" },
       include: {
         dates: { orderBy: [{ date: "asc" }, { time: "asc" }] },
-        budgets: { include: { currentRevision: { include: { sections: { include: { lineItems: true } } } } } },
+        budgets: { include: { currentRevision: { include: { sections: { include: { lineItems: { include: { invoices: true, purchaseOrders: true } } } } } } } },
       },
     }),
   ]);
@@ -77,17 +77,24 @@ router.get("/", async (_req: Request, res: Response): Promise<void> => {
     overdueOpportunities,
     todaysAgenda,
     activeProductions: activeProductions.map((production) => {
-      const actualSpend = production.budgets.reduce((budgetSum, budget) => (
-        budgetSum + (budget.currentRevision?.sections.reduce((sectionSum, section) => (
-          sectionSum + section.lineItems.reduce((lineSum, line) => lineSum + Number(line.actualCost ?? 0), 0)
-        ), 0) ?? 0)
-      ), 0);
       const currentRevision = production.budgets[0]?.currentRevision;
       const clientTotal = currentRevision?.sections.reduce((sectionSum, section) => (
         sectionSum + section.lineItems.reduce((lineSum, line) => lineSum + Number(line.clientSubtotal ?? 0), 0)
       ), 0) ?? Number(production.value ?? 0);
+      const accrual = currentRevision?.sections.reduce((sectionSum, section) => (
+        sectionSum + section.lineItems.reduce((lineSum, line) => lineSum + Number(line.internalSubtotal ?? 0), 0)
+      ), 0) ?? 0;
+      const actualSpend = currentRevision?.sections.reduce((sectionSum, section) => (
+        sectionSum + section.lineItems.reduce((lineSum, line) => {
+          const paid = line.invoices.filter((invoice) => invoice.status === "PAID").reduce((sum, invoice) => sum + Number(invoice.amount ?? 0), 0);
+          if (line.isClosed) return lineSum + paid;
+          const pos = line.purchaseOrders.reduce((sum, po) => sum + Number(po.agreedAmount ?? 0), 0);
+          const invoiced = line.invoices.filter((invoice) => invoice.status === "PENDING").reduce((sum, invoice) => sum + Number(invoice.amount ?? 0), 0);
+          return lineSum + pos + invoiced + paid;
+        }, 0)
+      ), 0) ?? 0;
       const quotedValue = currentRevision ? clientTotal * (1 + currentRevision.productionFeePercent / 100) : Number(production.value ?? 0);
-      const variance = actualSpend - quotedValue;
+      const variance = accrual - actualSpend;
       const nextDate = production.dates.find((date) => {
         const d = new Date(date.date);
         d.setHours(23, 59, 59, 999);
@@ -104,7 +111,7 @@ router.get("/", async (_req: Request, res: Response): Promise<void> => {
         quotedValue,
         actualSpend,
         variance,
-        overBudget: variance > 0,
+        overBudget: actualSpend > quotedValue,
         nextDate,
       };
     }),

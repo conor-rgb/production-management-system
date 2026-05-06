@@ -1,4 +1,4 @@
-import { BudgetRevisionStatus, Prisma } from "@prisma/client";
+import { BudgetRevisionStatus, InvoiceStatus, Prisma } from "@prisma/client";
 import prisma from "../prisma";
 import { AICP_SECTIONS, sectionName } from "./aicp";
 
@@ -16,6 +16,7 @@ export const revisionInclude = {
         orderBy: { order: "asc" as const },
         include: {
           invoices: { orderBy: { createdAt: "asc" as const }, include: { jobFile: true } },
+          purchaseOrders: { orderBy: { dateRaised: "asc" as const }, include: { invoiceFile: true } },
           catalogItem: true,
         },
       },
@@ -24,6 +25,7 @@ export const revisionInclude = {
 };
 
 export type FullRevision = Prisma.BudgetRevisionGetPayload<{ include: typeof revisionInclude }>;
+type FullLineItem = FullRevision["sections"][number]["lineItems"][number];
 
 export interface LineItemInput {
   internalUnitCost?: number;
@@ -44,8 +46,55 @@ export function recalculateLineItem<T extends LineItemInput>(data: T) {
   const internalSubtotal = internalUnitCost * quantity * daysUnits;
   const clientSubtotal = (clientUnitCost * quantity * daysUnits) + agencyMarkup;
   const variance = actualCost - clientSubtotal;
+  const marginAmount = clientSubtotal - internalSubtotal;
+  const marginPercent = clientSubtotal > 0 ? (marginAmount / clientSubtotal) * 100 : 0;
 
-  return { internalSubtotal, clientSubtotal, variance };
+  return { internalSubtotal, clientSubtotal, variance, marginAmount, marginPercent };
+}
+
+function invoiceAmountByStatus(line: FullLineItem, status: InvoiceStatus) {
+  return line.invoices
+    .filter((invoice) => invoice.status === status)
+    .reduce((sum, invoice) => sum + Number(invoice.amount ?? 0), 0);
+}
+
+export function calculateLineFinancialStack(line: FullLineItem, productionMode: boolean) {
+  const totalPOs = productionMode && !line.isClosed
+    ? line.purchaseOrders.reduce((sum, po) => sum + Number(po.agreedAmount ?? 0), 0)
+    : 0;
+  const totalInvoiced = productionMode && !line.isClosed ? invoiceAmountByStatus(line, InvoiceStatus.PENDING) : 0;
+  const totalPaid = productionMode ? invoiceAmountByStatus(line, InvoiceStatus.PAID) : 0;
+  const totalCommitted = line.isClosed ? totalPaid : totalPOs + totalInvoiced + totalPaid;
+  const remainingAccrual = line.isClosed ? 0 : Number(line.internalSubtotal) - totalCommitted;
+  const isOverAccrual = !line.isClosed && totalCommitted > Number(line.internalSubtotal);
+  const isOverBudget = totalCommitted > Number(line.clientSubtotal);
+  const accrualUsedPercent = Number(line.internalSubtotal) > 0 ? (totalCommitted / Number(line.internalSubtotal)) * 100 : 0;
+  const releasedToMargin = line.isClosed ? Math.max(0, Number(line.internalSubtotal) - totalCommitted) : 0;
+
+  return {
+    totalPOs,
+    totalInvoiced,
+    totalPaid,
+    totalCommitted,
+    remainingAccrual,
+    isOverAccrual,
+    isOverBudget,
+    accrualUsedPercent,
+    releasedToMargin,
+  };
+}
+
+function enrichRevision(revision: FullRevision) {
+  const productionMode = Boolean(revision.budget.productionId);
+  const sections = revision.sections.map((section) => ({
+    ...section,
+    lineItems: section.lineItems.map((line) => ({
+      ...line,
+      ...(productionMode ? calculateLineFinancialStack(line, productionMode) : {}),
+    })),
+  }));
+
+  return { ...revision, sections };
 }
 
 export async function getRevision(revisionId: string) {
@@ -54,21 +103,39 @@ export async function getRevision(revisionId: string) {
     include: revisionInclude,
   });
   if (!revision) return null;
-  return { ...revision, totals: calculateRevisionTotalsFromRevision(revision) };
+  return { ...enrichRevision(revision), totals: calculateRevisionTotalsFromRevision(revision) };
 }
 
 export function calculateRevisionTotalsFromRevision(revision: FullRevision) {
+  const productionMode = Boolean(revision.budget.productionId);
   const sectionTotals = revision.sections.map((section) => {
     const internalTotal = section.lineItems.reduce((sum, line) => sum + line.internalSubtotal, 0);
     const clientTotal = section.lineItems.reduce((sum, line) => sum + line.clientSubtotal, 0);
-    const actualTotal = section.lineItems.reduce((sum, line) => sum + line.actualCost, 0);
+    const marginAmount = section.lineItems.reduce((sum, line) => sum + line.marginAmount, 0);
+    const marginPercent = clientTotal > 0 ? (marginAmount / clientTotal) * 100 : 0;
+    const stacks = section.lineItems.map((line) => calculateLineFinancialStack(line, productionMode));
+    const totalPOs = stacks.reduce((sum, stack) => sum + stack.totalPOs, 0);
+    const totalInvoiced = stacks.reduce((sum, stack) => sum + stack.totalInvoiced, 0);
+    const totalPaid = stacks.reduce((sum, stack) => sum + stack.totalPaid, 0);
+    const totalCommitted = stacks.reduce((sum, stack) => sum + stack.totalCommitted, 0);
+    const remaining = stacks.reduce((sum, stack) => sum + stack.remainingAccrual, 0);
+    const releasedToMargin = stacks.reduce((sum, stack) => sum + stack.releasedToMargin, 0);
+
     return {
       sectionId: section.id,
       code: section.code,
       name: section.name,
       internalTotal,
       clientTotal,
-      actualTotal,
+      marginAmount,
+      marginPercent,
+      accrual: internalTotal,
+      totalPOs,
+      totalInvoiced,
+      totalPaid,
+      totalCommitted,
+      remaining,
+      releasedToMargin,
     };
   });
 
@@ -76,17 +143,39 @@ export function calculateRevisionTotalsFromRevision(revision: FullRevision) {
   const clientTotal = sectionTotals.reduce((sum, section) => sum + section.clientTotal, 0);
   const productionFeeAmount = clientTotal * (revision.productionFeePercent / 100);
   const clientGrandTotal = clientTotal + productionFeeAmount;
-  const actualTotal = sectionTotals.reduce((sum, section) => sum + section.actualTotal, 0);
-  const variance = actualTotal - clientGrandTotal;
+  const totalMarginAmount = clientGrandTotal - internalTotal;
+  const totalMarginPercent = clientGrandTotal > 0 ? (totalMarginAmount / clientGrandTotal) * 100 : 0;
+  const totalAccrual = internalTotal;
+  const totalPOs = sectionTotals.reduce((sum, section) => sum + section.totalPOs, 0);
+  const totalInvoiced = sectionTotals.reduce((sum, section) => sum + section.totalInvoiced, 0);
+  const totalPaid = sectionTotals.reduce((sum, section) => sum + section.totalPaid, 0);
+  const totalCommitted = sectionTotals.reduce((sum, section) => sum + section.totalCommitted, 0);
+  const totalRemaining = sectionTotals.reduce((sum, section) => sum + section.remaining, 0);
+  const releasedToMargin = sectionTotals.reduce((sum, section) => sum + section.releasedToMargin, 0);
+  const projectedMargin = clientGrandTotal - totalAccrual + releasedToMargin;
+  const projectedMarginPercent = clientGrandTotal > 0 ? (projectedMargin / clientGrandTotal) * 100 : 0;
 
   return {
+    mode: productionMode ? "production" : "bidding",
     internalTotal,
     clientTotal,
     productionFeeAmount,
     clientGrandTotal,
-    actualTotal,
-    variance,
-    overBudget: variance > 0,
+    totalMarginAmount,
+    totalMarginPercent,
+    totalAccrual: productionMode ? totalAccrual : undefined,
+    totalPOs: productionMode ? totalPOs : undefined,
+    totalInvoiced: productionMode ? totalInvoiced : undefined,
+    totalPaid: productionMode ? totalPaid : undefined,
+    totalCommitted: productionMode ? totalCommitted : undefined,
+    totalRemaining: productionMode ? totalRemaining : undefined,
+    projectedMargin: productionMode ? projectedMargin : undefined,
+    projectedMarginPercent: productionMode ? projectedMarginPercent : undefined,
+    isOverAccrual: productionMode ? totalCommitted > totalAccrual : undefined,
+    isOverBudget: productionMode ? totalCommitted > clientGrandTotal : undefined,
+    actualTotal: productionMode ? totalCommitted : undefined,
+    variance: productionMode ? totalRemaining : undefined,
+    overBudget: productionMode ? totalCommitted > clientGrandTotal : false,
     sectionTotals,
   };
 }
@@ -197,8 +286,11 @@ export async function createRevision(budgetId: string, options?: { label?: strin
             agencyMarkup: line.agencyMarkup,
             internalSubtotal: line.internalSubtotal,
             clientSubtotal: line.clientSubtotal,
+            marginAmount: line.marginAmount,
+            marginPercent: line.marginPercent,
             actualCost: 0,
             variance: -line.clientSubtotal,
+            isClosed: false,
             isTaxable: line.isTaxable,
             hasPW: line.hasPW,
             hasHealthSafety: line.hasHealthSafety,
@@ -249,7 +341,7 @@ export async function createLineItem(revisionId: string, sectionId: string, data
       order,
       ...calculated,
     },
-    include: { invoices: true },
+    include: { invoices: true, purchaseOrders: true },
   });
   if (section.revision.budget.productionId) await syncProductionTotals(section.revision.budget.productionId);
   return line;
@@ -273,7 +365,7 @@ export async function updateLineItem(lineItemId: string, data: Prisma.BudgetLine
   const line = await prisma.budgetLineItem.update({
     where: { id: lineItemId },
     data: { ...data, ...calculated },
-    include: { invoices: true },
+    include: { invoices: true, purchaseOrders: true },
   });
   if (current.section.revision.budget.productionId) await syncProductionTotals(current.section.revision.budget.productionId);
   return line;
@@ -365,8 +457,11 @@ export async function cloneBudgetToProduction(opportunityId: string, productionI
             agencyMarkup: line.agencyMarkup,
             internalSubtotal: line.internalSubtotal,
             clientSubtotal: line.clientSubtotal,
-            actualCost: line.actualCost,
-            variance: line.variance,
+            marginAmount: line.marginAmount,
+            marginPercent: line.marginPercent,
+            actualCost: 0,
+            variance: -line.clientSubtotal,
+            isClosed: false,
             isTaxable: line.isTaxable,
             hasPW: line.hasPW,
             hasHealthSafety: line.hasHealthSafety,
@@ -389,4 +484,16 @@ export async function cloneBudgetToProduction(opportunityId: string, productionI
 
   await syncProductionTotals(productionId);
   return budget;
+}
+
+export async function generatePoNumber(productionId: string) {
+  const production = await prisma.production.findUnique({
+    where: { id: productionId },
+    select: { jobCode: true, lastPoSequence: true },
+  });
+  if (!production?.jobCode) throw new Error("Production job code required before raising a PO");
+
+  const nextSequence = production.lastPoSequence + 1;
+  await prisma.production.update({ where: { id: productionId }, data: { lastPoSequence: nextSequence } });
+  return `PO-${production.jobCode}-${String(nextSequence).padStart(3, "0")}`;
 }
