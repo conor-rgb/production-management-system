@@ -12,7 +12,8 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../lib/api";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -31,11 +32,13 @@ function SidebarItem({
   to,
   icon: Icon,
   label,
+  badge,
   exact,
 }: {
   to: string;
   icon: React.ElementType;
   label: string;
+  badge?: number;
   exact?: boolean;
 }) {
   return (
@@ -44,7 +47,7 @@ function SidebarItem({
       end={exact ?? to === "/"}
       title={label}
       className={({ isActive }) =>
-        `flex items-center justify-center w-full h-12 rounded-lg transition-colors ${
+        `relative flex items-center justify-center w-full h-12 rounded-lg transition-colors ${
           isActive
             ? "bg-gray-700 text-white"
             : "text-gray-400 hover:bg-gray-800 hover:text-white"
@@ -52,6 +55,11 @@ function SidebarItem({
       }
     >
       <Icon size={20} />
+      {Boolean(badge) && (
+        <span className="absolute right-1 top-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-900">
+          {badge}
+        </span>
+      )}
     </NavLink>
   );
 }
@@ -60,6 +68,22 @@ export default function AppLayout() {
   const { logout } = useAuth();
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [emailUnread, setEmailUnread] = useState(0);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadUnread() {
+      try {
+        const data = await api.get<{ count: number }>("/api/email/unread-count");
+        if (mounted) setEmailUnread(data.count);
+      } catch {
+        if (mounted) setEmailUnread(0);
+      }
+    }
+    loadUnread();
+    const timer = window.setInterval(loadUnread, 60_000);
+    return () => { mounted = false; window.clearInterval(timer); };
+  }, []);
 
   async function handleLogout() {
     await logout();
@@ -71,7 +95,7 @@ export default function AppLayout() {
       {/* Desktop sidebar */}
       <nav className="hidden md:flex flex-col items-center w-13 bg-gray-900 py-3 gap-1 shrink-0">
         {navItems.map((item) => (
-          <SidebarItem key={item.to} {...item} />
+          <SidebarItem key={item.to} {...item} badge={item.to === "/email" ? emailUnread : undefined} />
         ))}
         <div className="flex-1" />
         <button
@@ -101,7 +125,12 @@ export default function AppLayout() {
               }`
             }
           >
-            <item.icon size={20} />
+            <span className="relative">
+              <item.icon size={20} />
+              {item.to === "/email" && Boolean(emailUnread) && (
+                <span className="absolute -right-2 -top-2 rounded-full bg-white px-1.5 py-0.5 text-[9px] font-medium text-gray-900">{emailUnread}</span>
+              )}
+            </span>
             <span>{item.label}</span>
           </NavLink>
         ))}

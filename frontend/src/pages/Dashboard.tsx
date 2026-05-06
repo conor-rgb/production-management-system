@@ -12,7 +12,7 @@ import {
   type ProductionDate,
   type ProductionStatus,
 } from "../lib/types";
-import { AlertCircle, TrendingUp, Film, Users, Building2, Calendar } from "lucide-react";
+import { AlertCircle, TrendingUp, Film, Users, Calendar, Mail } from "lucide-react";
 
 interface OverdueItem {
   id: string;
@@ -47,17 +47,25 @@ interface DashboardData {
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [emailUnread, setEmailUnread] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
     api.get<DashboardData>("/api/dashboard").then(setData).catch(console.error);
+    async function loadUnread() {
+      const unread = await api.get<{ count: number }>("/api/email/unread-count");
+      setEmailUnread(unread.count);
+    }
+    loadUnread().catch(console.error);
+    const timer = window.setInterval(() => loadUnread().catch(console.error), 60_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const statCards = [
     { label: "Active opportunities", value: data?.opportunityCount, icon: <TrendingUp size={18} />, onClick: () => navigate("/opportunities") },
     { label: "Productions", value: data?.productionCount, icon: <Film size={18} />, onClick: () => navigate("/productions") },
     { label: "Contacts", value: data?.contactCount, icon: <Users size={18} />, onClick: () => navigate("/contacts") },
-    { label: "Companies", value: data?.companyCount, icon: <Building2 size={18} />, onClick: () => navigate("/contacts") },
+    { label: "Unread email", value: emailUnread, icon: <Mail size={18} />, onClick: () => navigate("/email") },
   ];
 
   return (

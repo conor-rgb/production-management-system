@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Mail, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
-import type { CatalogItem, CatalogSection, CrewRole, StorageInfo } from "../lib/types";
+import type { CatalogItem, CatalogSection, CrewRole, EmailAccount, EmailTemplate, StorageInfo } from "../lib/types";
 import { formatBytes } from "../lib/types";
 
 export default function SettingsPage() {
@@ -21,6 +21,24 @@ export default function SettingsPage() {
   const [catalogError, setCatalogError] = useState("");
   const [newCatalogItem, setNewCatalogItem] = useState<Record<string, string>>({});
   const [groups, setGroups] = useState<{ id: string; name: string; description?: string; items: { id: string }[] }[]>([]);
+  const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
+  const [emailHealth, setEmailHealth] = useState<Record<string, boolean>>({});
+  const [emailSignature, setEmailSignature] = useState("");
+  const [emailSettingsError, setEmailSettingsError] = useState("");
+  const [imapOpen, setImapOpen] = useState(false);
+  const [imapTested, setImapTested] = useState(false);
+  const [imapForm, setImapForm] = useState({
+    label: "",
+    emailAddress: "",
+    imapHost: "imap.gmail.com",
+    imapPort: "993",
+    smtpHost: "smtp.gmail.com",
+    smtpPort: "587",
+    username: "",
+    password: "",
+  });
+  const [templateForm, setTemplateForm] = useState({ name: "", subject: "", bodyHtml: "", defaultCc: "", defaultBcc: "" });
 
   async function loadRoles() {
     const data = await api.get<CrewRole[]>("/api/settings/crew-roles");
@@ -36,9 +54,23 @@ export default function SettingsPage() {
     setGroups(groupData);
   }
 
+  async function loadEmailSettings() {
+    const [accounts, templates, signature, health] = await Promise.all([
+      api.get<EmailAccount[]>("/api/email/accounts"),
+      api.get<EmailTemplate[]>("/api/email/templates"),
+      api.get<{ signature: string }>("/api/email/signature"),
+      api.get<{ accountId: string; connected: boolean }[]>("/api/email/health"),
+    ]);
+    setEmailAccounts(accounts);
+    setEmailTemplates(templates);
+    setEmailSignature(signature.signature || "Conor | unlimited.bond | [emailAddress]");
+    setEmailHealth(Object.fromEntries(health.map((item) => [item.accountId, item.connected])));
+  }
+
   useEffect(() => {
     loadRoles().catch(console.error);
     loadCatalog().catch(console.error);
+    loadEmailSettings().catch(console.error);
     api.get<StorageInfo>("/api/files/storage-info").then(setStorageInfo).catch(console.error);
   }, []);
 
@@ -110,6 +142,77 @@ export default function SettingsPage() {
     await loadCatalog();
   }
 
+  async function connectGmail() {
+    setEmailSettingsError("");
+    try {
+      const data = await api.get<{ url: string }>("/api/email/oauth/google/start");
+      window.open(data.url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setEmailSettingsError(err instanceof Error ? err.message : "Configure Google OAuth in .env to enable Gmail");
+    }
+  }
+
+  async function testImap() {
+    setEmailSettingsError("");
+    setImapTested(false);
+    try {
+      await api.post("/api/email/test-imap", {
+        ...imapForm,
+        imapPort: Number(imapForm.imapPort),
+        smtpPort: Number(imapForm.smtpPort),
+      });
+      setImapTested(true);
+    } catch (err) {
+      setEmailSettingsError(err instanceof Error ? err.message : "Connection failed");
+    }
+  }
+
+  async function saveImap() {
+    setEmailSettingsError("");
+    try {
+      await api.post("/api/email/accounts", {
+        ...imapForm,
+        imapPort: Number(imapForm.imapPort),
+        smtpPort: Number(imapForm.smtpPort),
+        provider: "IMAP",
+      });
+      setImapOpen(false);
+      setImapTested(false);
+      setImapForm({ label: "", emailAddress: "", imapHost: "imap.gmail.com", imapPort: "993", smtpHost: "smtp.gmail.com", smtpPort: "587", username: "", password: "" });
+      await loadEmailSettings();
+    } catch (err) {
+      setEmailSettingsError(err instanceof Error ? err.message : "Failed to save account");
+    }
+  }
+
+  async function removeEmailAccount(accountId: string) {
+    if (!window.confirm("Remove this account? Synced emails will be kept.")) return;
+    await api.delete(`/api/email/accounts/${accountId}`);
+    await loadEmailSettings();
+  }
+
+  async function syncEmailAccount(accountId: string) {
+    await api.post(`/api/email/accounts/${accountId}/sync`, {});
+    await loadEmailSettings();
+  }
+
+  async function saveSignature() {
+    await api.patch("/api/email/signature", { signature: emailSignature });
+  }
+
+  async function saveTemplate() {
+    if (!templateForm.name.trim()) return;
+    await api.post("/api/email/templates", templateForm);
+    setTemplateForm({ name: "", subject: "", bodyHtml: "", defaultCc: "", defaultBcc: "" });
+    await loadEmailSettings();
+  }
+
+  async function deleteTemplate(id: string) {
+    if (!window.confirm("Delete this template?")) return;
+    await api.delete(`/api/email/templates/${id}`);
+    await loadEmailSettings();
+  }
+
   return (
     <div className="max-w-3xl p-4 md:p-6">
       <h1 className="mb-6 text-2xl font-semibold text-gray-900">Settings</h1>
@@ -117,6 +220,82 @@ export default function SettingsPage() {
       <div className="mb-4 rounded-lg border border-gray-200 bg-white p-5">
         <h2 className="mb-1 font-medium text-gray-900">Account</h2>
         <p className="text-sm text-gray-500">Signed in as <span className="text-gray-700">{email}</span></p>
+      </div>
+
+      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-medium text-gray-900">Email</h2>
+            <p className="mt-1 text-sm text-gray-500">Connected accounts, signature, and reusable templates.</p>
+          </div>
+          <button onClick={connectGmail} className="flex min-h-11 items-center gap-2 rounded-lg bg-gray-900 px-3 text-sm font-medium text-white"><Mail size={16} /> Connect Gmail</button>
+        </div>
+        {emailSettingsError && <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-600">{emailSettingsError}</p>}
+
+        <div className="mb-4 space-y-2">
+          {emailAccounts.map((account) => (
+            <div key={account.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 p-3">
+              <span className={`h-2.5 w-2.5 rounded-full ${emailHealth[account.id] ? "bg-emerald-500" : "bg-gray-300"}`} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-gray-900">{account.label} <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-500">{account.provider === "GOOGLE" ? "Gmail" : "IMAP"}</span></p>
+                <p className="truncate text-xs text-gray-500">{account.emailAddress} · Last synced {account.lastSyncedAt ? new Date(account.lastSyncedAt).toLocaleString("en-GB") : "never"}</p>
+              </div>
+              {!account.isPrimary && <button onClick={() => api.patch(`/api/email/accounts/${account.id}`, { isPrimary: true }).then(loadEmailSettings)} className="min-h-10 px-2 text-xs text-gray-600">Set primary</button>}
+              <button onClick={() => syncEmailAccount(account.id)} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><RefreshCw size={15} /></button>
+              <button onClick={() => removeEmailAccount(account.id)} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-red-500 hover:bg-red-50"><Trash2 size={15} /></button>
+            </div>
+          ))}
+          {emailAccounts.length === 0 && <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-400">No email accounts connected yet.</p>}
+        </div>
+
+        <button onClick={() => setImapOpen(!imapOpen)} className="mb-3 min-h-11 rounded-lg border border-gray-200 px-3 text-sm text-gray-700">Connect IMAP account</button>
+        {imapOpen && (
+          <div className="mb-5 grid gap-2 rounded-lg bg-gray-50 p-3 sm:grid-cols-2">
+            {Object.entries(imapForm).map(([key, value]) => (
+              <label key={key} className={key === "password" ? "sm:col-span-2" : ""}>
+                <span className="mb-1 block text-xs font-medium capitalize text-gray-500">{key.replace(/([A-Z])/g, " $1")}</span>
+                <input type={key === "password" ? "password" : key.includes("Port") ? "number" : "text"} value={value} onChange={(e) => { setImapTested(false); setImapForm((form) => ({ ...form, [key]: e.target.value })); }} className="min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm" />
+              </label>
+            ))}
+            <div className="flex gap-2 sm:col-span-2">
+              <button onClick={testImap} className="min-h-11 rounded-lg border border-gray-200 px-3 text-sm">Test connection</button>
+              <button onClick={saveImap} disabled={!imapTested} className="min-h-11 rounded-lg bg-gray-900 px-3 text-sm font-medium text-white disabled:opacity-40">Save account</button>
+              {imapTested && <span className="self-center text-sm text-emerald-600">Connection OK</span>}
+            </div>
+          </div>
+        )}
+
+        <div className="mb-5 rounded-lg border border-gray-200 p-3">
+          <h3 className="mb-2 text-sm font-medium text-gray-900">Email signature</h3>
+          <textarea value={emailSignature} onChange={(e) => setEmailSignature(e.target.value)} className="min-h-24 w-full rounded-lg border border-gray-200 p-3 text-sm" />
+          <button onClick={saveSignature} className="mt-2 min-h-11 rounded-lg bg-gray-900 px-3 text-sm font-medium text-white">Save signature</button>
+          <div className="mt-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-600" dangerouslySetInnerHTML={{ __html: emailSignature }} />
+        </div>
+
+        <div className="rounded-lg border border-gray-200 p-3">
+          <h3 className="mb-3 text-sm font-medium text-gray-900">Templates</h3>
+          <div className="mb-3 divide-y divide-gray-100">
+            {emailTemplates.map((template) => (
+              <div key={template.id} className="flex min-h-11 items-center gap-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-gray-900">{template.name}</p>
+                  <p className="truncate text-xs text-gray-500">{template.subject}</p>
+                </div>
+                <button onClick={() => deleteTemplate(template.id)} className="grid min-h-10 min-w-10 place-items-center text-red-500"><Trash2 size={15} /></button>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-2">
+            <input value={templateForm.name} onChange={(e) => setTemplateForm((form) => ({ ...form, name: e.target.value }))} placeholder="Template name" className="min-h-11 rounded-lg border border-gray-200 px-3 text-sm" />
+            <input value={templateForm.subject} onChange={(e) => setTemplateForm((form) => ({ ...form, subject: e.target.value }))} placeholder="Subject" className="min-h-11 rounded-lg border border-gray-200 px-3 text-sm" />
+            <textarea value={templateForm.bodyHtml} onChange={(e) => setTemplateForm((form) => ({ ...form, bodyHtml: e.target.value }))} placeholder="Body HTML" className="min-h-24 rounded-lg border border-gray-200 p-3 text-sm" />
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input value={templateForm.defaultCc} onChange={(e) => setTemplateForm((form) => ({ ...form, defaultCc: e.target.value }))} placeholder="Default CC" className="min-h-11 rounded-lg border border-gray-200 px-3 text-sm" />
+              <input value={templateForm.defaultBcc} onChange={(e) => setTemplateForm((form) => ({ ...form, defaultBcc: e.target.value }))} placeholder="Default BCC" className="min-h-11 rounded-lg border border-gray-200 px-3 text-sm" />
+            </div>
+            <button onClick={saveTemplate} className="min-h-11 w-fit rounded-lg bg-gray-900 px-3 text-sm font-medium text-white">New template</button>
+          </div>
+        </div>
       </div>
 
       <div className="mb-4 rounded-lg border border-gray-200 bg-white p-5">

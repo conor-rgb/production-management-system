@@ -12,6 +12,7 @@ export type JobFolder = "Briefs" | "Estimates" | "Budgets" | "Contracts" | "Crew
 export type BudgetRevisionStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED" | "SUPERSEDED";
 export type InvoiceStatus = "PENDING" | "PAID";
 export type PurchaseOrderStatus = "OPEN" | "INVOICED" | "PAID";
+export type EmailProvider = "GOOGLE" | "IMAP";
 
 export interface Company {
   id: string;
@@ -203,21 +204,85 @@ export interface ActivityTask {
 
 export interface EmailMessage {
   id: string;
-  from: string;
+  threadId: string;
+  externalMessageId: string;
+  fromAddress: string;
+  from?: string;
+  fromName?: string;
+  toAddresses: string[];
   to?: string;
-  subject?: string;
-  body?: string;
+  ccAddresses: string[];
+  bccAddresses: string[];
+  subject: string;
+  bodyHtml: string;
   htmlBody?: string;
-  sentAt?: string;
+  bodyText: string;
+  body?: string;
+  sentAt: string;
+  isFromMe: boolean;
+  hasAttachments: boolean;
+  attachments: { filename: string; mimeType: string; sizeBytes: number; contentId?: string }[];
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface EmailThread {
   id: string;
+  accountId?: string;
+  account?: EmailAccount;
+  externalThreadId: string;
   subject: string;
+  participants: string[];
+  lastMessageAt: string;
+  isRead: boolean;
+  isFlagged: boolean;
+  isArchived: boolean;
+  linkedContactId?: string;
+  linkedOpportunityId?: string;
+  linkedProductionId?: string;
+  linkedContact?: Contact;
+  linkedOpportunity?: OpportunityListItem;
+  linkedProduction?: Pick<Production, "id" | "title" | "jobCode" | "clientName" | "brand">;
   messages: EmailMessage[];
+  latestPreview?: string;
+  participantNames?: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface EmailAccount {
+  id: string;
+  label: string;
+  emailAddress: string;
+  provider: EmailProvider;
+  imapHost?: string;
+  imapPort?: number;
+  smtpHost?: string;
+  smtpPort?: number;
+  username?: string;
+  isActive: boolean;
+  isPrimary: boolean;
+  lastSyncedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  bodyHtml: string;
+  defaultCc?: string;
+  defaultBcc?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmailThreadsResponse {
+  threads: EmailThread[];
+  total: number;
+  page: number;
+  totalPages: number;
 }
 
 export interface Production {
