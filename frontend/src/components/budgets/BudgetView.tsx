@@ -14,6 +14,7 @@ import {
   X,
   Check,
   ChevronDown,
+  FileText,
   Info,
   Pencil,
 } from "lucide-react";
@@ -557,7 +558,7 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
             <Cell color={remainingColor({ remainingAccrual: line.remainingAccrual, internalSubtotal: line.internalSubtotal })}>{formatCurrency(line.remainingAccrual)}</Cell>
             <Cell color={marginColor(line.marginAmount)}>{formatCurrency(line.marginAmount)}</Cell>
             <div />
-            <LineHoverActions onEdit={onEdit} onDuplicate={onDuplicate} onDelete={onDelete} />
+            <LineHoverActions onEdit={onEdit} onPo={onTogglePoPanel} onDuplicate={onDuplicate} onDelete={onDelete} />
           </>
           ) : (
           <>
@@ -604,26 +605,35 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
   );
 }
 
-function LineHoverActions({ onEdit, onDuplicate, onDelete }: { onEdit: () => void; onDuplicate: () => void; onDelete: () => void }) {
+function LineHoverActions({ onEdit, onPo, onDuplicate, onDelete }: { onEdit: () => void; onPo?: () => void; onDuplicate: () => void; onDelete: () => void }) {
   return (
     <div className="absolute right-2 top-1 hidden gap-1 rounded-lg bg-white/90 p-1 shadow-sm group-hover:flex">
       <button
         onClick={(e) => { e.stopPropagation(); onEdit(); }}
-        className="grid min-h-10 min-w-10 place-items-center rounded-md text-gray-500 hover:bg-gray-100"
+        className="grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100"
         title="Edit"
       >
         <Pencil size={15} />
       </button>
+      {onPo && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onPo(); }}
+          className="grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100"
+          title="Purchase orders"
+        >
+          <FileText size={18} />
+        </button>
+      )}
       <button
         onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
-        className="grid min-h-10 min-w-10 place-items-center rounded-md text-gray-500 hover:bg-gray-100"
+        className="grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100"
         title="Duplicate"
       >
         <Copy size={15} />
       </button>
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        className="grid min-h-10 min-w-10 place-items-center rounded-md text-red-500 hover:bg-red-50"
+        className="grid h-8 w-8 place-items-center rounded-md text-red-500 hover:bg-red-50"
         title="Delete"
       >
         <Trash2 size={15} />
@@ -659,33 +669,39 @@ function InlineExpandedEditor({ line, mode, productionMode, onClose, onSave, onD
   };
 
   return (
-    <div className="hidden border-y border-l-4 border-amber-500 bg-white p-4 md:block">
-      <div className="grid gap-3 md:grid-cols-4">
-        <Field className="md:col-span-3" label="Name" value={form.description} onChange={(description) => setForm({ ...form, description })} />
-        <Field label="Markup%" type="number" value={String(form.agencyMarkup)} onChange={(agencyMarkup) => setForm({ ...form, agencyMarkup: Number(agencyMarkup) })} />
-        <Field label="Qty" type="number" value={String(form.quantity)} onChange={(quantity) => setForm({ ...form, quantity: Number(quantity) })} />
-        <Field label="Time" type="number" value={String(form.daysUnits)} onChange={(daysUnits) => setForm({ ...form, daysUnits: Number(daysUnits) })} />
-        <label className="block"><span className="mb-1 block text-xs font-semibold text-gray-500">Unit</span><select value={form.unitLabel} onChange={(e) => setForm({ ...form, unitLabel: e.target.value })} className="min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm">{UNIT_LABELS.map((u) => <option key={u}>{u}</option>)}</select></label>
-        <Field label={rateLabel} type="number" value={String(rateValue)} onChange={updateRate} />
-        <Textarea label="Private memo" value={form.privateMemo ?? ""} onChange={(privateMemo) => setForm({ ...form, privateMemo })} />
-        <div className="grid content-start gap-2">
-          <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.isTaxable} onChange={(e) => setForm({ ...form, isTaxable: e.target.checked })} /> Taxable</label>
-          <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.hasPW} onChange={(e) => setForm({ ...form, hasPW: e.target.checked })} /> P&W (%)</label>
-          <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.hasHealthSafety} onChange={(e) => setForm({ ...form, hasHealthSafety: e.target.checked })} /> Health & Safety</label>
+    <div className="hidden border-y border-l-4 border-amber-500 bg-white px-4 py-3 md:block">
+      <div className="grid gap-[10px]">
+        <div className="grid items-end gap-2 md:grid-cols-[minmax(220px,1fr)_100px]">
+          <Field label="Name" value={form.description} onChange={(description) => setForm({ ...form, description })} />
+          <Field label="Markup%" type="number" value={String(form.agencyMarkup)} onChange={(agencyMarkup) => setForm({ ...form, agencyMarkup: Number(agencyMarkup) })} />
         </div>
-        <div className="grid gap-2 md:col-span-4 md:grid-cols-3">
+        <div className="flex flex-wrap items-end gap-2">
+          <Field className="max-w-20" label="Qty" type="number" value={String(form.quantity)} onChange={(quantity) => setForm({ ...form, quantity: Number(quantity) })} />
+          <Field className="max-w-20" label="Time" type="number" value={String(form.daysUnits)} onChange={(daysUnits) => setForm({ ...form, daysUnits: Number(daysUnits) })} />
+          <label className="block max-w-[120px]"><span className="mb-1 block text-xs font-semibold text-gray-500">Unit</span><select value={form.unitLabel} onChange={(e) => setForm({ ...form, unitLabel: e.target.value })} className="h-9 w-full rounded-lg border border-gray-200 px-3 text-[13px]">{UNIT_LABELS.map((u) => <option key={u}>{u}</option>)}</select></label>
+          <Field className="max-w-[120px]" label={rateLabel} type="number" value={String(rateValue)} onChange={updateRate} />
+        </div>
+        <div className="grid gap-3 md:grid-cols-[minmax(240px,1fr)_170px]">
+          <Textarea label="Private memo" value={form.privateMemo ?? ""} onChange={(privateMemo) => setForm({ ...form, privateMemo })} />
+          <div className="grid content-start gap-1.5 pt-4">
+            <label className="flex h-8 items-center gap-2 text-[13px]"><input type="checkbox" checked={form.isTaxable} onChange={(e) => setForm({ ...form, isTaxable: e.target.checked })} /> Taxable</label>
+            <label className="flex h-8 items-center gap-2 text-[13px]"><input type="checkbox" checked={form.hasPW} onChange={(e) => setForm({ ...form, hasPW: e.target.checked })} /> P&W (%)</label>
+            <label className="flex h-8 items-center gap-2 text-[13px]"><input type="checkbox" checked={form.hasHealthSafety} onChange={(e) => setForm({ ...form, hasHealthSafety: e.target.checked })} /> Health & Safety</label>
+          </div>
+        </div>
+        <div className="grid gap-2 md:grid-cols-3">
           <Field label="Base hours" type="number" value={String(form.baseHours ?? 10)} onChange={(baseHours) => setForm({ ...form, baseHours: Number(baseHours) })} />
           <Field label="1.5x" type="number" value={String(form.overtime15x ?? 0)} onChange={(overtime15x) => setForm({ ...form, overtime15x: Number(overtime15x) })} />
           <Field label="2x" type="number" value={String(form.overtime2x ?? 0)} onChange={(overtime2x) => setForm({ ...form, overtime2x: Number(overtime2x) })} />
         </div>
         <Textarea label="Public memo" value={form.publicMemo ?? ""} onChange={(publicMemo) => setForm({ ...form, publicMemo })} />
       </div>
-      <div className="mt-4 flex min-h-14 items-center gap-2 bg-amber-100 p-2">
-        <button onClick={() => onDelete(line)} className="min-h-11 rounded-lg px-3 text-sm font-medium text-red-600">Delete</button>
+      <div className="mt-[10px] flex h-11 items-center gap-2 bg-amber-100 px-2">
+        <button onClick={() => onDelete(line)} className="h-9 rounded-lg px-3 text-[13px] font-medium text-red-600">Delete</button>
         <div className="flex-1" />
-        <button onClick={onClose} className="min-h-11 rounded-lg px-3 text-sm">Cancel</button>
-        <button onClick={() => onDuplicate(line)} className="grid min-h-11 min-w-11 place-items-center rounded-lg"><Copy size={17} /></button>
-        <button onClick={save} className="min-h-11 rounded-lg bg-gray-900 px-5 text-sm font-medium text-white">Save</button>
+        <button onClick={onClose} className="h-9 rounded-lg px-3 text-[13px]">Cancel</button>
+        <button onClick={() => onDuplicate(line)} className="grid h-9 w-9 place-items-center rounded-lg"><Copy size={18} /></button>
+        <button onClick={save} className="h-9 rounded-lg bg-gray-900 px-5 text-[13px] font-medium text-white">Save</button>
       </div>
     </div>
   );
@@ -1024,12 +1040,12 @@ function LineEditor({ line, mode, onClose, onSave, onDuplicate, onDelete }: {
 
   return (
     <div className="fixed inset-0 z-50 overflow-auto bg-white md:hidden">
-      <div className="min-h-full border-t-4 border-amber-500 bg-white p-4">
-        <div className="mb-4 flex items-center justify-between">
+      <div className="min-h-full border-t-4 border-amber-500 bg-white px-4 py-3">
+        <div className="mb-[10px] flex items-center justify-between">
           <h2 className="font-semibold text-gray-900">Edit line item</h2>
           <button onClick={onClose} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500"><X size={18} /></button>
         </div>
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-[10px] md:grid-cols-4">
           <Field className="md:col-span-3" label="Name" value={form.description} onChange={(description) => setForm({ ...form, description })} />
           <Field label="Markup%" type="number" value={String(form.agencyMarkup)} onChange={(agencyMarkup) => setForm({ ...form, agencyMarkup: Number(agencyMarkup) })} />
           <Field label="Qty" type="number" value={String(form.quantity)} onChange={(quantity) => setForm({ ...form, quantity: Number(quantity) })} />
@@ -1038,10 +1054,10 @@ function LineEditor({ line, mode, onClose, onSave, onDuplicate, onDelete }: {
           <Field label={mode === "client" ? "Client rate" : "Internal rate"} type="number" value={String(mode === "client" ? form.clientUnitCost : form.internalUnitCost)} onChange={(value) => mode === "client" ? setForm({ ...form, clientUnitCost: Number(value) }) : setForm({ ...form, internalUnitCost: Number(value) })} />
           <Textarea label="Private memo" value={form.privateMemo ?? ""} onChange={(privateMemo) => setForm({ ...form, privateMemo })} />
           <Textarea label="Memo" value={form.publicMemo ?? ""} onChange={(publicMemo) => setForm({ ...form, publicMemo })} />
-          <div className="grid gap-2">
-            <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.isTaxable} onChange={(e) => setForm({ ...form, isTaxable: e.target.checked })} /> Taxable</label>
-            <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.hasPW} onChange={(e) => setForm({ ...form, hasPW: e.target.checked })} /> P&W (%)</label>
-            <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.hasHealthSafety} onChange={(e) => setForm({ ...form, hasHealthSafety: e.target.checked })} /> Health & Safety</label>
+          <div className="grid gap-1.5">
+            <label className="flex h-8 items-center gap-2 text-[13px]"><input type="checkbox" checked={form.isTaxable} onChange={(e) => setForm({ ...form, isTaxable: e.target.checked })} /> Taxable</label>
+            <label className="flex h-8 items-center gap-2 text-[13px]"><input type="checkbox" checked={form.hasPW} onChange={(e) => setForm({ ...form, hasPW: e.target.checked })} /> P&W (%)</label>
+            <label className="flex h-8 items-center gap-2 text-[13px]"><input type="checkbox" checked={form.hasHealthSafety} onChange={(e) => setForm({ ...form, hasHealthSafety: e.target.checked })} /> Health & Safety</label>
           </div>
           <div className="grid gap-2 md:grid-cols-3 md:col-span-4">
             <Field label="Base hours" type="number" value={String(form.baseHours ?? 10)} onChange={(baseHours) => setForm({ ...form, baseHours: Number(baseHours) })} />
@@ -1049,12 +1065,12 @@ function LineEditor({ line, mode, onClose, onSave, onDuplicate, onDelete }: {
             <Field label="2x" type="number" value={String(form.overtime2x ?? 0)} onChange={(overtime2x) => setForm({ ...form, overtime2x: Number(overtime2x) })} />
           </div>
         </div>
-        <div className="mt-4 flex min-h-14 items-center gap-2 rounded-lg bg-amber-100 p-2">
-          <button onClick={() => onDelete(line)} className="min-h-11 rounded-lg px-3 text-sm font-medium text-red-600">Delete</button>
+        <div className="mt-[10px] flex h-11 items-center gap-2 rounded-lg bg-amber-100 px-2">
+          <button onClick={() => onDelete(line)} className="h-9 rounded-lg px-3 text-[13px] font-medium text-red-600">Delete</button>
           <div className="flex-1" />
-          <button onClick={onClose} className="min-h-11 rounded-lg px-3 text-sm">Cancel</button>
-          <button onClick={() => onDuplicate(line)} className="grid min-h-11 min-w-11 place-items-center rounded-lg"><Copy size={17} /></button>
-          <button onClick={save} className="min-h-11 rounded-lg bg-gray-900 px-5 text-sm font-medium text-white">Save</button>
+          <button onClick={onClose} className="h-9 rounded-lg px-3 text-[13px]">Cancel</button>
+          <button onClick={() => onDuplicate(line)} className="grid h-9 w-9 place-items-center rounded-lg"><Copy size={18} /></button>
+          <button onClick={save} className="h-9 rounded-lg bg-gray-900 px-5 text-[13px] font-medium text-white">Save</button>
         </div>
       </div>
     </div>
@@ -1173,9 +1189,9 @@ function Metric({ label, value, strong, danger, good, muted, amber, tooltip }: {
 }
 
 function Field({ label, value, onChange, type = "text", className = "" }: { label: string; value: string; onChange: (value: string) => void; type?: string; className?: string }) {
-  return <label className={`block ${className}`}><span className="mb-1 block text-xs font-semibold text-gray-500">{label}</span><input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm" /></label>;
+  return <label className={`block ${className}`}><span className="mb-1 block text-xs font-semibold text-gray-500">{label}</span><input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="h-9 w-full rounded-lg border border-gray-200 px-3 text-[13px]" /></label>;
 }
 
 function Textarea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="block md:col-span-2"><span className="mb-1 block text-xs font-semibold text-gray-500">{label}</span><textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} className="w-full resize-none rounded-lg border border-gray-200 p-3 text-sm" /></label>;
+  return <label className="block"><span className="mb-1 block text-xs font-semibold text-gray-500">{label}</span><textarea value={value} onChange={(e) => onChange(e.target.value)} rows={2} className="h-14 w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-[13px]" /></label>;
 }

@@ -162,6 +162,8 @@
   - Individual row `...` menus were removed; row actions are hover icons on desktop and long-press actions on mobile.
   - Remaining accrual colors now treat zero accrual / zero committed as neutral gray.
   - Complex desktop line edits expand inline instead of using a modal overlay; mobile still uses a full-screen bottom sheet.
+  - Inline and mobile line item edit forms were tightened with 36px fields, 56px memo areas, 10px row gaps, and a 44px action bar.
+  - Production row hover actions now include a Purchase Orders button between edit and duplicate, wired to the existing PO panel toggle.
   - PO panel financial stack is compact and left-aligned.
   - Section headers, column headers, empty sections, right panel revisions, and projected margin tooltip were refined.
 
@@ -199,6 +201,7 @@
 - `4e2aff4 update budget modes and purchase order UI`
 - `fix: budget margin calculations and colors`
 - `0b0a5fe fix: polish production budget rows`
+- `fix: compact line item edit form and add PO hover button`
 
 ## Exact Next Step For Phase 6
 
