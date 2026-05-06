@@ -10,6 +10,7 @@ import {
 } from "@prisma/client";
 import prisma from "../prisma";
 import { generateJobCode } from "../utils/jobCode";
+import { ensureProductionFoldersForRecord } from "../services/fileStorage";
 
 const router = Router();
 
@@ -30,7 +31,7 @@ const productionInclude = {
     },
   },
   budgets: { include: { sections: { include: { lineItems: true } } } },
-  jobFiles: true,
+    jobFiles: true,
   emailThreads: { include: { messages: { orderBy: { sentAt: "asc" as const } } } },
   opportunity: true,
 };
@@ -89,6 +90,7 @@ function productionDataFromBody(body: Record<string, unknown>) {
     value: numberOrNull(body.value),
     freeAgentInvoiceStatus: body.freeAgentInvoiceStatus as FreeAgentInvoiceStatus | undefined,
     notes: body.notes as string | null | undefined,
+    storagePath: body.storagePath as string | null | undefined,
     opportunityId: body.opportunityId as string | null | undefined,
     contactId: body.contactId as string | null | undefined,
   };
@@ -195,7 +197,9 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
     },
     include: productionInclude,
   });
-  res.status(201).json(withComputedFinancials(item));
+  await ensureProductionFoldersForRecord(item);
+  const saved = await prisma.production.findUnique({ where: { id: item.id }, include: productionInclude });
+  res.status(201).json(withComputedFinancials(saved ?? item));
 });
 
 router.patch("/:id", async (req: Request, res: Response): Promise<void> => {

@@ -223,6 +223,7 @@ model Production {
   value                  Decimal?               @db.Decimal(12, 2)
   freeAgentInvoiceStatus FreeAgentInvoiceStatus @default(NOT_RAISED)
   notes                  String?
+  storagePath            String?
   opportunityId          String?
   opportunity            Opportunity?           @relation(fields: [opportunityId], references: [id])
   contactId              String?
@@ -339,6 +340,7 @@ model BudgetLineItem {
   notes       String?
   order       Int               @default(0)
   invoices    LineItemInvoice[]
+  jobFiles    JobFile[]
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
@@ -361,14 +363,25 @@ model LineItemInvoice {
 // ─── Files ────────────────────────────────────────────────────────────────────
 
 model JobFile {
-  id           String      @id @default(cuid())
-  productionId String?
-  production   Production? @relation(fields: [productionId], references: [id])
-  name         String
-  url          String
-  mimeType     String?
-  size         Int?
-  createdAt    DateTime    @default(now())
+  id                 String          @id @default(cuid())
+  productionId       String
+  production         Production      @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  folder             String
+  originalFilename   String
+  storedFilename     String
+  mimeType           String
+  sizeBytes          Int
+  uploadedAt         DateTime        @default(now())
+  linkedBudgetLineId String?
+  linkedBudgetLine   BudgetLineItem? @relation(fields: [linkedBudgetLineId], references: [id])
+  isReceipt          Boolean         @default(false)
+  receiptVendor      String?
+  receiptAmount      Int?
+  receiptDate        DateTime?       @db.Date
+  notes              String?
+
+  @@index([productionId, folder])
+  @@index([originalFilename])
 
   @@map("pms_job_files")
 }

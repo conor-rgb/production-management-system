@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import prisma from "../prisma";
 import { Stage, LostReason } from "@prisma/client";
 import { generateJobCode } from "../utils/jobCode";
+import { ensureProductionFoldersForRecord } from "../services/fileStorage";
 
 const router = Router();
 
@@ -24,6 +25,7 @@ const productionSelect = {
   opportunityId: true,
   jobCode: true,
   status: true,
+  storagePath: true,
   createdAt: true,
 } as const;
 
@@ -63,6 +65,11 @@ async function transitionOpportunityStage(
         jobCode,
         status: "PRE_PRO",
       },
+      select: productionSelect,
+    });
+    await ensureProductionFoldersForRecord(production);
+    production = await prisma.production.findUniqueOrThrow({
+      where: { id: production.id },
       select: productionSelect,
     });
   }
