@@ -14,6 +14,8 @@ import {
   X,
   Check,
   ChevronDown,
+  Info,
+  Pencil,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import type {
@@ -37,6 +39,7 @@ type Entity =
 type ViewMode = "internal" | "client";
 type EditableLineField = "description" | "internalUnitCost" | "clientUnitCost" | "quantity" | "daysUnits" | "unitLabel";
 type BudgetLineMutationResponse = { line: BudgetLineItem; revision: BudgetRevision | null };
+type RemainingTone = "green" | "amber" | "red" | "muted";
 
 const UNIT_LABELS = ["Days", "Units", "Drives", "Weeks", "Other"];
 
@@ -55,12 +58,20 @@ function formatPercent(value?: number) {
   return `${Number(value ?? 0).toFixed(1)}%`;
 }
 
-function remainingColor(lineOrTotal: { remainingAccrual?: number; totalRemaining?: number; internalSubtotal?: number; totalAccrual?: number }) {
-  const remaining = lineOrTotal.remainingAccrual ?? lineOrTotal.totalRemaining ?? 0;
-  const accrual = lineOrTotal.internalSubtotal ?? lineOrTotal.totalAccrual ?? 0;
-  if (remaining <= 0) return "red";
-  if (accrual > 0 && remaining / accrual <= 0.2) return "amber";
+function remainingColor(lineOrTotal: { remainingAccrual?: number; totalRemaining?: number; internalSubtotal?: number; totalAccrual?: number }): RemainingTone {
+  const remaining = Number(lineOrTotal.remainingAccrual ?? lineOrTotal.totalRemaining ?? 0);
+  const accrual = Number(lineOrTotal.internalSubtotal ?? lineOrTotal.totalAccrual ?? 0);
+  if (remaining < 0) return "red";
+  if (remaining === 0) return accrual > 0 ? "amber" : "muted";
   return "green";
+}
+
+function remainingTextClass(lineOrTotal: { remainingAccrual?: number; totalRemaining?: number; internalSubtotal?: number; totalAccrual?: number }) {
+  const color = remainingColor(lineOrTotal);
+  if (color === "green") return "text-emerald-700";
+  if (color === "amber") return "text-amber-600";
+  if (color === "red") return "text-red-600";
+  return "text-gray-500";
 }
 
 function marginColor(value?: number): "green" | "red" | "muted" {
@@ -155,7 +166,7 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
   async function saveLine(line: BudgetLineItem, patch: Partial<BudgetLineItem>) {
     const res = await api.patch<BudgetLineMutationResponse>(`/api/budgets/lines/${line.id}`, patch);
     if (res.revision) setRevision(res.revision);
-    setSelectedLine(res.line);
+    setSelectedLine((current) => current?.id === line.id ? res.line : current);
   }
 
   async function duplicateLine(line: BudgetLineItem) {
@@ -251,8 +262,20 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
             <Metric label="Client value" value={formatCurrency(totals?.clientGrandTotal)} strong />
             <Metric label="Accrual held" value={formatCurrency(totals?.totalAccrual)} />
             <Metric label="Committed" value={formatCurrency(totals?.totalCommitted)} />
-            <Metric label="Remaining" value={formatCurrency(totals?.totalRemaining)} danger={remainingColor({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual }) === "red"} good={remainingColor({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual }) === "green"} />
-            <Metric label="Projected margin" value={`${formatCurrency(totals?.projectedMargin)} (${formatPercent(totals?.projectedMarginPercent)})`} {...marginMetricState(totals?.projectedMargin)} />
+            <Metric
+              label="Remaining"
+              value={formatCurrency(totals?.totalRemaining)}
+              danger={remainingColor({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual }) === "red"}
+              good={remainingColor({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual }) === "green"}
+              amber={remainingColor({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual }) === "amber"}
+              muted={remainingColor({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual }) === "muted"}
+            />
+            <Metric
+              label="Projected margin"
+              value={`${formatCurrency(totals?.projectedMargin)} (${formatPercent(totals?.projectedMarginPercent)})`}
+              tooltip="Client value minus accrual held. Assumes all spend stays within accrual."
+              {...marginMetricState(totals?.projectedMargin)}
+            />
           </>
         ) : (
           <>
@@ -284,8 +307,10 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
             onBrowseCatalog={(code) => setCatalogOpen({ sectionCode: code })}
             onDuplicate={duplicateLine}
             onDelete={deleteLine}
+            expandedLineId={selectedLine?.id ?? null}
             onSaveCell={saveLine}
             onSaveError={showSaveError}
+            onCloseEdit={() => setSelectedLine(null)}
             onRefresh={() => reloadRevision()}
           />
         </div>
@@ -306,7 +331,7 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
           <>
             <span><span className="text-gray-500">Accrual:</span> <span className="text-sm font-medium">{formatCurrency(totals?.totalAccrual)}</span></span>
             <span><span className="text-gray-500">Committed:</span> <span className="text-sm font-medium">{formatCurrency(totals?.totalCommitted)}</span></span>
-            <span><span className="text-gray-500">Remaining:</span> <span className="text-sm font-medium">{formatCurrency(totals?.totalRemaining)}</span></span>
+            <span><span className="text-gray-500">Remaining:</span> <span className={`text-sm font-medium ${remainingTextClass({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual })}`}>{formatCurrency(totals?.totalRemaining)}</span></span>
             <span><span className="text-gray-500">Subtotal:</span> <span className="text-sm font-medium">{formatCurrency(totals?.clientGrandTotal)}</span></span>
           </>
         ) : (
@@ -358,7 +383,7 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
   );
 }
 
-function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, onAddLine, onBrowseCatalog, onDuplicate, onDelete, onSaveCell, onSaveError, onRefresh }: {
+function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, onAddLine, onBrowseCatalog, onDuplicate, onDelete, expandedLineId, onSaveCell, onSaveError, onCloseEdit, onRefresh }: {
   revision: BudgetRevision;
   mode: ViewMode;
   selectedIds: string[];
@@ -368,8 +393,10 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
   onBrowseCatalog: (sectionCode: string) => void;
   onDuplicate: (line: BudgetLineItem) => void;
   onDelete: (line: BudgetLineItem) => void;
+  expandedLineId: string | null;
   onSaveCell: (line: BudgetLineItem, patch: Partial<BudgetLineItem>) => Promise<void>;
   onSaveError: () => void;
+  onCloseEdit: () => void;
   onRefresh: () => Promise<void>;
 }) {
   const productionMode = revision.totals.mode === "production";
@@ -380,26 +407,26 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
 
   return (
     <div className="min-w-full">
-      <div className={`sticky top-0 z-10 hidden h-9 border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500 md:grid ${mode === "internal" ? internalGrid : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
+      <div className={`sticky top-0 z-10 hidden h-8 border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-[0.5px] text-gray-500 md:grid ${mode === "internal" ? internalGrid : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
         {mode === "internal"
           ? (productionMode
-            ? ["", "Description", "Client Rate", "Client Total", "Accrual", "POs", "Invoiced", "Paid", "Remaining", "Margin £", ""]
-            : ["", "Description", "Int. Rate", "Client Rate", "Qty", "Days", "Unit", "Markup", "Int. Total", "Client Total", "Margin £", "Margin %", ""])
-            .map((h) => <div key={h} className="px-4 py-3 text-right first:text-left nth-[2]:text-left">{h}</div>)
-          : ["Description", "Rate", "Qty", "Days", "Unit", "Total"].map((h) => <div key={h} className="px-4 py-3 text-right first:text-left">{h}</div>)}
+            ? ["", "Description", "Rate", "Total", "Accrual", "POs", "Inv.", "Paid", "Left", "Margin", ""]
+            : ["", "Description", "Int. Rate", "Rate", "Qty", "Days", "Unit", "Markup", "Int. Total", "Total", "Margin", "Margin %", ""])
+            .map((h) => <div key={h} className="whitespace-nowrap px-4 py-2 text-right first:text-left nth-[2]:text-left">{h}</div>)
+          : ["Description", "Rate", "Qty", "Days", "Unit", "Total"].map((h) => <div key={h} className="whitespace-nowrap px-4 py-2 text-right first:text-left">{h}</div>)}
       </div>
       {revision.sections.map((section) => {
         const sectionTotal = revision.totals.sectionTotals.find((item) => item.sectionId === section.id);
         return (
           <div key={section.id} className="pt-2">
-            <div className="flex min-h-11 items-center gap-3 border-t border-gray-200 bg-[#f8f8f8] px-4 text-[13px] font-semibold text-gray-900">
+            <div className="flex min-h-11 items-center gap-3 border-t border-gray-300 bg-[#f8f8f8] px-4 text-[13px] font-semibold text-gray-900">
               <span>{section.code}) {section.name}</span>
               <span className="ml-auto text-sm text-gray-600">{formatCurrency(sectionTotal?.clientTotal)}</span>
               <button onClick={() => onBrowseCatalog(section.code)} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500"><MoreHorizontal size={16} /></button>
             </div>
             {section.lineItems.length === 0 ? (
-              <div className="grid min-h-[60px] place-items-center p-4 text-center text-[13px] text-gray-400">
-                No line items — <button onClick={() => onBrowseCatalog(section.code)} className="text-indigo-600">Browse catalog</button> or <button onClick={() => onAddLine(section.id)} className="text-indigo-600">+ Add line</button>
+              <div className="flex h-12 items-center px-5 text-left text-[13px] text-gray-400">
+                <span>No line items — <button onClick={() => onBrowseCatalog(section.code)} className="text-indigo-600">Browse catalog</button> or <button onClick={() => onAddLine(section.id)} className="text-indigo-600">+ Add line</button></span>
               </div>
             ) : section.lineItems.map((line) => (
               <LineRow
@@ -411,8 +438,10 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
                 onEdit={() => onEdit(line)}
                 onDuplicate={() => onDuplicate(line)}
                 onDelete={() => onDelete(line)}
+                expanded={expandedLineId === line.id}
                 onSaveCell={onSaveCell}
                 onSaveError={onSaveError}
+                onCloseEdit={onCloseEdit}
                 productionMode={productionMode}
                 openPoPanel={openPoLineId === line.id}
                 onTogglePoPanel={() => setOpenPoLineId(openPoLineId === line.id ? null : line.id)}
@@ -422,7 +451,7 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
             {section.lineItems.length > 0 && (
               <div className={`hidden min-h-10 border-b border-gray-100 bg-gray-50 text-xs font-medium text-gray-500 md:grid ${mode === "internal" ? internalGrid : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
                 {mode === "internal" && productionMode ? (
-                  <><div /><div className="py-3 pl-5 pr-4 italic">Section total</div><div /><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.clientTotal)}</div><div className="px-4 py-3 text-right italic tabular-nums">{formatCurrency(sectionTotal?.accrual)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.totalPOs)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.totalInvoiced)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.totalPaid)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.remaining)}</div><div className={`px-4 py-3 text-right tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{formatCurrency(sectionTotal?.marginAmount)}</div><div /></>
+                  <><div /><div className="py-3 pl-5 pr-4 italic">Section total</div><div /><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.clientTotal)}</div><div className="px-4 py-3 text-right italic tabular-nums">{formatCurrency(sectionTotal?.accrual)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.totalPOs)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.totalInvoiced)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.totalPaid)}</div><div className={`px-4 py-3 text-right tabular-nums ${remainingTextClass({ totalRemaining: sectionTotal?.remaining, totalAccrual: sectionTotal?.accrual })}`}>{formatCurrency(sectionTotal?.remaining)}</div><div className={`px-4 py-3 text-right tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{formatCurrency(sectionTotal?.marginAmount)}</div><div /></>
                 ) : mode === "internal" ? (
                   <><div /><div className="py-3 pl-5 pr-4 italic">Section total</div><div /><div /><div /><div /><div /><div /><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.internalTotal)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.clientTotal)}</div><div className={`px-4 py-3 text-right tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{formatCurrency(sectionTotal?.marginAmount)}</div><div className={`px-4 py-3 text-right tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{formatPercent(sectionTotal?.marginPercent)}</div><div /></>
                 ) : (
@@ -437,7 +466,7 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
   );
 }
 
-function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, onSaveCell, onSaveError, productionMode, openPoPanel, onTogglePoPanel, onRefresh }: {
+function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, expanded, onSaveCell, onSaveError, onCloseEdit, productionMode, openPoPanel, onTogglePoPanel, onRefresh }: {
   line: BudgetLineItem;
   mode: ViewMode;
   checked: boolean;
@@ -445,13 +474,18 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
   onEdit: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  expanded: boolean;
   onSaveCell: (line: BudgetLineItem, patch: Partial<BudgetLineItem>) => Promise<void>;
   onSaveError: () => void;
+  onCloseEdit: () => void;
   productionMode: boolean;
   openPoPanel: boolean;
   onTogglePoPanel: () => void;
   onRefresh: () => Promise<void>;
 }) {
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const longPressRef = useRef<number | null>(null);
+
   async function saveCell(field: EditableLineField, value: string | number) {
     const patch: Partial<BudgetLineItem> = { [field]: value } as Partial<BudgetLineItem>;
     try {
@@ -462,17 +496,39 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
     }
   }
 
+  function startLongPress() {
+    if (longPressRef.current) window.clearTimeout(longPressRef.current);
+    longPressRef.current = window.setTimeout(() => setMobileActionsOpen(true), 550);
+  }
+
+  function cancelLongPress() {
+    if (longPressRef.current) window.clearTimeout(longPressRef.current);
+    longPressRef.current = null;
+  }
+
   return (
     <div className={`group relative border-b border-gray-100 hover:bg-gray-50 ${line.isClosed ? "bg-gray-50 text-gray-400" : ""} ${productionMode && line.isOverBudget ? "border-l-[3px] border-l-red-900" : productionMode && line.isOverAccrual ? "border-l-[3px] border-l-red-600" : productionMode && Number(line.accrualUsedPercent ?? 0) > 80 ? "border-l-[3px] border-l-amber-500" : ""}`}>
-      <div className="flex min-h-[52px] items-center gap-3 px-4 md:hidden">
+      <div
+        className="flex min-h-12 items-center gap-3 px-4 md:hidden"
+        onContextMenu={(e) => { e.preventDefault(); setMobileActionsOpen(true); }}
+        onTouchStart={startLongPress}
+        onTouchEnd={cancelLongPress}
+        onTouchMove={cancelLongPress}
+      >
         <div className="min-w-0 flex-1">
           <InlineTextCell line={line} field="description" value={line.description} align="left" onSave={saveCell} />
           {line.publicMemo && <p className="truncate text-xs italic text-gray-500">{line.publicMemo}</p>}
         </div>
-        <button onClick={onEdit} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-400"><MoreHorizontal size={16} /></button>
+        <button onClick={onEdit} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-400"><Pencil size={15} /></button>
         <p className="text-sm font-semibold tabular-nums">{formatCurrency(line.clientSubtotal)}</p>
       </div>
-      <div className={`hidden min-h-[52px] items-center text-[13px] tabular-nums md:grid ${mode === "internal" ? productionMode ? "grid-cols-[32px_minmax(260px,1fr)_90px_100px_90px_80px_80px_80px_90px_90px_52px]" : "grid-cols-[32px_minmax(260px,1fr)_90px_90px_60px_60px_70px_80px_100px_110px_100px_90px_48px]" : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
+      {mobileActionsOpen && (
+        <div className="absolute right-3 top-10 z-30 overflow-hidden rounded-lg border border-gray-200 bg-white text-sm shadow-lg md:hidden">
+          <button onClick={() => { setMobileActionsOpen(false); onDuplicate(); }} className="flex min-h-11 w-36 items-center gap-2 px-3 text-gray-700"><Copy size={15} /> Duplicate</button>
+          <button onClick={() => { setMobileActionsOpen(false); onDelete(); }} className="flex min-h-11 w-36 items-center gap-2 px-3 text-red-600"><Trash2 size={15} /> Delete</button>
+        </div>
+      )}
+      <div className={`hidden min-h-12 items-center text-[13px] tabular-nums md:grid ${mode === "internal" ? productionMode ? "grid-cols-[32px_minmax(260px,1fr)_90px_100px_90px_80px_80px_80px_90px_90px_52px]" : "grid-cols-[32px_minmax(260px,1fr)_90px_90px_60px_60px_70px_80px_100px_110px_100px_90px_48px]" : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
         {mode === "internal" ? (
           productionMode ? (
           <>
@@ -485,13 +541,23 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
             </div>
             <InlineNumberCell line={line} field="clientUnitCost" value={line.clientUnitCost} onSave={saveCell} />
             <Cell strong>{formatCurrency(line.clientSubtotal)}</Cell>
-            <Cell muted><span className="italic">{formatCurrency(line.internalSubtotal)}</span></Cell>
-            <button onClick={onTogglePoPanel} className="px-4 text-right text-[13px] tabular-nums text-gray-800 hover:underline">{formatCurrency(line.totalPOs)} <span className="ml-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px]">{line.purchaseOrders.length}</span></button>
+            <InlineNumberCell line={line} field="internalUnitCost" value={line.internalUnitCost} displayValue={line.internalSubtotal} onSave={saveCell} muted italic />
+            <div className="px-4 text-right text-[13px] tabular-nums">
+              {line.purchaseOrders.length > 0 ? (
+                <span className="inline-flex items-center justify-end gap-1.5 text-gray-800">
+                  {formatCurrency(line.totalPOs)}
+                  <button onClick={onTogglePoPanel} className="grid h-[18px] min-h-[18px] w-[18px] min-w-[18px] place-items-center rounded-full bg-gray-900 text-[11px] leading-none text-white">{line.purchaseOrders.length}</button>
+                </span>
+              ) : (
+                <span className="text-gray-500">{formatCurrency(0)}</span>
+              )}
+            </div>
             <Cell>{formatCurrency(line.totalInvoiced)}</Cell>
             <Cell>{formatCurrency(line.totalPaid)}</Cell>
             <Cell color={remainingColor({ remainingAccrual: line.remainingAccrual, internalSubtotal: line.internalSubtotal })}>{formatCurrency(line.remainingAccrual)}</Cell>
             <Cell color={marginColor(line.marginAmount)}>{formatCurrency(line.marginAmount)}</Cell>
-            <button onClick={onEdit} className="mx-auto rounded-full bg-gray-100 px-2 py-1 text-xs">•••</button>
+            <div />
+            <LineHoverActions onEdit={onEdit} onDuplicate={onDuplicate} onDelete={onDelete} />
           </>
           ) : (
           <>
@@ -506,23 +572,8 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
             <InlineNumberCell line={line} field="daysUnits" value={line.daysUnits} onSave={saveCell} plain />
             <UnitDropdown value={line.unitLabel} onSave={(value) => saveCell("unitLabel", value)} />
             <Cell>{formatCurrency(line.agencyMarkup)}</Cell><Cell muted>{formatCurrency(line.internalSubtotal)}</Cell><Cell strong>{formatCurrency(line.clientSubtotal)}</Cell><Cell color={marginColor(line.marginAmount)}>{formatCurrency(line.marginAmount)}</Cell><Cell color={marginColor(line.marginAmount)}>{formatPercent(line.marginPercent)}</Cell>
-            <button onClick={onEdit} className="mx-auto rounded-full bg-gray-100 px-2 py-1 text-xs">•••</button>
-            <div className="absolute right-12 top-1.5 hidden gap-1 rounded-lg bg-white/90 p-1 shadow-sm group-hover:flex">
-              <button
-                onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
-                className="grid min-h-10 min-w-10 place-items-center rounded-md text-gray-500 hover:bg-gray-100"
-                title="Duplicate"
-              >
-                <Copy size={15} />
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                className="grid min-h-10 min-w-10 place-items-center rounded-md text-red-500 hover:bg-red-50"
-                title="Delete"
-              >
-                <Trash2 size={15} />
-              </button>
-            </div>
+            <div />
+            <LineHoverActions onEdit={onEdit} onDuplicate={onDuplicate} onDelete={onDelete} />
           </>
           )
         ) : (
@@ -533,10 +584,109 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
             <InlineNumberCell line={line} field="daysUnits" value={line.daysUnits} onSave={saveCell} plain />
             <UnitDropdown value={line.unitLabel} onSave={(value) => saveCell("unitLabel", value)} />
             <Cell strong>{formatCurrency(line.clientSubtotal)}</Cell>
+            <LineHoverActions onEdit={onEdit} onDuplicate={onDuplicate} onDelete={onDelete} />
           </>
         )}
       </div>
+      {expanded && (
+        <InlineExpandedEditor
+          line={line}
+          mode={mode}
+          productionMode={productionMode}
+          onClose={onCloseEdit}
+          onSave={onSaveCell}
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
+        />
+      )}
       {openPoPanel && <PoPanel line={line} onChanged={onRefresh} />}
+    </div>
+  );
+}
+
+function LineHoverActions({ onEdit, onDuplicate, onDelete }: { onEdit: () => void; onDuplicate: () => void; onDelete: () => void }) {
+  return (
+    <div className="absolute right-2 top-1 hidden gap-1 rounded-lg bg-white/90 p-1 shadow-sm group-hover:flex">
+      <button
+        onClick={(e) => { e.stopPropagation(); onEdit(); }}
+        className="grid min-h-10 min-w-10 place-items-center rounded-md text-gray-500 hover:bg-gray-100"
+        title="Edit"
+      >
+        <Pencil size={15} />
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
+        className="grid min-h-10 min-w-10 place-items-center rounded-md text-gray-500 hover:bg-gray-100"
+        title="Duplicate"
+      >
+        <Copy size={15} />
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        className="grid min-h-10 min-w-10 place-items-center rounded-md text-red-500 hover:bg-red-50"
+        title="Delete"
+      >
+        <Trash2 size={15} />
+      </button>
+    </div>
+  );
+}
+
+function InlineExpandedEditor({ line, mode, productionMode, onClose, onSave, onDuplicate, onDelete }: {
+  line: BudgetLineItem;
+  mode: ViewMode;
+  productionMode: boolean;
+  onClose: () => void;
+  onSave: (line: BudgetLineItem, patch: Partial<BudgetLineItem>) => Promise<void>;
+  onDuplicate: (line: BudgetLineItem) => void;
+  onDelete: (line: BudgetLineItem) => void;
+}) {
+  const [form, setForm] = useState(line);
+
+  useEffect(() => setForm(line), [line]);
+
+  async function save() {
+    await onSave(line, form);
+    onClose();
+  }
+
+  const rateLabel = productionMode ? "Accrual rate" : mode === "client" ? "Client rate" : "Internal rate";
+  const rateValue = mode === "client" && !productionMode ? form.clientUnitCost : form.internalUnitCost;
+  const updateRate = (value: string) => {
+    const next = Number(value);
+    if (mode === "client" && !productionMode) setForm({ ...form, clientUnitCost: next });
+    else setForm({ ...form, internalUnitCost: next });
+  };
+
+  return (
+    <div className="hidden border-y border-l-4 border-amber-500 bg-white p-4 md:block">
+      <div className="grid gap-3 md:grid-cols-4">
+        <Field className="md:col-span-3" label="Name" value={form.description} onChange={(description) => setForm({ ...form, description })} />
+        <Field label="Markup%" type="number" value={String(form.agencyMarkup)} onChange={(agencyMarkup) => setForm({ ...form, agencyMarkup: Number(agencyMarkup) })} />
+        <Field label="Qty" type="number" value={String(form.quantity)} onChange={(quantity) => setForm({ ...form, quantity: Number(quantity) })} />
+        <Field label="Time" type="number" value={String(form.daysUnits)} onChange={(daysUnits) => setForm({ ...form, daysUnits: Number(daysUnits) })} />
+        <label className="block"><span className="mb-1 block text-xs font-semibold text-gray-500">Unit</span><select value={form.unitLabel} onChange={(e) => setForm({ ...form, unitLabel: e.target.value })} className="min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm">{UNIT_LABELS.map((u) => <option key={u}>{u}</option>)}</select></label>
+        <Field label={rateLabel} type="number" value={String(rateValue)} onChange={updateRate} />
+        <Textarea label="Private memo" value={form.privateMemo ?? ""} onChange={(privateMemo) => setForm({ ...form, privateMemo })} />
+        <div className="grid content-start gap-2">
+          <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.isTaxable} onChange={(e) => setForm({ ...form, isTaxable: e.target.checked })} /> Taxable</label>
+          <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.hasPW} onChange={(e) => setForm({ ...form, hasPW: e.target.checked })} /> P&W (%)</label>
+          <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.hasHealthSafety} onChange={(e) => setForm({ ...form, hasHealthSafety: e.target.checked })} /> Health & Safety</label>
+        </div>
+        <div className="grid gap-2 md:col-span-4 md:grid-cols-3">
+          <Field label="Base hours" type="number" value={String(form.baseHours ?? 10)} onChange={(baseHours) => setForm({ ...form, baseHours: Number(baseHours) })} />
+          <Field label="1.5x" type="number" value={String(form.overtime15x ?? 0)} onChange={(overtime15x) => setForm({ ...form, overtime15x: Number(overtime15x) })} />
+          <Field label="2x" type="number" value={String(form.overtime2x ?? 0)} onChange={(overtime2x) => setForm({ ...form, overtime2x: Number(overtime2x) })} />
+        </div>
+        <Textarea label="Public memo" value={form.publicMemo ?? ""} onChange={(publicMemo) => setForm({ ...form, publicMemo })} />
+      </div>
+      <div className="mt-4 flex min-h-14 items-center gap-2 bg-amber-100 p-2">
+        <button onClick={() => onDelete(line)} className="min-h-11 rounded-lg px-3 text-sm font-medium text-red-600">Delete</button>
+        <div className="flex-1" />
+        <button onClick={onClose} className="min-h-11 rounded-lg px-3 text-sm">Cancel</button>
+        <button onClick={() => onDuplicate(line)} className="grid min-h-11 min-w-11 place-items-center rounded-lg"><Copy size={17} /></button>
+        <button onClick={save} className="min-h-11 rounded-lg bg-gray-900 px-5 text-sm font-medium text-white">Save</button>
+      </div>
     </div>
   );
 }
@@ -600,14 +750,17 @@ function InlineTextCell({ line, field, value, align, onSave, muted }: {
   );
 }
 
-function InlineNumberCell({ line, field, value, onSave, plain, strong, color }: {
+function InlineNumberCell({ line, field, value, displayValue, onSave, plain, strong, color, muted, italic }: {
   line: BudgetLineItem;
   field: EditableLineField;
   value: number;
+  displayValue?: number;
   onSave: (field: EditableLineField, value: number) => Promise<void>;
   plain?: boolean;
   strong?: boolean;
   color?: "blue";
+  muted?: boolean;
+  italic?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(value));
@@ -629,8 +782,8 @@ function InlineNumberCell({ line, field, value, onSave, plain, strong, color }: 
     }
   }
 
-  const colorClass = color === "blue" ? "text-blue-700" : "text-gray-800";
-  const display = plain ? String(value) : formatCurrency(value);
+  const colorClass = color === "blue" ? "text-blue-700" : muted ? "text-gray-500" : "text-gray-800";
+  const display = plain ? String(displayValue ?? value) : formatCurrency(displayValue ?? value);
 
   if (editing) {
     return (
@@ -644,7 +797,7 @@ function InlineNumberCell({ line, field, value, onSave, plain, strong, color }: 
           if (e.key === "Enter") e.currentTarget.blur();
           if (e.key === "Escape") { setDraft(String(value)); setEditing(false); }
         }}
-        className={`w-full border-0 bg-transparent px-4 text-right text-[13px] tabular-nums outline-none shadow-none ${strong ? "font-medium" : ""} ${colorClass}`}
+        className={`w-full border-0 bg-transparent px-4 text-right text-[13px] tabular-nums outline-none shadow-none ${strong ? "font-medium" : ""} ${italic ? "italic" : ""} ${colorClass}`}
       />
     );
   }
@@ -652,7 +805,7 @@ function InlineNumberCell({ line, field, value, onSave, plain, strong, color }: 
   return (
     <button
       onClick={() => setEditing(true)}
-      className={`w-full cursor-text border-0 bg-transparent px-4 text-right text-[13px] tabular-nums group-hover:underline group-hover:decoration-gray-300 group-hover:underline-offset-4 ${strong ? "font-medium" : ""} ${colorClass}`}
+      className={`w-full cursor-text border-0 bg-transparent px-4 text-right text-[13px] tabular-nums group-hover:underline group-hover:decoration-gray-300 group-hover:underline-offset-4 ${strong ? "font-medium" : ""} ${italic ? "italic" : ""} ${colorClass}`}
     >
       {display}
     </button>
@@ -716,7 +869,7 @@ function PoPanel({ line, onChanged }: { line: BudgetLineItem; onChanged: () => P
   }
 
   return (
-    <div className="border-t border-gray-200 bg-gray-50 p-3 md:ml-8 md:p-4">
+    <div className="mb-2 border-t border-gray-200 bg-gray-50 p-3 md:ml-8 md:p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-gray-900">Purchase Orders</h3>
         <button onClick={() => { setAdding(true); setEditing(null); }} className="min-h-11 rounded-lg bg-gray-900 px-3 text-sm font-medium text-white">+ Add PO</button>
@@ -752,13 +905,22 @@ function PoPanel({ line, onChanged }: { line: BudgetLineItem; onChanged: () => P
         <MiniTotal label="Invoiced" value={invoicedTotal} />
         <MiniTotal label="Paid" value={paidPoTotal} />
       </div>
-      <div className="mt-3 rounded-lg bg-white p-3 text-sm">
-        <div className="flex justify-between"><span className="text-gray-500">Accrual held</span><span>{formatCurrency(line.internalSubtotal)}</span></div>
-        <div className="flex justify-between"><span className="text-gray-500">Total committed</span><span>{formatCurrency(line.totalCommitted)}</span></div>
-        <div className="flex justify-between"><span className="text-gray-500">Remaining</span><span>{formatCurrency(line.remainingAccrual)}</span></div>
-        <div className="flex justify-between"><span className="text-gray-500">Client total</span><span>{formatCurrency(line.clientSubtotal)}</span></div>
-        <div className="flex justify-between font-medium"><span className="text-gray-500">Margin</span><span className={marginTextClass(line.marginAmount)}>{formatCurrency(line.marginAmount)}</span></div>
+      <div className="mt-3 max-w-[280px] border-t border-gray-200 pt-2 text-xs">
+        <StackRow label="Accrual held" value={formatCurrency(line.internalSubtotal)} />
+        <StackRow label="Total committed" value={formatCurrency(line.totalCommitted)} />
+        <StackRow label="Remaining" value={formatCurrency(line.remainingAccrual)} valueClass={remainingTextClass({ remainingAccrual: line.remainingAccrual, internalSubtotal: line.internalSubtotal })} />
+        <StackRow label="Client total" value={formatCurrency(line.clientSubtotal)} />
+        <StackRow label="Margin" value={formatCurrency(line.marginAmount)} valueClass="text-emerald-700" />
       </div>
+    </div>
+  );
+}
+
+function StackRow({ label, value, valueClass = "text-gray-900" }: { label: string; value: string; valueClass?: string }) {
+  return (
+    <div className="grid h-8 grid-cols-[120px_120px] items-center gap-4">
+      <span className="text-xs text-gray-500">{label}</span>
+      <span className={`text-right text-xs font-medium tabular-nums ${valueClass}`}>{value}</span>
     </div>
   );
 }
@@ -861,8 +1023,8 @@ function LineEditor({ line, mode, onClose, onSave, onDuplicate, onDelete }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-auto bg-white md:bg-black/30 md:p-6">
-      <div className="min-h-full border-t-4 border-amber-500 bg-white p-4 md:mx-auto md:max-w-4xl md:rounded-lg md:shadow-xl">
+    <div className="fixed inset-0 z-50 overflow-auto bg-white md:hidden">
+      <div className="min-h-full border-t-4 border-amber-500 bg-white p-4">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-semibold text-gray-900">Edit line item</h2>
           <button onClick={onClose} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500"><X size={18} /></button>
@@ -966,7 +1128,7 @@ function RevisionSheet({ revisions, currentId, onClose, onNew, onOpen }: { revis
 
 function InfoPanel({ entity, revisions, currentId, onNewRevision, onOpenRevision }: { entity: Entity; revisions: BudgetRevisionSummary[]; currentId: string; onNewRevision: () => void; onOpenRevision: (id: string) => void }) {
   return (
-    <aside className="hidden w-[260px] shrink-0 border-l border-gray-200 bg-gray-50 p-5 lg:block">
+    <aside className="hidden w-[260px] shrink-0 border-l border-gray-200 bg-gray-50 px-5 pb-5 pt-5 lg:block">
       <div className="rounded-lg bg-white p-4">
         <h3 className="text-[11px] font-medium uppercase text-gray-500">Info</h3>
         <p className="mt-2 text-[15px] font-medium text-gray-900">{entityLabel(entity)}</p>
@@ -978,8 +1140,8 @@ function InfoPanel({ entity, revisions, currentId, onNewRevision, onOpenRevision
           <button onClick={onNewRevision} className="text-xs font-medium text-indigo-600">New</button>
         </div>
         {revisions.map((revision) => (
-          <button key={revision.id} onClick={() => onOpenRevision(revision.id)} className={`mb-1 flex min-h-11 w-full items-center gap-2 rounded-full px-2 text-left text-xs ${revision.id === currentId ? "bg-gray-900 text-white" : "hover:bg-gray-50"}`}>
-            <span className={`rounded-full px-2 py-1 font-semibold ${revision.id === currentId ? "bg-white/15" : "bg-gray-100 text-gray-600"}`}>R{revision.revisionNumber}</span>
+          <button key={revision.id} onClick={() => onOpenRevision(revision.id)} className={`mb-1 flex h-10 w-full items-center gap-2 rounded-full px-2 text-left text-xs ${revision.id === currentId ? "bg-gray-900 text-white" : "hover:bg-gray-50"}`}>
+            <span className={`rounded-full px-2 py-1 font-semibold ${revision.id === currentId ? "bg-white/15 text-white" : "bg-gray-900 text-white"}`}>R{revision.revisionNumber}</span>
             <span className="min-w-0 flex-1 truncate">{revision.label}</span>
             <span className="font-medium tabular-nums">{formatCurrency(revision.clientGrandTotal)}</span>
           </button>
@@ -989,11 +1151,23 @@ function InfoPanel({ entity, revisions, currentId, onNewRevision, onOpenRevision
   );
 }
 
-function Metric({ label, value, strong, danger, good, muted }: { label: string; value: string; strong?: boolean; danger?: boolean; good?: boolean; muted?: boolean }) {
+function Metric({ label, value, strong, danger, good, muted, amber, tooltip }: { label: string; value: string; strong?: boolean; danger?: boolean; good?: boolean; muted?: boolean; amber?: boolean; tooltip?: string }) {
   return (
     <div>
-      <p className="text-[11px] font-medium uppercase text-gray-500">{label}</p>
-      <p className={`mt-1 tabular-nums ${strong ? "text-2xl font-medium" : "text-2xl font-medium"} ${danger ? "text-red-600" : good ? "text-emerald-700" : muted ? "text-gray-400" : "text-gray-900"}`}>{value}</p>
+      <p className="group relative inline-flex items-center gap-1 text-[11px] font-medium uppercase text-gray-500">
+        {label}
+        {tooltip && (
+          <>
+            <button type="button" className="grid min-h-5 min-w-5 place-items-center rounded-full text-gray-400">
+              <Info size={12} />
+            </button>
+            <span className="pointer-events-none absolute left-0 top-6 z-40 hidden max-w-[220px] rounded bg-gray-900 px-2 py-1.5 text-left text-[13px] normal-case leading-snug text-white shadow-lg group-hover:block">
+              {tooltip}
+            </span>
+          </>
+        )}
+      </p>
+      <p className={`mt-1 tabular-nums ${strong ? "text-2xl font-medium" : "text-2xl font-medium"} ${danger ? "text-red-600" : good ? "text-emerald-700" : amber ? "text-amber-600" : muted ? "text-gray-400" : "text-gray-900"}`}>{value}</p>
     </div>
   );
 }
