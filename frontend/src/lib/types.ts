@@ -8,6 +8,7 @@ export type ProductionStatus = "PRE_PRO" | "SHOOT" | "POST" | "WRAPPED" | "PLANN
 export type FreeAgentInvoiceStatus = "NOT_RAISED" | "DRAFT" | "SENT" | "VIEWED" | "PAID" | "OVERDUE";
 export type ProductionDateType = "PPM" | "RECCE" | "FITTING" | "MEETING" | "SHOOT_DAY" | "POST_DELIVERY" | "OTHER";
 export type CrewStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFIRMED" | "RELEASED";
+export type JobFolder = "Briefs" | "Estimates" | "Budgets" | "Contracts" | "Crew Deals" | "Receipts" | "References" | "Selects" | "Delivery";
 
 export interface Company {
   id: string;
@@ -227,6 +228,7 @@ export interface Production {
   value?: string;
   freeAgentInvoiceStatus: FreeAgentInvoiceStatus;
   notes?: string;
+  storagePath?: string;
   quotedValue: number;
   actualSpend: number;
   variance: number;
@@ -241,6 +243,55 @@ export interface Production {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface JobFile {
+  id: string;
+  productionId: string;
+  folder: JobFolder;
+  originalFilename: string;
+  storedFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  linkedBudgetLineId?: string;
+  isReceipt: boolean;
+  receiptVendor?: string;
+  receiptAmount?: number;
+  receiptDate?: string;
+  notes?: string;
+  production?: {
+    id: string;
+    jobCode?: string;
+    clientName?: string;
+    brand?: string;
+    title: string;
+  };
+}
+
+export interface FileTreeFolder {
+  name: JobFolder;
+  files: JobFile[];
+}
+
+export interface FileTree {
+  productionId: string;
+  folders: FileTreeFolder[];
+}
+
+export interface FileListResponse {
+  files: JobFile[];
+  page: number;
+  hasMore: boolean;
+  total: number;
+}
+
+export interface StorageInfo {
+  totalBytes: number;
+  fileCount: number;
+  basePath: string;
+}
+
+export const JOB_FOLDERS: JobFolder[] = ["Briefs", "Estimates", "Budgets", "Contracts", "Crew Deals", "Receipts", "References", "Selects", "Delivery"];
 
 export const PRODUCTION_STATUS_LABELS: Record<ProductionStatus, string> = {
   PRE_PRO: "Pre-pro",
@@ -279,4 +330,12 @@ export const CREW_STATUS_LABELS: Record<CrewStatus, string> = {
 export function formatCurrency(value: number | string | undefined): string {
   const n = typeof value === "string" ? Number(value) : value;
   return `£${Number(n ?? 0).toLocaleString("en-GB", { maximumFractionDigits: 0 })}`;
+}
+
+export function formatBytes(bytes: number | undefined): string {
+  const value = bytes ?? 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }

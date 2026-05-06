@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
+import FileBrowser from "../components/files/FileBrowser";
 import type {
   ActivityNote,
   ActivityTask,
@@ -319,7 +320,7 @@ function ProductionDetail({ productionId, onClose, onSaved, onInvoicePrompt }: {
         {tab === "Dates" && <DatesTab production={production} onReload={reload} />}
         {tab === "Crew" && <CrewTab production={production} onReload={reload} />}
         {tab === "Comms" && <CommsTab production={production} onReload={reload} />}
-        {tab === "Files" && <Placeholder icon={<FileText size={28} />} text="Files will be built in Phase 4." />}
+        {tab === "Files" && <FileBrowser productionId={production.id} />}
         {tab === "Budget" && <Placeholder icon={<Film size={28} />} text="Budget will be built in Phase 5." />}
       </div>
     </div>
