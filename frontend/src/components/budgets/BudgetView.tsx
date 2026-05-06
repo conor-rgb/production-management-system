@@ -72,21 +72,42 @@ function remainingTextClass(lineOrTotal: { remainingAccrual?: number; totalRemai
   if (color === "green") return "text-emerald-700";
   if (color === "amber") return "text-amber-600";
   if (color === "red") return "text-red-600";
-  return "text-gray-500";
+  return "text-gray-300";
 }
 
-function marginColor(value?: number): "green" | "red" | "muted" {
+function marginColor(value?: number): "green" | "red" | "tertiary" {
   const margin = Number(value ?? 0);
   if (margin > 0) return "green";
   if (margin < 0) return "red";
-  return "muted";
+  return "tertiary";
 }
 
 function marginTextClass(value?: number) {
   const color = marginColor(value);
   if (color === "green") return "text-emerald-700";
   if (color === "red") return "text-red-600";
-  return "text-gray-500";
+  return "text-gray-300";
+}
+
+function isZeroValue(value?: number) {
+  return Math.abs(Number(value ?? 0)) < 0.005;
+}
+
+function zeroAwareTextClass(value?: number, nonZeroClass = "text-gray-800") {
+  return isZeroValue(value) ? "text-gray-300" : nonZeroClass;
+}
+
+function nonZeroCurrency(value?: number) {
+  return isZeroValue(value) ? "" : formatCurrency(value);
+}
+
+function nonZeroPercent(value?: number) {
+  return Math.abs(Number(value ?? 0)) < 0.05 ? "" : formatPercent(value);
+}
+
+function remainingSectionCurrency(remaining?: number, accrual?: number) {
+  if (isZeroValue(remaining) && isZeroValue(accrual)) return "";
+  return formatCurrency(remaining);
 }
 
 async function closeLine(line: BudgetLineItem, onSave: (line: BudgetLineItem, patch: Partial<BudgetLineItem>) => Promise<void>, onRefresh: () => Promise<void>) {
@@ -353,31 +374,54 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
   const productionMode = revision.totals.mode === "production";
   const [openPoLineId, setOpenPoLineId] = useState<string | null>(null);
   const internalGrid = productionMode
-    ? "grid-cols-[32px_minmax(260px,1fr)_90px_100px_90px_80px_80px_80px_90px_90px_52px]"
-    : "grid-cols-[32px_minmax(260px,1fr)_90px_90px_60px_60px_70px_80px_100px_110px_100px_90px_48px]";
+    ? "grid-cols-[32px_minmax(200px,1fr)_80px_90px_80px_70px_70px_70px_80px_80px_52px]"
+    : "grid-cols-[32px_minmax(200px,1fr)_80px_80px_60px_60px_70px_70px_80px_90px_80px_80px_52px]";
+  const clientGrid = "grid-cols-[minmax(200px,1fr)_80px_60px_60px_70px_90px]";
+  const headers = mode === "internal"
+    ? (productionMode
+      ? [
+        { label: "", tier: 3 }, { label: "Description", tier: 1 }, { label: "Rate", tier: 2 },
+        { label: "Total", tier: 1 }, { label: "Accrual", tier: 3 }, { label: "POs", tier: 3 },
+        { label: "Inv.", tier: 3 }, { label: "Paid", tier: 3 }, { label: "Left", tier: 1 },
+        { label: "Margin", tier: 1 }, { label: "", tier: 3 },
+      ]
+      : [
+        { label: "", tier: 3 }, { label: "Description", tier: 1 }, { label: "Int. Rate", tier: 3 },
+        { label: "Rate", tier: 2 }, { label: "Qty", tier: 3 }, { label: "Days", tier: 3 },
+        { label: "Unit", tier: 3 }, { label: "Markup", tier: 3 }, { label: "Int. Total", tier: 3 },
+        { label: "Total", tier: 1 }, { label: "Margin", tier: 1 }, { label: "Margin %", tier: 1 },
+        { label: "", tier: 3 },
+      ])
+    : [
+      { label: "Description", tier: 1 }, { label: "Rate", tier: 2 }, { label: "Qty", tier: 3 },
+      { label: "Days", tier: 3 }, { label: "Unit", tier: 3 }, { label: "Total", tier: 1 },
+    ];
 
   return (
     <div className="min-w-full">
-      <div className={`sticky top-0 z-10 hidden h-8 border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-[0.5px] text-gray-500 md:grid ${mode === "internal" ? internalGrid : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
-        {mode === "internal"
-          ? (productionMode
-            ? ["", "Description", "Rate", "Total", "Accrual", "POs", "Inv.", "Paid", "Left", "Margin", ""]
-            : ["", "Description", "Int. Rate", "Rate", "Qty", "Days", "Unit", "Markup", "Int. Total", "Total", "Margin", "Margin %", ""])
-            .map((h) => <div key={h} className="whitespace-nowrap px-4 py-2 text-right first:text-left nth-[2]:text-left">{h}</div>)
-          : ["Description", "Rate", "Qty", "Days", "Unit", "Total"].map((h) => <div key={h} className="whitespace-nowrap px-4 py-2 text-right first:text-left">{h}</div>)}
+      <div className={`sticky top-0 z-10 hidden h-8 border-b border-gray-200 bg-gray-50 uppercase tracking-[0.5px] md:grid ${mode === "internal" ? internalGrid : clientGrid}`}>
+        {headers.map((h, index) => (
+          <div
+            key={`${h.label}-${index}`}
+            className={`whitespace-nowrap px-3 py-2 text-right ${index === 0 || index === 1 && mode === "internal" ? "text-left" : ""} ${h.tier === 1 ? "text-[11px] font-medium text-gray-500" : h.tier === 2 ? "text-[11px] font-normal text-gray-500" : "text-[10px] font-normal text-gray-300"}`}
+          >
+            {h.label}
+          </div>
+        ))}
       </div>
       {revision.sections.map((section) => {
         const sectionTotal = revision.totals.sectionTotals.find((item) => item.sectionId === section.id);
         return (
           <div key={section.id} className="pt-2">
-            <div className="flex min-h-11 items-center gap-3 border-t border-gray-300 bg-[#f8f8f8] px-4 text-[13px] font-semibold text-gray-900">
-              <span>{section.code}) {section.name}</span>
-              <span className="ml-auto text-sm text-gray-600">{formatCurrency(sectionTotal?.clientTotal)}</span>
-              <button onClick={() => onBrowseCatalog(section.code)} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500"><MoreHorizontal size={16} /></button>
+            <div className="flex h-10 items-center gap-3 bg-[#1a1a1f] px-4 text-white">
+              <span className="rounded bg-[#2c2c2a] px-1.5 py-0.5 text-[11px] font-medium text-white">{section.code}</span>
+              <span className="text-[13px] font-medium">{section.name}</span>
+              <span className="ml-auto text-[13px] font-medium tabular-nums text-white">{formatCurrency(sectionTotal?.clientTotal)}</span>
+              <button onClick={() => onBrowseCatalog(section.code)} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-400 hover:text-white"><MoreHorizontal size={16} /></button>
             </div>
             {section.lineItems.length === 0 ? (
-              <div className="flex h-12 items-center px-5 text-left text-[13px] text-gray-400">
-                <span>No line items — <button onClick={() => onBrowseCatalog(section.code)} className="text-indigo-600">Browse catalog</button> or <button onClick={() => onAddLine(section.id)} className="text-indigo-600">+ Add line</button></span>
+              <div className="flex h-10 items-center bg-[#2c2c2a] px-5 text-left text-[13px] text-gray-400">
+                <span>No line items — <button onClick={() => onBrowseCatalog(section.code)} className="text-gray-100">Browse catalog</button> or <button onClick={() => onAddLine(section.id)} className="text-gray-100">+ Add line</button></span>
               </div>
             ) : section.lineItems.map((line) => (
               <LineRow
@@ -400,13 +444,13 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
               />
             ))}
             {section.lineItems.length > 0 && (
-              <div className={`hidden min-h-10 border-b border-gray-100 bg-gray-50 text-xs font-medium text-gray-500 md:grid ${mode === "internal" ? internalGrid : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
+              <div className={`hidden h-8 border-b border-gray-100 bg-gray-50 text-xs font-medium text-gray-500 md:grid ${mode === "internal" ? internalGrid : clientGrid}`}>
                 {mode === "internal" && productionMode ? (
-                  <><div /><div className="py-3 pl-5 pr-4 italic">Section total</div><div /><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.clientTotal)}</div><div className="px-4 py-3 text-right italic tabular-nums">{formatCurrency(sectionTotal?.accrual)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.totalPOs)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.totalInvoiced)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.totalPaid)}</div><div className={`px-4 py-3 text-right tabular-nums ${remainingTextClass({ totalRemaining: sectionTotal?.remaining, totalAccrual: sectionTotal?.accrual })}`}>{formatCurrency(sectionTotal?.remaining)}</div><div className={`px-4 py-3 text-right tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{formatCurrency(sectionTotal?.marginAmount)}</div><div /></>
+                  <><div /><div className="py-2 pl-5 pr-3 text-[11px] italic text-gray-300">Section total</div><div /><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.clientTotal)}</div><div className="px-3 py-2 text-right text-xs font-medium italic tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.accrual)}</div><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.totalPOs)}</div><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.totalInvoiced)}</div><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.totalPaid)}</div><div className={`px-3 py-2 text-right text-xs font-medium tabular-nums ${remainingTextClass({ totalRemaining: sectionTotal?.remaining, totalAccrual: sectionTotal?.accrual })}`}>{remainingSectionCurrency(sectionTotal?.remaining, sectionTotal?.accrual)}</div><div className={`px-3 py-2 text-right text-xs font-medium tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{nonZeroCurrency(sectionTotal?.marginAmount)}</div><div /></>
                 ) : mode === "internal" ? (
-                  <><div /><div className="py-3 pl-5 pr-4 italic">Section total</div><div /><div /><div /><div /><div /><div /><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.internalTotal)}</div><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.clientTotal)}</div><div className={`px-4 py-3 text-right tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{formatCurrency(sectionTotal?.marginAmount)}</div><div className={`px-4 py-3 text-right tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{formatPercent(sectionTotal?.marginPercent)}</div><div /></>
+                  <><div /><div className="py-2 pl-5 pr-3 text-[11px] italic text-gray-300">Section total</div><div /><div /><div /><div /><div /><div /><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.internalTotal)}</div><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.clientTotal)}</div><div className={`px-3 py-2 text-right text-xs font-medium tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{nonZeroCurrency(sectionTotal?.marginAmount)}</div><div className={`px-3 py-2 text-right text-xs font-medium tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{nonZeroPercent(sectionTotal?.marginPercent)}</div><div /></>
                 ) : (
-                  <><div className="py-3 pl-5 pr-4 italic">Section total</div><div /><div /><div /><div /><div className="px-4 py-3 text-right tabular-nums">{formatCurrency(sectionTotal?.clientTotal)}</div></>
+                  <><div className="py-2 pl-5 pr-3 text-[11px] italic text-gray-300">Section total</div><div /><div /><div /><div /><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.clientTotal)}</div></>
                 )}
               </div>
             )}
@@ -471,7 +515,7 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
           {line.publicMemo && <p className="truncate text-xs italic text-gray-500">{line.publicMemo}</p>}
         </div>
         <button onClick={onEdit} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-400"><Pencil size={15} /></button>
-        <p className="text-sm font-semibold tabular-nums">{formatCurrency(line.clientSubtotal)}</p>
+        <p className={`text-sm font-semibold tabular-nums ${zeroAwareTextClass(line.clientSubtotal)}`}>{formatCurrency(line.clientSubtotal)}</p>
       </div>
       {mobileActionsOpen && (
         <div className="absolute right-3 top-10 z-30 overflow-hidden rounded-lg border border-gray-200 bg-white text-sm shadow-lg md:hidden">
@@ -479,7 +523,7 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
           <button onClick={() => { setMobileActionsOpen(false); onDelete(); }} className="flex min-h-11 w-36 items-center gap-2 px-3 text-red-600"><Trash2 size={15} /> Delete</button>
         </div>
       )}
-      <div className={`hidden min-h-12 items-center text-[13px] tabular-nums md:grid ${mode === "internal" ? productionMode ? "grid-cols-[32px_minmax(260px,1fr)_90px_100px_90px_80px_80px_80px_90px_90px_52px]" : "grid-cols-[32px_minmax(260px,1fr)_90px_90px_60px_60px_70px_80px_100px_110px_100px_90px_48px]" : "grid-cols-[minmax(320px,1fr)_100px_60px_60px_70px_110px]"}`}>
+      <div className={`hidden h-10 items-center tabular-nums md:grid ${mode === "internal" ? productionMode ? "grid-cols-[32px_minmax(200px,1fr)_80px_90px_80px_70px_70px_70px_80px_80px_52px]" : "grid-cols-[32px_minmax(200px,1fr)_80px_80px_60px_60px_70px_70px_80px_90px_80px_80px_52px]" : "grid-cols-[minmax(200px,1fr)_80px_60px_60px_70px_90px]"}`}>
         {mode === "internal" ? (
           productionMode ? (
           <>
@@ -491,22 +535,22 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
               {!line.isClosed && line.purchaseOrders.length > 0 && line.purchaseOrders.every((po) => po.status !== "OPEN") && <button onClick={() => closeLine(line, onSaveCell, onRefresh).catch(onSaveError)} className="text-[11px] text-indigo-600">All POs settled — close this line?</button>}
             </div>
             <InlineNumberCell line={line} field="clientUnitCost" value={line.clientUnitCost} onSave={saveCell} />
-            <Cell strong>{formatCurrency(line.clientSubtotal)}</Cell>
-            <InlineNumberCell line={line} field="internalUnitCost" value={line.internalUnitCost} displayValue={line.internalSubtotal} onSave={saveCell} muted italic />
-            <div className="px-4 text-right text-[13px] tabular-nums">
+            <Cell strong color={isZeroValue(line.clientSubtotal) ? "tertiary" : undefined}>{formatCurrency(line.clientSubtotal)}</Cell>
+            <InlineNumberCell line={line} field="internalUnitCost" value={line.internalUnitCost} displayValue={line.internalSubtotal} onSave={saveCell} muted italic small />
+            <div className="px-3 text-right text-xs font-normal tabular-nums">
               {line.purchaseOrders.length > 0 ? (
-                <span className="inline-flex items-center justify-end gap-1.5 text-gray-800">
+                <span className="inline-flex items-center justify-end gap-1.5 text-gray-500">
                   {formatCurrency(line.totalPOs)}
                   <button onClick={onTogglePoPanel} className="grid h-[18px] min-h-[18px] w-[18px] min-w-[18px] place-items-center rounded-full bg-gray-900 text-[11px] leading-none text-white">{line.purchaseOrders.length}</button>
                 </span>
               ) : (
-                <span className="text-gray-500">{formatCurrency(0)}</span>
+                <span className="text-gray-300">{formatCurrency(0)}</span>
               )}
             </div>
-            <Cell>{formatCurrency(line.totalInvoiced)}</Cell>
-            <Cell>{formatCurrency(line.totalPaid)}</Cell>
-            <Cell color={remainingColor({ remainingAccrual: line.remainingAccrual, internalSubtotal: line.internalSubtotal })}>{formatCurrency(line.remainingAccrual)}</Cell>
-            <Cell color={marginColor(line.marginAmount)}>{formatCurrency(line.marginAmount)}</Cell>
+            <Cell className="text-xs font-normal" color={isZeroValue(line.totalInvoiced) ? "tertiary" : "muted"}>{formatCurrency(line.totalInvoiced)}</Cell>
+            <Cell className="text-xs font-normal" color={isZeroValue(line.totalPaid) ? "tertiary" : "muted"}>{formatCurrency(line.totalPaid)}</Cell>
+            <Cell strong color={remainingColor({ remainingAccrual: line.remainingAccrual, internalSubtotal: line.internalSubtotal }) === "muted" ? "tertiary" : remainingColor({ remainingAccrual: line.remainingAccrual, internalSubtotal: line.internalSubtotal })}>{formatCurrency(line.remainingAccrual)}</Cell>
+            <Cell strong color={marginColor(line.marginAmount)}>{formatCurrency(line.marginAmount)}</Cell>
             <div />
             <LineHoverActions onEdit={onEdit} onPo={onTogglePoPanel} onDuplicate={onDuplicate} onDelete={onDelete} />
           </>
@@ -517,12 +561,12 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
               <InlineTextCell line={line} field="description" value={line.description} align="left" onSave={saveCell} />
               {line.publicMemo && <span className="block truncate text-xs italic text-gray-500">{line.publicMemo}</span>}
             </div>
-            <InlineNumberCell line={line} field="internalUnitCost" value={line.internalUnitCost} onSave={saveCell} />
+            <InlineNumberCell line={line} field="internalUnitCost" value={line.internalUnitCost} onSave={saveCell} muted small />
             <InlineNumberCell line={line} field="clientUnitCost" value={line.clientUnitCost} onSave={saveCell} />
             <InlineNumberCell line={line} field="quantity" value={line.quantity} onSave={saveCell} plain />
             <InlineNumberCell line={line} field="daysUnits" value={line.daysUnits} onSave={saveCell} plain />
             <UnitDropdown value={line.unitLabel} onSave={(value) => saveCell("unitLabel", value)} />
-            <Cell>{formatCurrency(line.agencyMarkup)}</Cell><Cell muted>{formatCurrency(line.internalSubtotal)}</Cell><Cell strong>{formatCurrency(line.clientSubtotal)}</Cell><Cell color={marginColor(line.marginAmount)}>{formatCurrency(line.marginAmount)}</Cell><Cell color={marginColor(line.marginAmount)}>{formatPercent(line.marginPercent)}</Cell>
+            <Cell className="text-xs font-normal" color={isZeroValue(line.agencyMarkup) ? "tertiary" : "muted"}>{formatCurrency(line.agencyMarkup)}</Cell><Cell className="text-xs font-normal" color={isZeroValue(line.internalSubtotal) ? "tertiary" : "muted"}>{formatCurrency(line.internalSubtotal)}</Cell><Cell strong color={isZeroValue(line.clientSubtotal) ? "tertiary" : undefined}>{formatCurrency(line.clientSubtotal)}</Cell><Cell strong color={marginColor(line.marginAmount)}>{formatCurrency(line.marginAmount)}</Cell><Cell strong color={marginColor(line.marginAmount)}>{formatPercent(line.marginPercent)}</Cell>
             <div />
             <LineHoverActions onEdit={onEdit} onDuplicate={onDuplicate} onDelete={onDelete} />
           </>
@@ -534,7 +578,7 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
             <InlineNumberCell line={line} field="quantity" value={line.quantity} onSave={saveCell} plain />
             <InlineNumberCell line={line} field="daysUnits" value={line.daysUnits} onSave={saveCell} plain />
             <UnitDropdown value={line.unitLabel} onSave={(value) => saveCell("unitLabel", value)} />
-            <Cell strong>{formatCurrency(line.clientSubtotal)}</Cell>
+            <Cell strong color={isZeroValue(line.clientSubtotal) ? "tertiary" : undefined}>{formatCurrency(line.clientSubtotal)}</Cell>
             <LineHoverActions onEdit={onEdit} onDuplicate={onDuplicate} onDelete={onDelete} />
           </>
         )}
@@ -657,9 +701,9 @@ function InlineExpandedEditor({ line, mode, productionMode, onClose, onSave, onD
   );
 }
 
-function Cell({ children, muted, strong, center, color }: { children: ReactNode; muted?: boolean; strong?: boolean; center?: boolean; color?: "red" | "green" | "blue" | "muted" | "amber" }) {
-  const colorClass = color === "red" ? "text-red-600" : color === "green" ? "text-emerald-700" : color === "blue" ? "text-blue-700" : color === "amber" ? "text-amber-600" : muted || color === "muted" ? "text-gray-500" : "text-gray-800";
-  return <div className={`px-4 ${center ? "text-center" : "text-right"} ${strong ? "font-medium" : ""} ${colorClass}`}>{children}</div>;
+function Cell({ children, muted, strong, center, color, className = "" }: { children: ReactNode; muted?: boolean; strong?: boolean; center?: boolean; color?: "red" | "green" | "blue" | "muted" | "amber" | "tertiary"; className?: string }) {
+  const colorClass = color === "red" ? "text-red-600" : color === "green" ? "text-emerald-700" : color === "blue" ? "text-blue-700" : color === "amber" ? "text-amber-600" : color === "tertiary" ? "text-gray-300" : muted || color === "muted" ? "text-gray-500" : "text-gray-800";
+  return <div className={`px-3 text-[13px] ${center ? "text-center" : "text-right"} ${strong ? "font-medium" : ""} ${colorClass} ${className}`}>{children}</div>;
 }
 
 function InlineTextCell({ line, field, value, align, onSave, muted }: {
@@ -701,7 +745,7 @@ function InlineTextCell({ line, field, value, align, onSave, muted }: {
           if (e.key === "Enter") e.currentTarget.blur();
           if (e.key === "Escape") { setDraft(value); setEditing(false); }
         }}
-        className={`w-full border-0 bg-transparent p-0 text-sm outline-none shadow-none ${muted ? "text-gray-400 line-through" : "text-gray-900"} ${align === "right" ? "text-right" : "text-left"}`}
+        className={`w-full border-0 bg-transparent p-0 text-[13px] font-medium outline-none shadow-none ${muted ? "text-gray-400 line-through" : "text-gray-900"} ${align === "right" ? "text-right" : "text-left"}`}
       />
     );
   }
@@ -709,14 +753,14 @@ function InlineTextCell({ line, field, value, align, onSave, muted }: {
   return (
     <button
       onClick={() => setEditing(true)}
-      className={`block w-full cursor-text truncate border-0 bg-transparent p-0 text-sm group-hover:underline group-hover:decoration-gray-300 group-hover:underline-offset-4 ${muted ? "text-gray-400 line-through" : "text-gray-900"} ${align === "right" ? "text-right" : "text-left"}`}
+      className={`block w-full cursor-text truncate border-0 bg-transparent p-0 text-[13px] font-medium ${muted ? "text-gray-400 line-through" : "text-gray-900"} ${align === "right" ? "text-right" : "text-left"}`}
     >
       {value}
     </button>
   );
 }
 
-function InlineNumberCell({ line, field, value, displayValue, onSave, plain, strong, color, muted, italic }: {
+function InlineNumberCell({ line, field, value, displayValue, onSave, plain, strong, color, muted, italic, small }: {
   line: BudgetLineItem;
   field: EditableLineField;
   value: number;
@@ -727,6 +771,7 @@ function InlineNumberCell({ line, field, value, displayValue, onSave, plain, str
   color?: "blue";
   muted?: boolean;
   italic?: boolean;
+  small?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(value));
@@ -748,8 +793,10 @@ function InlineNumberCell({ line, field, value, displayValue, onSave, plain, str
     }
   }
 
-  const colorClass = color === "blue" ? "text-blue-700" : muted ? "text-gray-500" : "text-gray-800";
-  const display = plain ? String(displayValue ?? value) : formatCurrency(displayValue ?? value);
+  const shownValue = displayValue ?? value;
+  const colorClass = isZeroValue(shownValue) ? "text-gray-300" : color === "blue" ? "text-blue-700" : muted ? "text-gray-500" : "text-gray-800";
+  const display = plain ? String(shownValue) : formatCurrency(shownValue);
+  const textSize = small ? "text-xs" : "text-[13px]";
 
   if (editing) {
     return (
@@ -763,7 +810,7 @@ function InlineNumberCell({ line, field, value, displayValue, onSave, plain, str
           if (e.key === "Enter") e.currentTarget.blur();
           if (e.key === "Escape") { setDraft(String(value)); setEditing(false); }
         }}
-        className={`w-full border-0 bg-transparent px-4 text-right text-[13px] tabular-nums outline-none shadow-none ${strong ? "font-medium" : ""} ${italic ? "italic" : ""} ${colorClass}`}
+        className={`w-full border-0 bg-transparent px-3 text-right ${textSize} tabular-nums outline-none shadow-none ${strong ? "font-medium" : ""} ${italic ? "italic" : ""} ${colorClass}`}
       />
     );
   }
@@ -771,7 +818,7 @@ function InlineNumberCell({ line, field, value, displayValue, onSave, plain, str
   return (
     <button
       onClick={() => setEditing(true)}
-      className={`w-full cursor-text border-0 bg-transparent px-4 text-right text-[13px] tabular-nums group-hover:underline group-hover:decoration-gray-300 group-hover:underline-offset-4 ${strong ? "font-medium" : ""} ${italic ? "italic" : ""} ${colorClass}`}
+      className={`w-full cursor-text border-0 bg-transparent px-3 text-right ${textSize} tabular-nums group-hover:underline group-hover:decoration-gray-300 group-hover:underline-offset-4 ${strong ? "font-medium" : ""} ${italic ? "italic" : ""} ${colorClass}`}
     >
       {display}
     </button>
@@ -797,7 +844,7 @@ function UnitDropdown({ value, onSave }: { value: string; onSave: (value: string
 
   return (
     <div ref={ref} className="relative px-4 text-center">
-      <button onClick={() => setOpen(!open)} className="inline-flex min-h-8 items-center gap-1 border-0 bg-transparent text-xs text-gray-800 hover:underline hover:decoration-gray-300 hover:underline-offset-4">
+      <button onClick={() => setOpen(!open)} className="inline-flex min-h-8 items-center gap-1 border-0 bg-transparent text-xs text-gray-500 hover:underline hover:decoration-gray-300 hover:underline-offset-4">
         {value}<ChevronDown size={12} />
       </button>
       {open && (
@@ -943,13 +990,13 @@ function BottomPrimary({ label, value, valueClass = "text-gray-900", className =
   return (
     <div className={`text-right ${className}`}>
       <TooltipLabel label={label} tooltip={tooltip} />
-      <p className={`text-base font-medium tabular-nums ${valueClass}`}>{value}</p>
+      <p className={`text-lg font-semibold tabular-nums ${valueClass}`}>{value}</p>
     </div>
   );
 }
 
-function BottomSecondary({ label, value, valueClass = "text-gray-600", className = "" }: { label: string; value: string; valueClass?: string; className?: string }) {
-  return <div className={`tabular-nums ${className}`}><span>{label}: </span><span className={valueClass}>{value}</span></div>;
+function BottomSecondary({ label, value, valueClass = "text-gray-400", className = "" }: { label: string; value: string; valueClass?: string; className?: string }) {
+  return <div className={`text-[11px] tabular-nums text-gray-300 ${className}`}><span>{label}: </span><span className={valueClass}>{value}</span></div>;
 }
 
 function TooltipLabel({ label, tooltip }: { label: string; tooltip?: string }) {

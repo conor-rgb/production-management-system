@@ -166,6 +166,7 @@
   - Production row hover actions now include a Purchase Orders button between edit and duplicate, wired to the existing PO panel toggle.
   - The top budget summary bar was removed; summary figures now live in a two-row fixed bottom bar for both bidding and production modes.
   - The production fee percentage control moved into the right info panel Notes card and saves on blur.
+  - Budget table hierarchy was refined for readability: dark section headers, compact 40px rows, stronger primary values, receded secondary values, and near-invisible zero values.
   - PO panel financial stack is compact and left-aligned.
   - Section headers, column headers, empty sections, right panel revisions, and projected margin tooltip were refined.
 
@@ -205,6 +206,7 @@
 - `0b0a5fe fix: polish production budget rows`
 - `fix: compact line item edit form and add PO hover button`
 - `refactor: move budget summary from top bar to bottom bar`
+- `refactor: budget table visual hierarchy and readability`
 
 ## Exact Next Step For Phase 6
 
