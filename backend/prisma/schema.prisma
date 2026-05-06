@@ -7,12 +7,51 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum OpportunityStatus {
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum ContactType {
+  CLIENT
+  SUPPLIER
+}
+
+enum ContactSource {
+  REFERRAL
+  DIRECT
+  SOCIAL
+  PREVIOUS_JOB
+  OTHER
+}
+
+// PmsJobType avoids conflict with legacy "JobType" enum in shared DB
+enum PmsJobType {
+  STILLS
+  MOTION
+  EVENTS
+}
+
+enum OppSource {
+  EMAIL
+  WHATSAPP
+  DM
+  REFERRAL
+  OTHER
+}
+
+// Stage avoids conflict with legacy "OpportunityStage" enum in shared DB
+enum Stage {
   ENQUIRY
-  QUALIFIED
-  PROPOSAL
+  BIDDING
+  QUOTED
   WON
   LOST
+}
+
+enum LostReason {
+  COMPETITOR_WON
+  BUDGET_PULLED
+  NO_RESPONSE
+  TIMING
+  OTHER
 }
 
 enum ProductionStatus {
@@ -25,6 +64,8 @@ enum ProductionStatus {
   CLOSED
 }
 
+// ─── Settings ────────────────────────────────────────────────────────────────
+
 model Settings {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -35,31 +76,115 @@ model Settings {
   @@map("pms_settings")
 }
 
+// ─── Contacts ────────────────────────────────────────────────────────────────
+
+model Company {
+  id            String        @id @default(cuid())
+  name          String
+  website       String?
+  address       String?
+  notes         String?
+  contacts      Contact[]
+  opportunities Opportunity[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("pms_companies")
+}
+
+model Contact {
+  id              String         @id @default(cuid())
+  firstName       String
+  lastName        String?
+  email           String?
+  phone           String?
+  companyId       String?
+  company         Company?       @relation(fields: [companyId], references: [id])
+  jobTitle        String?
+  type            ContactType    @default(CLIENT)
+  source          ContactSource  @default(OTHER)
+  tags            String[]       @default([])
+  lastContactedAt DateTime?
+  notes           String?
+  opportunities   Opportunity[]
+  crewMembers     CrewMember[]
+  emailMessages   EmailMessage[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("pms_contacts")
+}
+
+// ─── Opportunities ────────────────────────────────────────────────────────────
+
 model Opportunity {
-  id          String            @id @default(cuid())
-  title       String
-  description String?
-  status      OpportunityStatus @default(ENQUIRY)
-  value       Decimal?          @db.Decimal(12, 2)
-  clientName  String?
-  contactId   String?
-  contact     Contact?          @relation(fields: [contactId], references: [id])
-  companyId   String?
-  company     Company?          @relation(fields: [companyId], references: [id])
-  productions Production[]
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  id            String            @id @default(cuid())
+  title         String
+  clientName    String?
+  brand         String?
+  jobType       PmsJobType?
+  source        OppSource         @default(OTHER)
+  contactId     String?
+  contact       Contact?          @relation(fields: [contactId], references: [id])
+  companyId     String?
+  company       Company?          @relation(fields: [companyId], references: [id])
+  description   String?
+  value         Decimal?          @db.Decimal(12, 2)
+  stage         Stage             @default(ENQUIRY)
+  followUpDate  DateTime?         @db.Date
+  lostReason    LostReason?
+  lostNote      String?
+  dateReceived  DateTime?         @db.Date
+  notes         String?
+  productions   Production[]
+  activityNotes OpportunityNote[]
+  tasks         OpportunityTask[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   @@map("pms_opportunities")
 }
 
+model OpportunityNote {
+  id            String      @id @default(cuid())
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  body          String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("pms_opportunity_notes")
+}
+
+model OpportunityTask {
+  id            String      @id @default(cuid())
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  body          String
+  completed     Boolean     @default(false)
+  completedAt   DateTime?
+  dueDate       DateTime?   @db.Date
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("pms_opportunity_tasks")
+}
+
+// ─── Productions ─────────────────────────────────────────────────────────────
+
 model Production {
   id            String           @id @default(cuid())
   title         String
+  clientName    String?
+  brand         String?
+  jobType       PmsJobType?
+  jobCode       String?          @unique
   description   String?
   status        ProductionStatus @default(PLANNING)
+  value         Decimal?         @db.Decimal(12, 2)
   opportunityId String?
   opportunity   Opportunity?     @relation(fields: [opportunityId], references: [id])
+  contactId     String?
   dates         ProductionDate[]
   crewMembers   CrewMember[]
   budgets       Budget[]
@@ -81,6 +206,8 @@ model ProductionDate {
 
   @@map("pms_production_dates")
 }
+
+// ─── Crew ─────────────────────────────────────────────────────────────────────
 
 model CrewRole {
   id          String       @id @default(cuid())
@@ -109,6 +236,8 @@ model CrewMember {
 
   @@map("pms_crew_members")
 }
+
+// ─── Budgets ──────────────────────────────────────────────────────────────────
 
 model Budget {
   id           String          @id @default(cuid())
@@ -164,38 +293,7 @@ model LineItemInvoice {
   @@map("pms_line_item_invoices")
 }
 
-model Contact {
-  id            String        @id @default(cuid())
-  firstName     String
-  lastName      String?
-  email         String?
-  phone         String?
-  companyId     String?
-  company       Company?      @relation(fields: [companyId], references: [id])
-  jobTitle      String?
-  notes         String?
-  opportunities Opportunity[]
-  crewMembers   CrewMember[]
-  emailMessages EmailMessage[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-
-  @@map("pms_contacts")
-}
-
-model Company {
-  id            String        @id @default(cuid())
-  name          String
-  website       String?
-  address       String?
-  notes         String?
-  contacts      Contact[]
-  opportunities Opportunity[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-
-  @@map("pms_companies")
-}
+// ─── Files ────────────────────────────────────────────────────────────────────
 
 model JobFile {
   id           String      @id @default(cuid())
@@ -210,9 +308,12 @@ model JobFile {
   @@map("pms_job_files")
 }
 
+// ─── Email ────────────────────────────────────────────────────────────────────
+
 model EmailThread {
   id            String         @id @default(cuid())
   productionId  String?
+  opportunityId String?
   production    Production?    @relation(fields: [productionId], references: [id])
   subject       String
   gmailThreadId String?        @unique
