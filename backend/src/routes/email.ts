@@ -1,30 +1,378 @@
 import { Router, Request, Response } from "express";
+import { EmailProvider } from "@prisma/client";
 import prisma from "../prisma";
+import { encrypt } from "../services/encryptionService";
+import {
+  exchangeGoogleCode,
+  getGoogleOAuthUrl,
+  getIdleStatus,
+  getImapClient,
+  getThread,
+  getThreads,
+  googleOAuthConfigured,
+  sendEmail,
+  startIdleSync,
+  stopIdleSync,
+  syncAccount,
+} from "../services/emailService";
 
 const router = Router();
 
-router.get("/threads", async (_req: Request, res: Response): Promise<void> => {
-  const threads = await prisma.emailThread.findMany({
-    orderBy: { updatedAt: "desc" },
-    include: {
-      production: true,
-      messages: { orderBy: { sentAt: "desc" }, take: 1 },
-      _count: { select: { messages: true } },
-    },
-  });
-  res.json(threads);
+type AccountBody = {
+  label?: string;
+  emailAddress?: string;
+  provider?: string;
+  imapHost?: string;
+  imapPort?: number;
+  smtpHost?: string;
+  smtpPort?: number;
+  username?: string;
+  password?: string;
+  isActive?: boolean;
+  isPrimary?: boolean;
+};
+
+function boolQuery(value: unknown): boolean | undefined {
+  if (value === undefined) return undefined;
+  return value === "true" || value === "1";
+}
+
+function intValue(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function redactAccount<T extends { encryptedPassword?: string | null; encryptedAccessToken?: string | null; encryptedRefreshToken?: string | null }>(account: T) {
+  return {
+    ...account,
+    encryptedPassword: account.encryptedPassword ? "redacted" : null,
+    encryptedAccessToken: account.encryptedAccessToken ? "redacted" : null,
+    encryptedRefreshToken: account.encryptedRefreshToken ? "redacted" : null,
+  };
+}
+
+async function testAccountConnection(accountId: string): Promise<void> {
+  const account = await prisma.emailAccount.findUnique({ where: { id: accountId } });
+  if (!account) throw new Error("Account not found");
+  const client = await getImapClient(account);
+  await client.logout();
+}
+
+router.get("/accounts", async (_req: Request, res: Response): Promise<void> => {
+  const accounts = await prisma.emailAccount.findMany({ orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] });
+  res.json(accounts.map(redactAccount));
 });
 
-router.get("/threads/:id", async (req: Request, res: Response): Promise<void> => {
-  const thread = await prisma.emailThread.findUnique({
-    where: { id: req.params.id },
-    include: {
-      messages: { orderBy: { sentAt: "asc" }, include: { contact: true } },
-      production: true,
+router.post("/accounts", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as AccountBody;
+  if (!body.label || !body.emailAddress || !body.username || !body.password) {
+    res.status(400).json({ error: "Label, email address, username and password are required" });
+    return;
+  }
+  const account = await prisma.emailAccount.create({
+    data: {
+      label: body.label,
+      emailAddress: body.emailAddress.toLowerCase(),
+      provider: EmailProvider.IMAP,
+      imapHost: body.imapHost || "imap.gmail.com",
+      imapPort: intValue(body.imapPort) ?? 993,
+      smtpHost: body.smtpHost || "smtp.gmail.com",
+      smtpPort: intValue(body.smtpPort) ?? 587,
+      username: body.username,
+      encryptedPassword: encrypt(body.password),
+      isPrimary: Boolean(body.isPrimary),
     },
   });
-  if (!thread) { res.status(404).json({ error: "Not found" }); return; }
+  try {
+    await testAccountConnection(account.id);
+  } catch (err) {
+    await prisma.emailAccount.delete({ where: { id: account.id } });
+    res.status(400).json({ error: err instanceof Error ? err.message : "Connection failed" });
+    return;
+  }
+  if (account.isPrimary) {
+    await prisma.emailAccount.updateMany({ where: { id: { not: account.id } }, data: { isPrimary: false } });
+  }
+  syncAccount(account.id).catch((err) => console.error("Initial email sync failed:", err));
+  startIdleSync(account.id).catch((err) => console.error("Initial IDLE sync failed:", err));
+  res.status(201).json(redactAccount(account));
+});
+
+router.patch("/accounts/:accountId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as AccountBody;
+  if (body.isPrimary) {
+    await prisma.emailAccount.updateMany({ where: { id: { not: req.params.accountId } }, data: { isPrimary: false } });
+  }
+  const account = await prisma.emailAccount.update({
+    where: { id: req.params.accountId },
+    data: {
+      label: body.label,
+      isActive: body.isActive,
+      isPrimary: body.isPrimary,
+    },
+  });
+  if (body.isActive === false) stopIdleSync(account.id);
+  if (body.isActive === true) startIdleSync(account.id).catch((err) => console.error("IDLE restart failed:", err));
+  res.json(redactAccount(account));
+});
+
+router.delete("/accounts/:accountId", async (req: Request, res: Response): Promise<void> => {
+  stopIdleSync(req.params.accountId);
+  await prisma.emailAccount.delete({ where: { id: req.params.accountId } });
+  res.status(204).end();
+});
+
+router.post("/accounts/:accountId/sync", async (req: Request, res: Response): Promise<void> => {
+  syncAccount(req.params.accountId).catch((err) => console.error("Manual email sync failed:", err));
+  res.json({ status: "syncing" });
+});
+
+router.post("/accounts/:accountId/test", async (req: Request, res: Response): Promise<void> => {
+  try {
+    await testAccountConnection(req.params.accountId);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err instanceof Error ? err.message : "Connection failed" });
+  }
+});
+
+router.post("/test-imap", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as AccountBody;
+  if (!body.emailAddress || !body.username || !body.password) {
+    res.status(400).json({ success: false, error: "Email address, username and password are required" });
+    return;
+  }
+  const account = await prisma.emailAccount.create({
+    data: {
+      label: "Connection test",
+      emailAddress: body.emailAddress.toLowerCase(),
+      provider: EmailProvider.IMAP,
+      imapHost: body.imapHost || "imap.gmail.com",
+      imapPort: intValue(body.imapPort) ?? 993,
+      smtpHost: body.smtpHost || "smtp.gmail.com",
+      smtpPort: intValue(body.smtpPort) ?? 587,
+      username: body.username,
+      encryptedPassword: encrypt(body.password),
+      isActive: false,
+    },
+  });
+  try {
+    await testAccountConnection(account.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err instanceof Error ? err.message : "Connection failed" });
+  } finally {
+    await prisma.emailAccount.delete({ where: { id: account.id } }).catch(() => undefined);
+  }
+});
+
+router.get("/oauth/google/start", (_req: Request, res: Response): void => {
+  if (!googleOAuthConfigured()) {
+    res.status(503).json({ error: "Google OAuth not configured" });
+    return;
+  }
+  res.json({ url: getGoogleOAuthUrl() });
+});
+
+router.get("/oauth/google/callback", async (req: Request, res: Response): Promise<void> => {
+  if (!googleOAuthConfigured()) {
+    res.status(503).json({ error: "Google OAuth not configured" });
+    return;
+  }
+  const code = typeof req.query.code === "string" ? req.query.code : "";
+  if (!code) {
+    res.status(400).json({ error: "Missing OAuth code" });
+    return;
+  }
+  try {
+    const token = await exchangeGoogleCode(code);
+    const emailAddress = token.emailAddress ?? "gmail-account@unknown.local";
+    const account = await prisma.emailAccount.create({
+      data: {
+        label: "Gmail",
+        emailAddress,
+        provider: EmailProvider.GOOGLE,
+        imapHost: "imap.gmail.com",
+        imapPort: 993,
+        smtpHost: "smtp.gmail.com",
+        smtpPort: 587,
+        username: emailAddress,
+        encryptedAccessToken: encrypt(token.accessToken),
+        encryptedRefreshToken: token.refreshToken ? encrypt(token.refreshToken) : undefined,
+        tokenExpiry: token.expiresAt,
+      },
+    });
+    syncAccount(account.id).catch((err) => console.error("Google initial sync failed:", err));
+    startIdleSync(account.id).catch((err) => console.error("Google IDLE sync failed:", err));
+    res.redirect("/settings?section=email&connected=true");
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Google OAuth failed" });
+  }
+});
+
+router.get("/threads", async (req: Request, res: Response): Promise<void> => {
+  const result = await getThreads({
+    accountId: typeof req.query.accountId === "string" ? req.query.accountId : undefined,
+    isRead: req.query.unread !== undefined ? !boolQuery(req.query.unread) : undefined,
+    isFlagged: boolQuery(req.query.flagged),
+    isArchived: boolQuery(req.query.archived),
+    linkedTo: typeof req.query.linkedTo === "string" ? req.query.linkedTo : undefined,
+    search: typeof req.query.search === "string" ? req.query.search : undefined,
+    page: intValue(req.query.page),
+  });
+  res.json(result);
+});
+
+router.get("/threads/:threadId", async (req: Request, res: Response): Promise<void> => {
+  const thread = await getThread(req.params.threadId);
+  if (!thread) {
+    res.status(404).json({ error: "Thread not found" });
+    return;
+  }
+  await prisma.emailThread.update({ where: { id: req.params.threadId }, data: { isRead: true } });
+  res.json({ ...thread, isRead: true });
+});
+
+router.patch("/threads/:threadId/read", async (req: Request, res: Response): Promise<void> => {
+  const thread = await prisma.emailThread.update({
+    where: { id: req.params.threadId },
+    data: { isRead: Boolean((req.body as { isRead?: boolean }).isRead) },
+  });
   res.json(thread);
+});
+
+router.patch("/threads/:threadId/flag", async (req: Request, res: Response): Promise<void> => {
+  const current = await prisma.emailThread.findUnique({ where: { id: req.params.threadId } });
+  if (!current) {
+    res.status(404).json({ error: "Thread not found" });
+    return;
+  }
+  const thread = await prisma.emailThread.update({ where: { id: current.id }, data: { isFlagged: !current.isFlagged } });
+  res.json(thread);
+});
+
+router.patch("/threads/:threadId/archive", async (req: Request, res: Response): Promise<void> => {
+  const thread = await prisma.emailThread.update({ where: { id: req.params.threadId }, data: { isArchived: true } });
+  res.json(thread);
+});
+
+router.patch("/threads/:threadId/link", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { contactId?: string; opportunityId?: string; productionId?: string };
+  const thread = await prisma.emailThread.update({
+    where: { id: req.params.threadId },
+    data: {
+      linkedContactId: body.contactId ?? null,
+      linkedOpportunityId: body.opportunityId ?? null,
+      linkedProductionId: body.productionId ?? null,
+    },
+  });
+  res.json(thread);
+});
+
+router.patch("/threads/:threadId/unlink", async (req: Request, res: Response): Promise<void> => {
+  const thread = await prisma.emailThread.update({
+    where: { id: req.params.threadId },
+    data: { linkedContactId: null, linkedOpportunityId: null, linkedProductionId: null },
+  });
+  res.json(thread);
+});
+
+router.post("/send", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const message = await sendEmail(req.body);
+    res.status(201).json(message);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to send email" });
+  }
+});
+
+router.post("/threads/:threadId/reply", async (req: Request, res: Response): Promise<void> => {
+  const thread = await getThread(req.params.threadId);
+  if (!thread) {
+    res.status(404).json({ error: "Thread not found" });
+    return;
+  }
+  const body = req.body as { fromAccountId?: string; bodyHtml?: string; replyAll?: boolean };
+  const last = thread.messages[thread.messages.length - 1];
+  const recipients = body.replyAll
+    ? thread.participants.filter((participant) => participant !== thread.account?.emailAddress.toLowerCase())
+    : [last?.fromAddress].filter((value): value is string => Boolean(value));
+  const message = await sendEmail({
+    fromAccountId: body.fromAccountId ?? thread.accountId ?? "",
+    to: recipients,
+    subject: thread.subject.startsWith("Re:") ? thread.subject : `Re: ${thread.subject}`,
+    bodyHtml: body.bodyHtml ?? "",
+    threadId: thread.id,
+    inReplyTo: last?.externalMessageId,
+    linkedOpportunityId: thread.linkedOpportunityId ?? undefined,
+    linkedProductionId: thread.linkedProductionId ?? undefined,
+  });
+  res.status(201).json(message);
+});
+
+router.get("/messages/:messageId/attachment/:index", async (_req: Request, res: Response): Promise<void> => {
+  res.status(501).json({ error: "Attachment streaming from IMAP is not available until raw message storage is added" });
+});
+
+router.get("/templates", async (_req: Request, res: Response): Promise<void> => {
+  res.json(await prisma.emailTemplate.findMany({ orderBy: { name: "asc" } }));
+});
+
+router.post("/templates", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { name?: string; subject?: string; bodyHtml?: string; defaultCc?: string; defaultBcc?: string };
+  const template = await prisma.emailTemplate.create({
+    data: {
+      name: body.name ?? "Untitled",
+      subject: body.subject ?? "",
+      bodyHtml: body.bodyHtml ?? "",
+      defaultCc: body.defaultCc,
+      defaultBcc: body.defaultBcc,
+    },
+  });
+  res.status(201).json(template);
+});
+
+router.patch("/templates/:id", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { name?: string; subject?: string; bodyHtml?: string; defaultCc?: string; defaultBcc?: string };
+  res.json(await prisma.emailTemplate.update({ where: { id: req.params.id }, data: body }));
+});
+
+router.delete("/templates/:id", async (req: Request, res: Response): Promise<void> => {
+  await prisma.emailTemplate.delete({ where: { id: req.params.id } });
+  res.status(204).end();
+});
+
+router.get("/signature", async (_req: Request, res: Response): Promise<void> => {
+  const settings = await prisma.settings.findFirst();
+  res.json({ signature: settings?.defaultEmailSignature ?? "" });
+});
+
+router.patch("/signature", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { signature?: string };
+  const settings = await prisma.settings.findFirst();
+  if (!settings) {
+    res.status(404).json({ error: "Settings not found" });
+    return;
+  }
+  const updated = await prisma.settings.update({ where: { id: settings.id }, data: { defaultEmailSignature: body.signature ?? "" } });
+  res.json({ signature: updated.defaultEmailSignature });
+});
+
+router.get("/unread-count", async (_req: Request, res: Response): Promise<void> => {
+  const count = await prisma.emailThread.count({ where: { isRead: false, isArchived: false, account: { isActive: true } } });
+  res.json({ count });
+});
+
+router.get("/health", async (_req: Request, res: Response): Promise<void> => {
+  const statuses = getIdleStatus();
+  const accounts = await prisma.emailAccount.findMany({ orderBy: { createdAt: "asc" } });
+  res.json(accounts.map((account) => ({
+    accountId: account.id,
+    emailAddress: account.emailAddress,
+    connected: statuses.get(account.id)?.connected ?? false,
+    lastSyncedAt: account.lastSyncedAt,
+  })));
 });
 
 export default router;
