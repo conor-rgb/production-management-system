@@ -1,14 +1,395 @@
-import { TrendingUp } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { api } from "../lib/api";
+import type { OpportunityListItem } from "../lib/types";
+import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, daysOverdue } from "../lib/types";
+import OpportunityModal from "../components/opportunities/OpportunityModal";
+import OpportunityDetail from "../components/opportunities/OpportunityDetail";
+import LostModal from "../components/opportunities/LostModal";
+import { Plus, List, LayoutGrid, AlertCircle, X, TrendingUp } from "lucide-react";
+
+type WonResult = { oppTitle: string; productionId: string; jobCode: string };
 
 export default function Opportunities() {
+  const navigate = useNavigate();
+  const [view, setView] = useState<"kanban" | "list">(() => {
+    return (localStorage.getItem("opp_view") as "kanban" | "list") ?? "kanban";
+  });
+  const [opportunities, setOpportunities] = useState<OpportunityListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<OpportunityListItem | null>(null);
+  const [editOpp, setEditOpp] = useState<OpportunityListItem | null | "new">(null);
+  const [lostTarget, setLostTarget] = useState<string | null>(null);
+  const [wonResult, setWonResult] = useState<WonResult | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api.get<OpportunityListItem[]>("/api/opportunities");
+      setOpportunities(data);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  function changeView(v: "kanban" | "list") {
+    setView(v);
+    localStorage.setItem("opp_view", v);
+  }
+
+  async function moveStage(oppId: string, stage: string) {
+    if (stage === "LOST") {
+      setLostTarget(oppId);
+      return;
+    }
+    if (stage === "WON") {
+      const res = await api.post<{ opportunity: OpportunityListItem; production?: { id: string; jobCode: string } }>(
+        `/api/opportunities/${oppId}/stage`, { stage }
+      );
+      if (res.production) {
+        setWonResult({
+          oppTitle: res.opportunity.title,
+          productionId: res.production.id,
+          jobCode: res.production.jobCode,
+        });
+      }
+      if (selected?.id === oppId) setSelected(null);
+      await load();
+      return;
+    }
+    await api.post(`/api/opportunities/${oppId}/stage`, { stage });
+    await load();
+  }
+
+  function onDragStart(oppId: string) { setDragging(oppId); }
+  function onDragEnd() { setDragging(null); setDragOver(null); }
+
+  function onDragOverColumn(stage: string, e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(stage);
+  }
+
+  function onDropColumn(stage: string) {
+    if (dragging) moveStage(dragging, stage);
+    setDragging(null);
+    setDragOver(null);
+  }
+
+  const byStage = STAGE_ORDER.reduce((acc, s) => {
+    acc[s] = opportunities.filter((o) => o.stage === s);
+    return acc;
+  }, {} as Record<string, OpportunityListItem[]>);
+
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-semibold text-gray-900 mb-2">Opportunities</h1>
-      <p className="text-gray-500 mb-8">Track enquiries and pitches before they become productions.</p>
-      <div className="bg-white rounded-xl border border-gray-200 p-12 flex flex-col items-center text-center text-gray-400">
-        <TrendingUp size={40} className="mb-3 opacity-30" />
-        <p className="text-lg font-medium mb-1">Coming soon</p>
-        <p className="text-sm">Kanban board and list view of opportunities by status will appear here.</p>
+    <div className="flex h-full">
+      {/* Main panel */}
+      <div className="flex flex-col flex-1 min-w-0">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 pt-5 pb-3 border-b border-gray-200 bg-white shrink-0">
+          <h1 className="font-semibold text-gray-900">Opportunities</h1>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+              <button
+                onClick={() => changeView("kanban")}
+                title="Kanban view"
+                className={`px-3 py-1.5 ${view === "kanban" ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-50"}`}
+              >
+                <LayoutGrid size={15} />
+              </button>
+              <button
+                onClick={() => changeView("list")}
+                title="List view"
+                className={`px-3 py-1.5 border-l border-gray-200 ${view === "list" ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-50"}`}
+              >
+                <List size={15} />
+              </button>
+            </div>
+            <button
+              onClick={() => setEditOpp("new")}
+              className="flex items-center gap-1 text-sm bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700"
+            >
+              <Plus size={15} /> New
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
+        ) : opportunities.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-3">
+            <TrendingUp size={36} className="opacity-30" />
+            <p className="text-sm">No opportunities yet.</p>
+            <button onClick={() => setEditOpp("new")} className="text-sm text-indigo-600 hover:underline">Add one</button>
+          </div>
+        ) : view === "kanban" ? (
+          <KanbanView
+            byStage={byStage}
+            selected={selected?.id ?? null}
+            dragging={dragging}
+            dragOver={dragOver}
+            onSelect={setSelected}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onDragOverColumn={onDragOverColumn}
+            onDropColumn={onDropColumn}
+          />
+        ) : (
+          <ListView
+            opportunities={opportunities}
+            selected={selected?.id ?? null}
+            onSelect={setSelected}
+          />
+        )}
+      </div>
+
+      {/* Detail panel — desktop */}
+      {selected && (
+        <div className="hidden md:flex flex-col w-[420px] border-l border-gray-200 bg-white">
+          <OpportunityDetail
+            opportunityId={selected.id}
+            onEdit={() => setEditOpp(selected)}
+            onClose={() => setSelected(null)}
+            onStageChange={moveStage}
+            onRefresh={load}
+          />
+        </div>
+      )}
+
+      {/* Modals */}
+      {editOpp && (
+        <OpportunityModal
+          opp={editOpp === "new" ? null : editOpp}
+          onClose={() => setEditOpp(null)}
+          onSaved={() => { setEditOpp(null); load(); }}
+        />
+      )}
+      {lostTarget && (
+        <LostModal
+          oppId={lostTarget}
+          onClose={() => setLostTarget(null)}
+          onSaved={() => { setLostTarget(null); if (selected?.id === lostTarget) setSelected(null); load(); }}
+        />
+      )}
+      {wonResult && (
+        <WonConfirmation
+          result={wonResult}
+          onClose={() => setWonResult(null)}
+          onGoToProduction={() => { setWonResult(null); navigate("/productions"); }}
+        />
+      )}
+
+      {/* Mobile detail sheet */}
+      {selected && (
+        <div className="md:hidden fixed inset-0 bg-white z-40 overflow-auto">
+          <OpportunityDetail
+            opportunityId={selected.id}
+            onEdit={() => setEditOpp(selected)}
+            onClose={() => setSelected(null)}
+            onStageChange={moveStage}
+            onRefresh={load}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Kanban ───────────────────────────────────────────────────────────────────
+
+interface KanbanProps {
+  byStage: Record<string, OpportunityListItem[]>;
+  selected: string | null;
+  dragging: string | null;
+  dragOver: string | null;
+  onSelect: (opp: OpportunityListItem) => void;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+  onDragOverColumn: (stage: string, e: React.DragEvent) => void;
+  onDropColumn: (stage: string) => void;
+}
+
+function KanbanView({ byStage, selected, dragging, dragOver, onSelect, onDragStart, onDragEnd, onDragOverColumn, onDropColumn }: KanbanProps) {
+  return (
+    <div className="flex-1 flex gap-0 overflow-x-auto p-4">
+      {STAGE_ORDER.map((stage) => {
+        const items = byStage[stage] ?? [];
+        const isOver = dragOver === stage;
+        return (
+          <div
+            key={stage}
+            className="flex-shrink-0 w-60 flex flex-col mr-3 last:mr-0"
+            onDragOver={(e) => onDragOverColumn(stage, e)}
+            onDrop={() => onDropColumn(stage)}
+            onDragLeave={() => {}}
+          >
+            {/* Column header */}
+            <div className="flex items-center justify-between px-3 py-2 rounded-t-xl bg-gray-50 border border-gray-200 border-b-0">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                {STAGE_LABELS[stage]}
+              </span>
+              <span className="text-xs bg-gray-200 text-gray-600 rounded-full px-1.5 py-0.5 font-medium min-w-5 text-center">
+                {items.length}
+              </span>
+            </div>
+            {/* Cards */}
+            <div className={`flex-1 rounded-b-xl border border-gray-200 p-2 space-y-2 min-h-40 transition-colors ${isOver ? "bg-indigo-50 border-indigo-300" : "bg-gray-50"}`}>
+              {items.map((opp) => (
+                <KanbanCard
+                  key={opp.id}
+                  opp={opp}
+                  isSelected={opp.id === selected}
+                  isDragging={opp.id === dragging}
+                  onClick={() => onSelect(opp)}
+                  onDragStart={() => onDragStart(opp.id)}
+                  onDragEnd={onDragEnd}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function KanbanCard({
+  opp, isSelected, isDragging, onClick, onDragStart, onDragEnd,
+}: {
+  opp: OpportunityListItem;
+  isSelected: boolean;
+  isDragging: boolean;
+  onClick: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+}) {
+  const overdue = opp.followUpDate ? daysOverdue(opp.followUpDate) > 0 : false;
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onClick={onClick}
+      className={`bg-white rounded-xl border p-3 cursor-grab active:cursor-grabbing select-none transition-all ${
+        isDragging ? "opacity-40 shadow-lg" : "hover:shadow-sm"
+      } ${isSelected ? "border-indigo-400 ring-1 ring-indigo-400" : "border-gray-200"}`}
+    >
+      <p className="text-sm font-medium text-gray-900 leading-snug truncate">{opp.title}</p>
+      {(opp.clientName || opp.company?.name) && (
+        <p className="text-xs text-gray-500 truncate mt-0.5">
+          {opp.company?.name ?? opp.clientName}{opp.brand ? ` · ${opp.brand}` : ""}
+        </p>
+      )}
+      <div className="flex items-center justify-between mt-2">
+        {opp.value ? (
+          <span className="text-xs font-medium text-gray-700">
+            £{parseFloat(opp.value).toLocaleString()}
+          </span>
+        ) : <span />}
+        {opp.followUpDate && (
+          <span className={`text-xs flex items-center gap-0.5 ${overdue ? "text-red-600 font-medium" : "text-gray-400"}`}>
+            {overdue && <AlertCircle size={11} />}
+            {new Date(opp.followUpDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── List view ────────────────────────────────────────────────────────────────
+
+function ListView({
+  opportunities, selected, onSelect,
+}: {
+  opportunities: OpportunityListItem[];
+  selected: string | null;
+  onSelect: (opp: OpportunityListItem) => void;
+}) {
+  return (
+    <div className="flex-1 overflow-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+          <tr>
+            <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Title</th>
+            <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Client</th>
+            <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Value</th>
+            <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Stage</th>
+            <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">Follow-up</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {opportunities.map((opp) => {
+            const overdue = opp.followUpDate ? daysOverdue(opp.followUpDate) > 0 : false;
+            const isActive = opp.stage !== "WON" && opp.stage !== "LOST";
+            return (
+              <tr
+                key={opp.id}
+                onClick={() => onSelect(opp)}
+                className={`cursor-pointer hover:bg-gray-50 transition-colors ${opp.id === selected ? "bg-indigo-50" : ""}`}
+              >
+                <td className="px-4 py-3 font-medium text-gray-900 max-w-xs truncate">{opp.title}</td>
+                <td className="px-4 py-3 text-gray-500 hidden sm:table-cell truncate max-w-xs">
+                  {opp.company?.name ?? opp.clientName ?? "—"}
+                  {opp.brand ? ` · ${opp.brand}` : ""}
+                </td>
+                <td className="px-4 py-3 text-gray-700 hidden md:table-cell">
+                  {opp.value ? `£${parseFloat(opp.value).toLocaleString()}` : "—"}
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STAGE_COLOURS[opp.stage] ?? "bg-gray-100 text-gray-600"}`}>
+                    {STAGE_LABELS[opp.stage] ?? opp.stage}
+                  </span>
+                </td>
+                <td className="px-4 py-3 hidden lg:table-cell">
+                  {opp.followUpDate ? (
+                    <span className={`text-xs flex items-center gap-1 ${overdue && isActive ? "text-red-600 font-medium" : "text-gray-500"}`}>
+                      {overdue && isActive && <AlertCircle size={11} />}
+                      {new Date(opp.followUpDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    </span>
+                  ) : "—"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Won confirmation ─────────────────────────────────────────────────────────
+
+function WonConfirmation({ result, onClose, onGoToProduction }: {
+  result: WonResult;
+  onClose: () => void;
+  onGoToProduction: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center">
+        <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+          <TrendingUp size={24} className="text-green-600" />
+        </div>
+        <h2 className="font-semibold text-gray-900 text-lg mb-1">Opportunity won!</h2>
+        <p className="text-sm text-gray-500 mb-2">{result.oppTitle}</p>
+        <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 text-sm font-medium px-4 py-2 rounded-xl mb-6">
+          <span className="font-mono text-base">{result.jobCode}</span>
+          <span className="text-xs text-indigo-500">production created</span>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 hover:bg-gray-50">
+            <X size={14} className="inline mr-1" /> Close
+          </button>
+          <button onClick={onGoToProduction} className="flex-1 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-medium hover:bg-gray-700">
+            View Productions
+          </button>
+        </div>
       </div>
     </div>
   );
