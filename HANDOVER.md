@@ -157,6 +157,13 @@
 - All core financial calculations are server-side.
 - PO creation and edit workflows are in the production budget UI.
 - Close-line behavior is implemented.
+- Production budget visual polish is applied:
+  - PO column shows total amount only, with a separate tappable count badge.
+  - Individual row `...` menus were removed; row actions are hover icons on desktop and long-press actions on mobile.
+  - Remaining accrual colors now treat zero accrual / zero committed as neutral gray.
+  - Complex desktop line edits expand inline instead of using a modal overlay; mobile still uses a full-screen bottom sheet.
+  - PO panel financial stack is compact and left-aligned.
+  - Section headers, column headers, empty sections, right panel revisions, and projected margin tooltip were refined.
 
 ### Email
 - Still placeholder.
@@ -191,6 +198,7 @@
 - `6d3ddc0 update budget financial stack logic`
 - `4e2aff4 update budget modes and purchase order UI`
 - `fix: budget margin calculations and colors`
+- `0b0a5fe fix: polish production budget rows`
 
 ## Exact Next Step For Phase 6
 
