@@ -9,6 +9,8 @@ export type FreeAgentInvoiceStatus = "NOT_RAISED" | "DRAFT" | "SENT" | "VIEWED" 
 export type ProductionDateType = "PPM" | "RECCE" | "FITTING" | "MEETING" | "SHOOT_DAY" | "POST_DELIVERY" | "OTHER";
 export type CrewStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFIRMED" | "RELEASED";
 export type JobFolder = "Briefs" | "Estimates" | "Budgets" | "Contracts" | "Crew Deals" | "Receipts" | "References" | "Selects" | "Delivery";
+export type BudgetRevisionStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED" | "SUPERSEDED";
+export type InvoiceStatus = "PENDING" | "PAID";
 
 export interface Company {
   id: string;
@@ -62,6 +64,7 @@ export interface OpportunityListItem {
   createdAt: string;
   updatedAt: string;
   _count?: { activityNotes: number; tasks: number };
+  budgetClientGrandTotal?: number | null;
 }
 
 export interface OpportunityNote {
@@ -291,6 +294,131 @@ export interface StorageInfo {
   basePath: string;
 }
 
+export interface BudgetTotals {
+  internalTotal: number;
+  clientTotal: number;
+  productionFeeAmount: number;
+  clientGrandTotal: number;
+  actualTotal: number;
+  variance: number;
+  overBudget: boolean;
+  sectionTotals: { sectionId: string; code: string; name: string; internalTotal: number; clientTotal: number; actualTotal: number }[];
+}
+
+export interface BudgetLineInvoice {
+  id: string;
+  lineItemId: string;
+  supplierName: string;
+  invoiceNumber?: string;
+  amount: number;
+  dateReceived?: string;
+  status: InvoiceStatus;
+  jobFileId?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BudgetLineItem {
+  id: string;
+  sectionId: string;
+  lineCode: string;
+  description: string;
+  privateMemo?: string;
+  publicMemo?: string;
+  internalUnitCost: number;
+  clientUnitCost: number;
+  quantity: number;
+  daysUnits: number;
+  unitLabel: string;
+  agencyMarkup: number;
+  internalSubtotal: number;
+  clientSubtotal: number;
+  actualCost: number;
+  variance: number;
+  isTaxable: boolean;
+  hasPW: boolean;
+  hasHealthSafety: boolean;
+  baseHours?: number;
+  overtime15x?: number;
+  overtime2x?: number;
+  catalogItemId?: string;
+  order: number;
+  invoices: BudgetLineInvoice[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BudgetSection {
+  id: string;
+  revisionId: string;
+  code: string;
+  name: string;
+  order: number;
+  lineItems: BudgetLineItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BudgetRevision {
+  id: string;
+  budgetId: string;
+  revisionNumber: number;
+  label: string;
+  status: BudgetRevisionStatus;
+  version: number;
+  productionFeePercent: number;
+  notes?: string;
+  sections: BudgetSection[];
+  createdAt: string;
+  updatedAt: string;
+  totals: BudgetTotals;
+}
+
+export interface Budget {
+  id: string;
+  productionId?: string;
+  opportunityId?: string;
+  currentRevisionId?: string;
+  currentRevision?: BudgetRevision;
+  totals?: BudgetTotals;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CatalogItem {
+  id: string;
+  section: string;
+  description: string;
+  defaultInternalUnitCost: number;
+  defaultClientUnitCost: number;
+  defaultUnitLabel: string;
+  defaultQuantity: number;
+  defaultDaysUnits: number;
+  defaultAgencyMarkup: number;
+  notes?: string;
+  isActive: boolean;
+  order: number;
+}
+
+export interface CatalogSection {
+  code: string;
+  name: string;
+  items: CatalogItem[];
+}
+
+export interface BudgetRevisionSummary {
+  id: string;
+  budgetId: string;
+  revisionNumber: number;
+  label: string;
+  status: BudgetRevisionStatus;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  clientGrandTotal: number;
+}
+
 export const JOB_FOLDERS: JobFolder[] = ["Briefs", "Estimates", "Budgets", "Contracts", "Crew Deals", "Receipts", "References", "Selects", "Delivery"];
 
 export const PRODUCTION_STATUS_LABELS: Record<ProductionStatus, string> = {
@@ -329,7 +457,7 @@ export const CREW_STATUS_LABELS: Record<CrewStatus, string> = {
 
 export function formatCurrency(value: number | string | undefined): string {
   const n = typeof value === "string" ? Number(value) : value;
-  return `£${Number(n ?? 0).toLocaleString("en-GB", { maximumFractionDigits: 0 })}`;
+  return `£${Number(n ?? 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function formatBytes(bytes: number | undefined): string {

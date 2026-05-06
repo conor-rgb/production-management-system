@@ -136,6 +136,7 @@ export default function Files() {
       {selectedFile && (
         <PreviewPanel
           file={selectedFile}
+          productionId={selectedFile.productionId}
           folders={JOB_FOLDERS}
           onClose={() => setSelectedFile(null)}
           onPatch={patchSelected}

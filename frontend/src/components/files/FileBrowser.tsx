@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { api } from "../../lib/api";
-import type { FileTree, JobFile, JobFolder } from "../../lib/types";
+import type { Budget, BudgetLineItem, FileTree, JobFile, JobFolder } from "../../lib/types";
 import { formatBytes, JOB_FOLDERS } from "../../lib/types";
 
 interface Props {
@@ -214,6 +214,7 @@ export default function FileBrowser({ productionId }: Props) {
       {selectedFile && (
         <PreviewPanel
           file={selectedFile}
+          productionId={productionId}
           folders={JOB_FOLDERS}
           onClose={() => setSelectedFile(null)}
           onPatch={(patch) => patchFile(selectedFile, patch)}
@@ -279,17 +280,47 @@ function FileRow({ file, selected, onOpen, onRename, onMove, onDelete }: {
   );
 }
 
-export function PreviewPanel({ file, folders, onClose, onPatch }: {
+export function PreviewPanel({ file, productionId, folders, onClose, onPatch }: {
   file: JobFile;
+  productionId?: string;
   folders: JobFolder[];
   onClose: () => void;
   onPatch: (patch: Partial<JobFile>) => Promise<void>;
 }) {
   const [notes, setNotes] = useState(file.notes ?? "");
+  const [budgetLines, setBudgetLines] = useState<{ sectionCode: string; line: BudgetLineItem }[]>([]);
+  const [linkMessage, setLinkMessage] = useState("");
   const isImage = file.mimeType.startsWith("image/");
   const isPdf = file.mimeType === "application/pdf";
 
   useEffect(() => { setNotes(file.notes ?? ""); }, [file]);
+  useEffect(() => {
+    if (!productionId) return;
+    api.get<Budget>(`/api/budgets/production/${productionId}`)
+      .then((budget) => {
+        const lines = budget.currentRevision?.sections.flatMap((section) =>
+          section.lineItems.map((line) => ({ sectionCode: section.code, line }))
+        ) ?? [];
+        setBudgetLines(lines);
+      })
+      .catch(console.error);
+  }, [productionId]);
+
+  async function linkBudgetLine(lineId: string) {
+    await onPatch({ linkedBudgetLineId: lineId || undefined });
+    if (file.isReceipt && lineId && file.receiptAmount) {
+      await api.post(`/api/budgets/lines/${lineId}/invoices`, {
+        supplierName: file.receiptVendor || file.originalFilename,
+        amount: file.receiptAmount / 100,
+        dateReceived: file.receiptDate,
+        status: "PENDING",
+        jobFileId: file.id,
+      });
+      setLinkMessage("Receipt invoice created.");
+    } else {
+      setLinkMessage(lineId ? "Budget line linked." : "Budget line cleared.");
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white md:static md:z-auto md:w-80 md:border-l md:border-gray-200">
@@ -336,12 +367,18 @@ export function PreviewPanel({ file, folders, onClose, onPatch }: {
           <span className="mb-1 block text-sm font-medium text-gray-700">Budget line</span>
           <select
             value={file.linkedBudgetLineId ?? ""}
-            onChange={(e) => onPatch({ linkedBudgetLineId: e.target.value || undefined })}
+            onChange={(e) => linkBudgetLine(e.target.value).catch(console.error)}
             className="min-h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-500"
           >
-            <option value="">Budget lines will appear in Phase 5</option>
+            <option value="">{budgetLines.length ? "No linked budget line" : "No budget lines yet"}</option>
+            {budgetLines.map(({ sectionCode, line }) => (
+              <option key={line.id} value={line.id}>
+                {sectionCode} — {line.lineCode} — {line.description}
+              </option>
+            ))}
           </select>
         </label>
+        {linkMessage && <p className="mt-1 text-xs text-emerald-700">{linkMessage}</p>}
 
         <label className="mt-3 block">
           <span className="mb-1 block text-sm font-medium text-gray-700">Move to folder</span>

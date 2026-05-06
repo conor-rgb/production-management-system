@@ -3,7 +3,7 @@ import prisma from "../prisma";
 import { Stage, LostReason } from "@prisma/client";
 import { generateJobCode } from "../utils/jobCode";
 import { ensureProductionFoldersForRecord } from "../services/fileStorage";
-import { cloneBudgetToProduction } from "../services/budgetService";
+import { calculateRevisionTotals, cloneBudgetToProduction } from "../services/budgetService";
 
 const router = Router();
 
@@ -116,10 +116,17 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
     include: {
       contact: { select: { id: true, firstName: true, lastName: true } },
       company: { select: { id: true, name: true } },
+      budgets: { select: { currentRevisionId: true }, take: 1 },
       _count: { select: { activityNotes: true, tasks: true } },
     },
   });
-  res.json(items);
+  const enriched = await Promise.all(items.map(async (item) => {
+    const currentRevisionId = item.budgets[0]?.currentRevisionId;
+    const budgetClientGrandTotal = currentRevisionId ? (await calculateRevisionTotals(currentRevisionId)).clientGrandTotal : null;
+    const { budgets, ...rest } = item;
+    return { ...rest, budgetClientGrandTotal };
+  }));
+  res.json(enriched);
 });
 
 // GET /api/opportunities/overdue — for dashboard widget

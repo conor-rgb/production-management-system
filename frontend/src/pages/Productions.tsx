@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
+import BudgetView from "../components/budgets/BudgetView";
 import FileBrowser from "../components/files/FileBrowser";
 import type {
   ActivityNote,
@@ -90,6 +91,7 @@ export default function Productions() {
   useEffect(() => { load(); }, [load]);
 
   const selected = productions.find((p) => p.id === selectedId) ?? null;
+  const budgetViewOpen = searchParams.get("view") === "budget" && Boolean(selectedId);
 
   function selectProduction(id: string | null) {
     setSelectedId(id);
@@ -107,6 +109,29 @@ export default function Productions() {
     if (nextValue) next.set("archive", "true");
     else next.delete("archive");
     setSearchParams(next, { replace: true });
+  }
+
+  function openBudget(id: string) {
+    const next = new URLSearchParams(searchParams);
+    next.set("production", id);
+    next.set("view", "budget");
+    setSearchParams(next, { replace: true });
+  }
+
+  function closeBudget() {
+    const next = new URLSearchParams(searchParams);
+    next.delete("view");
+    next.set("tab", "Budget");
+    setSearchParams(next, { replace: true });
+  }
+
+  if (budgetViewOpen && selectedId) {
+    return (
+      <BudgetView
+        entity={{ type: "production", id: selectedId, data: selected ?? undefined }}
+        onBack={closeBudget}
+      />
+    );
   }
 
   return (
@@ -197,6 +222,8 @@ export default function Productions() {
             onClose={() => selectProduction(null)}
             onSaved={load}
             onInvoicePrompt={setInvoicePrompt}
+            initialTab={searchParams.get("tab") === "Budget" ? "Budget" : "Overview"}
+            onOpenBudget={() => openBudget(selected.id)}
           />
         </div>
       )}
@@ -208,6 +235,8 @@ export default function Productions() {
             onClose={() => selectProduction(null)}
             onSaved={load}
             onInvoicePrompt={setInvoicePrompt}
+            initialTab={searchParams.get("tab") === "Budget" ? "Budget" : "Overview"}
+            onOpenBudget={() => openBudget(selected.id)}
           />
         </div>
       )}
@@ -266,20 +295,22 @@ function ProductionForm({ onClose, onSaved }: { onClose: () => void; onSaved: (p
   );
 }
 
-function ProductionDetail({ productionId, onClose, onSaved, onInvoicePrompt }: {
+function ProductionDetail({ productionId, onClose, onSaved, onInvoicePrompt, initialTab = "Overview", onOpenBudget }: {
   productionId: string;
   onClose: () => void;
   onSaved: () => void;
   onInvoicePrompt: (production: Production) => void;
+  initialTab?: Tab;
+  onOpenBudget: () => void;
 }) {
   const [production, setProduction] = useState<Production | null>(null);
-  const [tab, setTab] = useState<Tab>("Overview");
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   const reload = useCallback(() => {
     api.get<Production>(`/api/productions/${productionId}`).then(setProduction).catch(console.error);
   }, [productionId]);
 
-  useEffect(() => { reload(); setTab("Overview"); }, [reload]);
+  useEffect(() => { reload(); setTab(initialTab); }, [reload, initialTab]);
 
   if (!production) return <div className="flex-1 grid place-items-center text-sm text-gray-400">Loading…</div>;
 
@@ -307,7 +338,7 @@ function ProductionDetail({ productionId, onClose, onSaved, onInvoicePrompt }: {
           {TABS.map((item) => (
             <button
               key={item}
-              onClick={() => setTab(item)}
+              onClick={() => item === "Budget" ? onOpenBudget() : setTab(item)}
               className={`min-h-11 shrink-0 rounded-lg px-3 text-sm font-medium ${tab === item ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700"}`}
             >
               {item}
@@ -316,22 +347,23 @@ function ProductionDetail({ productionId, onClose, onSaved, onInvoicePrompt }: {
         </div>
       </div>
       <div className="flex-1 overflow-auto p-4">
-        {tab === "Overview" && <OverviewTab production={production} onSave={saveOverview} onStatusSaved={(p) => { setProduction(p); onSaved(); }} onInvoicePrompt={onInvoicePrompt} />}
+        {tab === "Overview" && <OverviewTab production={production} onSave={saveOverview} onStatusSaved={(p) => { setProduction(p); onSaved(); }} onInvoicePrompt={onInvoicePrompt} onOpenBudget={onOpenBudget} />}
         {tab === "Dates" && <DatesTab production={production} onReload={reload} />}
         {tab === "Crew" && <CrewTab production={production} onReload={reload} />}
         {tab === "Comms" && <CommsTab production={production} onReload={reload} />}
         {tab === "Files" && <FileBrowser productionId={production.id} />}
-        {tab === "Budget" && <Placeholder icon={<Film size={28} />} text="Budget will be built in Phase 5." />}
+        {tab === "Budget" && <ProductionBudgetSummary production={production} onOpenBudget={onOpenBudget} />}
       </div>
     </div>
   );
 }
 
-function OverviewTab({ production, onSave, onStatusSaved, onInvoicePrompt }: {
+function OverviewTab({ production, onSave, onStatusSaved, onInvoicePrompt, onOpenBudget }: {
   production: Production;
   onSave: (data: Partial<Production>) => void;
   onStatusSaved: (production: Production) => void;
   onInvoicePrompt: (production: Production) => void;
+  onOpenBudget: () => void;
 }) {
   const [notes, setNotes] = useState(production.notes ?? "");
   const [invoiceStatus, setInvoiceStatus] = useState<FreeAgentInvoiceStatus>(production.freeAgentInvoiceStatus);
@@ -357,6 +389,17 @@ function OverviewTab({ production, onSave, onStatusSaved, onInvoicePrompt }: {
         <Metric label="Actual" value={formatCurrency(production.actualSpend)} />
         <Metric label="Variance" value={formatCurrency(production.variance)} danger={production.overBudget} />
         <Metric label="Variance %" value={`${production.variancePercent.toFixed(1)}%`} danger={production.overBudget} />
+      </div>
+      <div className="rounded-lg border border-gray-200 p-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="text-sm font-medium text-gray-900">Budget summary</p>
+          <button onClick={onOpenBudget} className="min-h-11 rounded-lg px-2 text-sm font-medium text-indigo-700">Open budget →</button>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <div><p className="text-gray-500">Client estimate</p><p className="mt-1 font-semibold tabular-nums text-gray-900">{formatCurrency(production.quotedValue)}</p></div>
+          <div><p className="text-gray-500">Actual spend</p><p className="mt-1 font-semibold tabular-nums text-gray-900">{formatCurrency(production.actualSpend)}</p></div>
+          <div><p className="text-gray-500">Variance</p><p className={`mt-1 font-semibold tabular-nums ${production.overBudget ? "text-red-600" : "text-emerald-700"}`}>{formatCurrency(production.variance)}</p></div>
+        </div>
       </div>
       <StatusPicker current={production.status} onChange={updateStatus} />
       <Select label="FreeAgent invoice" value={invoiceStatus} options={INVOICE_STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, " ").toLowerCase() }))} onChange={(value) => setInvoiceStatus(value as FreeAgentInvoiceStatus)} />
@@ -387,6 +430,36 @@ function StatusPicker({ current, onChange }: { current: ProductionStatus; onChan
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ProductionBudgetSummary({ production, onOpenBudget }: { production: Production; onOpenBudget: () => void }) {
+  return (
+    <div className="space-y-4">
+      {production.overBudget && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+          This production is over budget by {formatCurrency(production.variance)}.
+        </div>
+      )}
+      <div className="rounded-lg border border-gray-200 p-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Client estimate</p>
+        <p className="mt-2 text-3xl font-semibold tabular-nums text-gray-900">{formatCurrency(production.quotedValue)}</p>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <Metric label="Actual spend" value={formatCurrency(production.actualSpend)} />
+          <Metric label="Variance" value={formatCurrency(production.variance)} danger={production.overBudget} />
+        </div>
+        <p className="mt-3 text-xs text-gray-500">
+          Current budget figures are calculated from the active budget revision.
+        </p>
+      </div>
+      <button onClick={onOpenBudget} className="min-h-11 w-full rounded-lg bg-gray-900 px-4 text-sm font-medium text-white">
+        Open full budget →
+      </button>
+      <div className="rounded-lg border border-gray-200 p-3">
+        <p className="mb-2 text-sm font-medium text-gray-900">Recent line items</p>
+        <p className="text-sm text-gray-400">Open the full budget to manage line items, revisions, invoices, and exports.</p>
       </div>
     </div>
   );
@@ -643,10 +716,6 @@ function Metric({ label, value, danger }: { label: string; value: string; danger
       <p className={`mt-1 text-lg font-semibold ${danger ? "text-red-600" : "text-gray-900"}`}>{value}</p>
     </div>
   );
-}
-
-function Placeholder({ icon, text }: { icon: ReactNode; text: string }) {
-  return <div className="grid min-h-56 place-items-center rounded-lg border border-gray-200 text-center text-sm text-gray-400"><div>{icon}<p className="mt-2">{text}</p></div></div>;
 }
 
 function Empty({ text }: { text: string }) {

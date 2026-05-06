@@ -13,16 +13,20 @@ interface Props {
   onClose: () => void;
   onStageChange: (id: string, stage: string) => void;
   onRefresh: () => void;
+  initialTab?: DetailTab;
+  onOpenBudget: () => void;
 }
 
 type AddMode = "note" | "task" | null;
+type DetailTab = "Overview" | "Comms" | "Budget";
 
 type TimelineItem =
   | { kind: "note"; item: OpportunityNote }
   | { kind: "task"; item: OpportunityTask };
 
-export default function OpportunityDetail({ opportunityId, onEdit, onClose, onStageChange, onRefresh }: Props) {
+export default function OpportunityDetail({ opportunityId, onEdit, onClose, onStageChange, onRefresh, initialTab = "Overview", onOpenBudget }: Props) {
   const [opp, setOpp] = useState<Opportunity | null>(null);
+  const [tab, setTab] = useState<DetailTab>(initialTab);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [addMode, setAddMode] = useState<AddMode>(null);
@@ -35,7 +39,7 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
     api.get<Opportunity>(`/api/opportunities/${opportunityId}`).then(setOpp).catch(console.error);
   }
 
-  useEffect(() => { reload(); }, [opportunityId]);
+  useEffect(() => { reload(); setTab(initialTab); }, [opportunityId, initialTab]);
   useEffect(() => {
     if (addMode && addRef.current) addRef.current.focus();
   }, [addMode]);
@@ -134,8 +138,21 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
       </div>
 
       <div className="flex-1 overflow-auto">
-        {/* Meta section */}
-        <div className="p-4 space-y-3 border-b border-gray-100">
+        <div className="border-b border-gray-100 px-4 pt-3">
+          <div className="flex gap-2 overflow-x-auto pb-3">
+            {(["Overview", "Comms", "Budget"] as DetailTab[]).map((item) => (
+              <button
+                key={item}
+                onClick={() => item === "Budget" ? onOpenBudget() : setTab(item)}
+                className={`min-h-11 shrink-0 rounded-lg px-3 text-sm font-medium ${tab === item ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700"}`}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {tab === "Overview" && <div className="p-4 space-y-3 border-b border-gray-100">
           {/* Stage control */}
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative">
@@ -226,10 +243,10 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
               ))}
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Comms timeline */}
-        <div className="p-4">
+        {tab === "Comms" && <div className="p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Activity</p>
             <div className="flex gap-1">
@@ -320,7 +337,20 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
               )}
             </div>
           )}
-        </div>
+        </div>}
+
+        {tab === "Budget" && (
+          <div className="p-4">
+            <div className="rounded-xl border border-gray-200 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Estimate</p>
+              <p className="mt-2 text-2xl font-semibold text-gray-900">{opp.value ? `£${parseFloat(opp.value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "No value yet"}</p>
+              <p className="mt-2 text-sm text-gray-500">Budget figures are managed in the full-screen bid view.</p>
+            </div>
+            <button onClick={onOpenBudget} className="mt-4 min-h-11 w-full rounded-lg bg-gray-900 px-4 text-sm font-medium text-white">
+              Open full budget →
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

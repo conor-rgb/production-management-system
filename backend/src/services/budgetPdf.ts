@@ -14,7 +14,7 @@ function statusLabel(status: BudgetRevisionStatus) {
 
 async function renderPdf(revision: FullRevision, mode: "client" | "internal") {
   const chunks: Buffer[] = [];
-  const doc = new PDFDocument({ margin: 42, size: "A4" });
+  const doc = new PDFDocument({ margin: 42, size: "A4", bufferPages: true });
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
 
   const totals = calculateRevisionTotalsFromRevision(revision);

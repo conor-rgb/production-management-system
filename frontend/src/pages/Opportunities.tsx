@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import type { OpportunityListItem } from "../lib/types";
-import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, daysOverdue } from "../lib/types";
+import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, daysOverdue, formatCurrency } from "../lib/types";
+import BudgetView from "../components/budgets/BudgetView";
 import OpportunityModal from "../components/opportunities/OpportunityModal";
 import OpportunityDetail from "../components/opportunities/OpportunityDetail";
 import LostModal from "../components/opportunities/LostModal";
@@ -24,6 +25,7 @@ export default function Opportunities() {
   const [pendingWon, setPendingWon] = useState<PendingWon | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
+  const budgetViewOpen = searchParams.get("view") === "budget" && Boolean(searchParams.get("opportunity"));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -90,10 +92,32 @@ export default function Opportunities() {
     setDragOver(null);
   }
 
+  function openBudget(opportunityId: string) {
+    setSearchParams({ opportunity: opportunityId, view: "budget" }, { replace: true });
+  }
+
+  function closeBudget() {
+    if (selected) setSearchParams({ opportunity: selected.id, tab: "Budget" }, { replace: true });
+    else setSearchParams({}, { replace: true });
+  }
+
   const byStage = STAGE_ORDER.reduce((acc, s) => {
     acc[s] = opportunities.filter((o) => o.stage === s);
     return acc;
   }, {} as Record<string, OpportunityListItem[]>);
+
+  if (budgetViewOpen) {
+    const opportunityId = searchParams.get("opportunity");
+    if (!opportunityId || (!selected && loading)) {
+      return <div className="grid h-full place-items-center text-sm text-gray-400">Loading budget…</div>;
+    }
+    return (
+      <BudgetView
+        entity={{ type: "opportunity", id: opportunityId, data: selected ?? undefined }}
+        onBack={closeBudget}
+      />
+    );
+  }
 
   return (
     <div className="flex h-full">
@@ -167,6 +191,8 @@ export default function Opportunities() {
             onClose={() => { setSelected(null); setSearchParams({}, { replace: true }); }}
             onStageChange={moveStage}
             onRefresh={load}
+            initialTab={searchParams.get("tab") === "Budget" ? "Budget" : "Overview"}
+            onOpenBudget={() => openBudget(selected.id)}
           />
         </div>
       )}
@@ -202,6 +228,8 @@ export default function Opportunities() {
             onClose={() => { setSelected(null); setSearchParams({}, { replace: true }); }}
             onStageChange={moveStage}
             onRefresh={load}
+            initialTab={searchParams.get("tab") === "Budget" ? "Budget" : "Overview"}
+            onOpenBudget={() => openBudget(selected.id)}
           />
         </div>
       )}
@@ -296,7 +324,11 @@ function KanbanCard({
         </p>
       )}
       <div className="flex items-center justify-between mt-2">
-        {opp.value ? (
+        {opp.budgetClientGrandTotal ? (
+          <span className="text-xs font-medium text-indigo-700">
+            {formatCurrency(opp.budgetClientGrandTotal)}
+          </span>
+        ) : opp.value ? (
           <span className="text-xs font-medium text-gray-700">
             £{parseFloat(opp.value).toLocaleString()}
           </span>
@@ -349,7 +381,7 @@ function ListView({
                   {opp.brand ? ` · ${opp.brand}` : ""}
                 </td>
                 <td className="px-4 py-3 text-gray-700 hidden md:table-cell">
-                  {opp.value ? `£${parseFloat(opp.value).toLocaleString()}` : "—"}
+                  {opp.budgetClientGrandTotal ? formatCurrency(opp.budgetClientGrandTotal) : opp.value ? `£${parseFloat(opp.value).toLocaleString()}` : "—"}
                 </td>
                 <td className="px-4 py-3">
                   <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STAGE_COLOURS[opp.stage] ?? "bg-gray-100 text-gray-600"}`}>
