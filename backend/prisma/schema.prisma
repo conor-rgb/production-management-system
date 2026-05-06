@@ -113,6 +113,12 @@ enum InvoiceStatus {
   PAID
 }
 
+enum PurchaseOrderStatus {
+  OPEN
+  INVOICED
+  PAID
+}
+
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 model Settings {
@@ -238,6 +244,7 @@ model Production {
   freeAgentInvoiceStatus FreeAgentInvoiceStatus @default(NOT_RAISED)
   notes                  String?
   storagePath            String?
+  lastPoSequence         Int                    @default(0)
   opportunityId          String?
   opportunity            Opportunity?           @relation(fields: [opportunityId], references: [id])
   contactId              String?
@@ -245,6 +252,7 @@ model Production {
   crewMembers            CrewMember[]
   budgets                Budget[]
   jobFiles               JobFile[]
+  purchaseOrders         PurchaseOrder[]
   emailThreads           EmailThread[]
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
@@ -384,8 +392,11 @@ model BudgetLineItem {
   agencyMarkup         Float             @default(0)
   internalSubtotal     Float             @default(0)
   clientSubtotal       Float             @default(0)
+  marginAmount         Float             @default(0)
+  marginPercent        Float             @default(0)
   actualCost           Float             @default(0)
   variance             Float             @default(0)
+  isClosed             Boolean           @default(false)
   isTaxable            Boolean           @default(false)
   hasPW                Boolean           @default(false)
   hasHealthSafety      Boolean           @default(false)
@@ -396,11 +407,38 @@ model BudgetLineItem {
   catalogItem          CatalogItem?      @relation(fields: [catalogItemId], references: [id])
   order                Int               @default(0)
   invoices             LineItemInvoice[]
+  purchaseOrders       PurchaseOrder[]
   jobFiles             JobFile[]
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
   @@map("pms_budget_line_items")
+}
+
+model PurchaseOrder {
+  id            String              @id @default(cuid())
+  lineItemId    String
+  lineItem      BudgetLineItem      @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+  productionId  String
+  production    Production          @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  poNumber      String
+  supplierName  String
+  description   String?
+  agreedAmount  Float
+  status        PurchaseOrderStatus @default(OPEN)
+  dateRaised    DateTime            @default(now()) @db.Date
+  invoiceNumber String?
+  invoiceDate   DateTime?           @db.Date
+  invoiceFileId String?
+  invoiceFile   JobFile?            @relation(fields: [invoiceFileId], references: [id])
+  notes         String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@unique([productionId, poNumber])
+  @@index([lineItemId])
+  @@index([productionId])
+  @@map("pms_purchase_orders")
 }
 
 model LineItemInvoice {
@@ -486,6 +524,7 @@ model JobFile {
   receiptDate        DateTime?       @db.Date
   notes              String?
   invoices           LineItemInvoice[]
+  purchaseOrderInvoices PurchaseOrder[]
 
   @@index([productionId, folder])
   @@index([originalFilename])
