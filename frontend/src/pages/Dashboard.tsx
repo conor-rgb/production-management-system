@@ -1,8 +1,18 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
-import { STAGE_LABELS, STAGE_COLOURS, ACTIVE_STAGES, daysOverdue } from "../lib/types";
-import { AlertCircle, TrendingUp, Film, Users, Building2 } from "lucide-react";
+import {
+  ACTIVE_STAGES,
+  DATE_TYPE_LABELS,
+  PRODUCTION_STATUS_LABELS,
+  STAGE_COLOURS,
+  STAGE_LABELS,
+  daysOverdue,
+  formatCurrency,
+  type ProductionDate,
+  type ProductionStatus,
+} from "../lib/types";
+import { AlertCircle, TrendingUp, Film, Users, Building2, Calendar } from "lucide-react";
 
 interface OverdueItem {
   id: string;
@@ -21,6 +31,18 @@ interface DashboardData {
   companyCount: number;
   stageCounts: Record<string, number>;
   overdueOpportunities: OverdueItem[];
+  todaysAgenda: ProductionDate[];
+  activeProductions: {
+    id: string;
+    title: string;
+    jobCode?: string;
+    clientName?: string;
+    brand?: string;
+    status: ProductionStatus;
+    variance: number;
+    overBudget: boolean;
+    nextDate?: ProductionDate;
+  }[];
 }
 
 export default function Dashboard() {
@@ -58,6 +80,39 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+              <Calendar size={15} /> Today's agenda
+            </h2>
+            <button onClick={() => navigate("/productions")} className="text-xs text-indigo-600 hover:underline">View productions</button>
+          </div>
+          {data ? (
+            data.todaysAgenda.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">No production dates today</p>
+            ) : (
+              <div className="space-y-2">
+                {data.todaysAgenda.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => navigate(`/productions?production=${item.production?.id}`)}
+                    className="w-full rounded-xl p-2.5 text-left hover:bg-gray-50"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-sm font-medium text-gray-900">{DATE_TYPE_LABELS[item.dateType]} · {item.production?.title}</p>
+                      <span className="shrink-0 text-xs text-gray-500">{item.time || "All day"}</span>
+                    </div>
+                    <p className="truncate text-xs text-gray-500">{item.location || item.production?.clientName || ""}</p>
+                    {item.zoomLink && <span className="mt-1 inline-block text-xs font-medium text-indigo-600">Zoom</span>}
+                  </button>
+                ))}
+              </div>
+            )
+          ) : (
+            <div className="h-24 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
+          )}
+        </div>
+
         {/* Pipeline by stage */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="flex items-center justify-between mb-4">
@@ -101,6 +156,41 @@ export default function Dashboard() {
           )}
         </div>
 
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-gray-900">Active productions</h2>
+            <button onClick={() => navigate("/productions")} className="text-xs text-indigo-600 hover:underline">View all</button>
+          </div>
+          {data ? (
+            data.activeProductions.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">No active productions</p>
+            ) : (
+              <div className="space-y-2">
+                {data.activeProductions.slice(0, 5).map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => navigate(`/productions?production=${item.id}`)}
+                    className="w-full rounded-xl p-2.5 text-left hover:bg-gray-50"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-sm font-medium text-gray-900">
+                        <span className="font-mono text-xs text-indigo-700">{item.jobCode}</span> {item.clientName ?? item.title}
+                      </p>
+                      <span className="shrink-0 text-xs text-gray-500">{PRODUCTION_STATUS_LABELS[item.status]}</span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+                      <span className="truncate text-gray-500">{item.nextDate ? `${DATE_TYPE_LABELS[item.nextDate.dateType]} · ${new Date(item.nextDate.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : "No next date"}</span>
+                      <span className={`font-semibold ${item.overBudget ? "text-red-600" : "text-emerald-700"}`}>{formatCurrency(item.variance)}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )
+          ) : (
+            <div className="h-24 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
+          )}
+        </div>
+
         {/* Overdue follow-ups */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="flex items-center justify-between mb-4">
@@ -129,7 +219,7 @@ export default function Dashboard() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => navigate("/opportunities")}
+                      onClick={() => navigate(`/opportunities?opportunity=${item.id}`)}
                       className="w-full flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-gray-50 text-left transition-colors"
                     >
                       <AlertCircle size={14} className="text-red-400 mt-0.5 shrink-0" />

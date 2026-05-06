@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import type { OpportunityListItem } from "../lib/types";
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, daysOverdue } from "../lib/types";
@@ -12,6 +12,7 @@ type WonResult = { oppTitle: string; productionId: string; jobCode: string };
 
 export default function Opportunities() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [view, setView] = useState<"kanban" | "list">(() => {
     return (localStorage.getItem("opp_view") as "kanban" | "list") ?? "kanban";
   });
@@ -29,10 +30,15 @@ export default function Opportunities() {
     try {
       const data = await api.get<OpportunityListItem[]>("/api/opportunities");
       setOpportunities(data);
+      const requested = searchParams.get("opportunity");
+      if (requested) {
+        const match = data.find((item) => item.id === requested);
+        if (match) setSelected(match);
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -109,7 +115,7 @@ export default function Opportunities() {
               </button>
             </div>
             <button
-              onClick={() => setEditOpp("new")}
+            onClick={() => setEditOpp("new")}
               className="flex items-center gap-1 text-sm bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700"
             >
               <Plus size={15} /> New
@@ -132,7 +138,7 @@ export default function Opportunities() {
             selected={selected?.id ?? null}
             dragging={dragging}
             dragOver={dragOver}
-            onSelect={setSelected}
+            onSelect={(opp) => { setSelected(opp); setSearchParams({ opportunity: opp.id }, { replace: true }); }}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
             onDragOverColumn={onDragOverColumn}
@@ -142,7 +148,7 @@ export default function Opportunities() {
           <ListView
             opportunities={opportunities}
             selected={selected?.id ?? null}
-            onSelect={setSelected}
+            onSelect={(opp) => { setSelected(opp); setSearchParams({ opportunity: opp.id }, { replace: true }); }}
           />
         )}
       </div>
@@ -153,7 +159,7 @@ export default function Opportunities() {
           <OpportunityDetail
             opportunityId={selected.id}
             onEdit={() => setEditOpp(selected)}
-            onClose={() => setSelected(null)}
+            onClose={() => { setSelected(null); setSearchParams({}, { replace: true }); }}
             onStageChange={moveStage}
             onRefresh={load}
           />
@@ -189,7 +195,7 @@ export default function Opportunities() {
           <OpportunityDetail
             opportunityId={selected.id}
             onEdit={() => setEditOpp(selected)}
-            onClose={() => setSelected(null)}
+            onClose={() => { setSelected(null); setSearchParams({}, { replace: true }); }}
             onStageChange={moveStage}
             onRefresh={load}
           />
