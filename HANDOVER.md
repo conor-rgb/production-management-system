@@ -164,6 +164,8 @@
   - Complex desktop line edits expand inline instead of using a modal overlay; mobile still uses a full-screen bottom sheet.
   - Inline and mobile line item edit forms were tightened with 36px fields, 56px memo areas, 10px row gaps, and a 44px action bar.
   - Production row hover actions now include a Purchase Orders button between edit and duplicate, wired to the existing PO panel toggle.
+  - The top budget summary bar was removed; summary figures now live in a two-row fixed bottom bar for both bidding and production modes.
+  - The production fee percentage control moved into the right info panel Notes card and saves on blur.
   - PO panel financial stack is compact and left-aligned.
   - Section headers, column headers, empty sections, right panel revisions, and projected margin tooltip were refined.
 
@@ -202,6 +204,7 @@
 - `fix: budget margin calculations and colors`
 - `0b0a5fe fix: polish production budget rows`
 - `fix: compact line item edit form and add PO hover button`
+- `refactor: move budget summary from top bar to bottom bar`
 
 ## Exact Next Step For Phase 6
 

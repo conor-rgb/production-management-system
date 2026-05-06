@@ -89,15 +89,6 @@ function marginTextClass(value?: number) {
   return "text-gray-500";
 }
 
-function marginMetricState(value?: number) {
-  const color = marginColor(value);
-  return {
-    good: color === "green",
-    danger: color === "red",
-    muted: color === "muted",
-  };
-}
-
 async function closeLine(line: BudgetLineItem, onSave: (line: BudgetLineItem, patch: Partial<BudgetLineItem>) => Promise<void>, onRefresh: () => Promise<void>) {
   const hasOpenPos = line.purchaseOrders.some((po) => po.status === "OPEN");
   if (hasOpenPos) {
@@ -191,6 +182,13 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
     await load();
   }
 
+  async function updateProductionFee(productionFeePercent: number) {
+    if (!revision) return;
+    const updated = await api.patch<BudgetRevision>(`/api/budgets/revisions/${revision.id}`, { productionFeePercent });
+    setRevision(updated);
+    if (budget?.id) setRevisions(await api.get<BudgetRevisionSummary[]>(`/api/budgets/${budget.id}/revisions`));
+  }
+
   async function exportPdf(exportMode: "client" | "internal") {
     if (!revision) return;
     await api.post(`/api/budgets/revisions/${revision.id}/export-pdf`, { mode: exportMode });
@@ -257,38 +255,7 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
         </button>
       </div>
 
-      <div className={`sticky top-0 z-20 grid shrink-0 grid-cols-2 gap-4 border-b border-gray-200 bg-white px-5 py-5 ${isProduction ? "md:grid-cols-5" : "md:grid-cols-4"}`}>
-        {isProduction ? (
-          <>
-            <Metric label="Client value" value={formatCurrency(totals?.clientGrandTotal)} strong />
-            <Metric label="Accrual held" value={formatCurrency(totals?.totalAccrual)} />
-            <Metric label="Committed" value={formatCurrency(totals?.totalCommitted)} />
-            <Metric
-              label="Remaining"
-              value={formatCurrency(totals?.totalRemaining)}
-              danger={remainingColor({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual }) === "red"}
-              good={remainingColor({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual }) === "green"}
-              amber={remainingColor({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual }) === "amber"}
-              muted={remainingColor({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual }) === "muted"}
-            />
-            <Metric
-              label="Projected margin"
-              value={`${formatCurrency(totals?.projectedMargin)} (${formatPercent(totals?.projectedMarginPercent)})`}
-              tooltip="Client value minus accrual held. Assumes all spend stays within accrual."
-              {...marginMetricState(totals?.projectedMargin)}
-            />
-          </>
-        ) : (
-          <>
-            <Metric label="Client estimate" value={formatCurrency(totals?.clientGrandTotal)} strong />
-            <Metric label="Internal cost" value={formatCurrency(totals?.internalTotal)} />
-            <Metric label="Total margin" value={formatCurrency(totals?.totalMarginAmount)} {...marginMetricState(totals?.totalMarginAmount)} />
-            <Metric label="Margin %" value={formatPercent(totals?.totalMarginPercent)} {...marginMetricState(totals?.totalMarginPercent)} />
-          </>
-        )}
-      </div>
-
-      <div className="hidden shrink-0 border-b border-gray-100 px-4 py-2 md:block">
+      <div className="hidden h-8 shrink-0 border-b border-gray-100 px-4 md:block">
         <div className="mx-auto flex max-w-md items-center justify-between text-xs text-gray-500">
           <span className="font-semibold text-gray-900">Estimate</span><span className="h-px flex-1 bg-gray-200 mx-3" />
           <span className={isProduction ? "font-semibold text-gray-900" : ""}>Production</span><span className="h-px flex-1 bg-gray-200 mx-3" />
@@ -297,7 +264,7 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <div className="min-w-0 flex-1 overflow-auto pb-24">
+        <div className="min-w-0 flex-1 overflow-auto pb-32 md:pb-24">
           <BudgetTable
             revision={revision}
             mode={mode}
@@ -315,35 +282,18 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
             onRefresh={() => reloadRevision()}
           />
         </div>
-        <InfoPanel entity={entity} revisions={revisions} currentId={revision.id} onNewRevision={createRevision} onOpenRevision={(id) => reloadRevision(id)} />
+        <InfoPanel entity={entity} revision={revision} revisions={revisions} currentId={revision.id} onNewRevision={createRevision} onOpenRevision={(id) => reloadRevision(id)} onProductionFeeChange={updateProductionFee} />
       </div>
 
       {selectedIds.length > 0 && (
-        <div className="fixed bottom-16 left-4 right-4 z-30 flex min-h-12 items-center gap-3 rounded-xl bg-gray-900 px-3 text-sm text-white shadow-lg md:left-20 md:right-80">
+        <div className="fixed bottom-28 left-4 right-4 z-30 flex min-h-12 items-center gap-3 rounded-xl bg-gray-900 px-3 text-sm text-white shadow-lg md:left-20 md:right-80">
           <span>{selectedIds.length} items selected</span>
           <div className="flex-1" />
           <button onClick={deleteSelected} className="min-h-10 rounded-lg bg-red-600 px-3">Delete selected</button>
         </div>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 z-20 grid min-h-[52px] items-center gap-1 border-t border-gray-200 bg-white px-6 py-2 text-[13px] shadow-sm md:left-13 md:grid-cols-4">
-        <span><span className="text-gray-500">Advances:</span> <span className="text-sm font-medium">£0.00</span></span>
-        {isProduction ? (
-          <>
-            <span><span className="text-gray-500">Accrual:</span> <span className="text-sm font-medium">{formatCurrency(totals?.totalAccrual)}</span></span>
-            <span><span className="text-gray-500">Committed:</span> <span className="text-sm font-medium">{formatCurrency(totals?.totalCommitted)}</span></span>
-            <span><span className="text-gray-500">Remaining:</span> <span className={`text-sm font-medium ${remainingTextClass({ totalRemaining: totals?.totalRemaining, totalAccrual: totals?.totalAccrual })}`}>{formatCurrency(totals?.totalRemaining)}</span></span>
-            <span><span className="text-gray-500">Subtotal:</span> <span className="text-sm font-medium">{formatCurrency(totals?.clientGrandTotal)}</span></span>
-          </>
-        ) : (
-          <>
-            {mode === "internal" && <span><span className="text-gray-500">Internal Total:</span> <span className="text-sm font-medium">{formatCurrency(totals?.internalTotal)}</span></span>}
-            <span><span className="text-gray-500">Fees Total:</span> <span className="text-sm font-medium">{formatCurrency(totals?.clientTotal)}</span></span>
-            <span><span className="text-gray-500">Subtotal:</span> <span className="text-sm font-medium">{formatCurrency(totals?.clientGrandTotal)}</span></span>
-            <span><span className="text-gray-500">Margin:</span> <span className={`text-sm font-medium ${marginTextClass(totals?.totalMarginAmount)}`}>{formatCurrency(totals?.totalMarginAmount)} ({formatPercent(totals?.totalMarginPercent)})</span></span>
-          </>
-        )}
-      </div>
+      <BudgetBottomBar revision={revision} isProduction={isProduction} />
 
       {selectedLine && (
         <LineEditor
@@ -941,6 +891,85 @@ function StackRow({ label, value, valueClass = "text-gray-900" }: { label: strin
   );
 }
 
+function BudgetBottomBar({ revision, isProduction }: { revision: BudgetRevision; isProduction: boolean }) {
+  const totals = revision.totals;
+  const projectedMargin = `${formatCurrency(totals.projectedMargin)} (${formatPercent(totals.projectedMarginPercent)})`;
+  const feeLabel = `${formatPercent(revision.productionFeePercent)} = ${formatCurrency(totals.productionFeeAmount)}`;
+
+  if (isProduction) {
+    return (
+      <div className="fixed bottom-0 left-0 right-0 z-20 min-h-[72px] border-t border-gray-300 bg-white px-6 pb-2 pt-3 shadow-sm md:left-13">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 md:grid-cols-5">
+          <BottomPrimary label="Client value" value={formatCurrency(totals.clientGrandTotal)} />
+          <BottomPrimary className="hidden md:block" label="Accrual held" value={formatCurrency(totals.totalAccrual)} />
+          <BottomPrimary className="hidden md:block" label="Committed" value={formatCurrency(totals.totalCommitted)} />
+          <BottomPrimary label="Remaining" value={formatCurrency(totals.totalRemaining)} valueClass={remainingTextClass({ totalRemaining: totals.totalRemaining, totalAccrual: totals.totalAccrual })} />
+          <BottomPrimary className="hidden md:block" label="Projected margin" value={projectedMargin} valueClass={marginTextClass(totals.projectedMargin)} tooltip="Client value minus accrual held. Assumes all spend stays within accrual." />
+          <BottomPrimary className="md:hidden" label="Committed" value={formatCurrency(totals.totalCommitted)} />
+          <BottomPrimary className="md:hidden" label="Projected margin" value={projectedMargin} valueClass={marginTextClass(totals.projectedMargin)} tooltip="Client value minus accrual held. Assumes all spend stays within accrual." />
+        </div>
+        <div className="mt-1 grid grid-cols-1 gap-x-4 text-right text-xs text-gray-500 md:grid-cols-5">
+          <BottomSecondary className="hidden md:block" label="Advances" value={formatCurrency(0)} />
+          <BottomSecondary className="hidden md:block" label="Accrual" value={formatCurrency(totals.totalAccrual)} />
+          <BottomSecondary className="hidden md:block" label="Committed" value={formatCurrency(totals.totalCommitted)} />
+          <BottomSecondary className="hidden md:block" label="Remaining" value={formatCurrency(totals.totalRemaining)} valueClass={remainingTextClass({ totalRemaining: totals.totalRemaining, totalAccrual: totals.totalAccrual })} />
+          <BottomSecondary label="Subtotal" value={formatCurrency(totals.clientGrandTotal)} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-20 min-h-[72px] border-t border-gray-300 bg-white px-6 pb-2 pt-3 shadow-sm md:left-13">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 md:grid-cols-4">
+        <BottomPrimary label="Client estimate" value={formatCurrency(totals.clientGrandTotal)} />
+        <BottomPrimary className="hidden md:block" label="Internal cost" value={formatCurrency(totals.internalTotal)} />
+        <BottomPrimary label="Total margin" value={formatCurrency(totals.totalMarginAmount)} valueClass={marginTextClass(totals.totalMarginAmount)} />
+        <BottomPrimary className="hidden md:block" label="Margin %" value={formatPercent(totals.totalMarginPercent)} valueClass={marginTextClass(totals.totalMarginAmount)} />
+        <BottomPrimary className="md:hidden" label="Internal cost" value={formatCurrency(totals.internalTotal)} />
+        <BottomPrimary className="md:hidden" label="Margin %" value={formatPercent(totals.totalMarginPercent)} valueClass={marginTextClass(totals.totalMarginAmount)} />
+      </div>
+      <div className="mt-1 grid grid-cols-1 gap-x-4 text-right text-xs text-gray-500 md:grid-cols-4">
+        <BottomSecondary className="hidden md:block" label="Advances" value={formatCurrency(0)} />
+        <BottomSecondary className="hidden md:block" label="Fees Total" value={formatCurrency(totals.clientTotal)} />
+        <BottomSecondary className="hidden md:block" label="Production fee" value={feeLabel} />
+        <BottomSecondary label="Subtotal" value={formatCurrency(totals.clientGrandTotal)} />
+      </div>
+    </div>
+  );
+}
+
+function BottomPrimary({ label, value, valueClass = "text-gray-900", className = "", tooltip }: { label: string; value: string; valueClass?: string; className?: string; tooltip?: string }) {
+  return (
+    <div className={`text-right ${className}`}>
+      <TooltipLabel label={label} tooltip={tooltip} />
+      <p className={`text-base font-medium tabular-nums ${valueClass}`}>{value}</p>
+    </div>
+  );
+}
+
+function BottomSecondary({ label, value, valueClass = "text-gray-600", className = "" }: { label: string; value: string; valueClass?: string; className?: string }) {
+  return <div className={`tabular-nums ${className}`}><span>{label}: </span><span className={valueClass}>{value}</span></div>;
+}
+
+function TooltipLabel({ label, tooltip }: { label: string; tooltip?: string }) {
+  return (
+    <p className="group relative inline-flex items-center justify-end gap-1 text-[10px] font-medium uppercase tracking-[0.5px] text-gray-500">
+      {label}
+      {tooltip && (
+        <>
+          <button type="button" className="grid min-h-5 min-w-5 place-items-center rounded-full text-gray-400">
+            <Info size={12} />
+          </button>
+          <span className="pointer-events-none absolute bottom-6 right-0 z-40 hidden max-w-[220px] rounded bg-gray-900 px-2 py-1.5 text-left text-[13px] normal-case leading-snug text-white shadow-lg group-hover:block">
+            {tooltip}
+          </span>
+        </>
+      )}
+    </p>
+  );
+}
+
 function PoForm({ lineId, po, onCancel, onSaved }: { lineId: string; po?: PurchaseOrder; onCancel: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({
     supplierName: po?.supplierName ?? "",
@@ -1142,13 +1171,25 @@ function RevisionSheet({ revisions, currentId, onClose, onNew, onOpen }: { revis
   );
 }
 
-function InfoPanel({ entity, revisions, currentId, onNewRevision, onOpenRevision }: { entity: Entity; revisions: BudgetRevisionSummary[]; currentId: string; onNewRevision: () => void; onOpenRevision: (id: string) => void }) {
+function InfoPanel({ entity, revision, revisions, currentId, onNewRevision, onOpenRevision, onProductionFeeChange }: {
+  entity: Entity;
+  revision: BudgetRevision;
+  revisions: BudgetRevisionSummary[];
+  currentId: string;
+  onNewRevision: () => void;
+  onOpenRevision: (id: string) => void;
+  onProductionFeeChange: (value: number) => Promise<void>;
+}) {
   return (
     <aside className="hidden w-[260px] shrink-0 border-l border-gray-200 bg-gray-50 px-5 pb-5 pt-5 lg:block">
       <div className="rounded-lg bg-white p-4">
         <h3 className="text-[11px] font-medium uppercase text-gray-500">Info</h3>
         <p className="mt-2 text-[15px] font-medium text-gray-900">{entityLabel(entity)}</p>
         <p className="text-xs text-gray-400">{entity.type}</p>
+      </div>
+      <div className="mt-3 rounded-lg bg-white p-4">
+        <h3 className="text-[11px] font-medium uppercase text-gray-500">Notes</h3>
+        <ProductionFeeField value={revision.productionFeePercent} onSave={onProductionFeeChange} />
       </div>
       <div className="mt-3 rounded-lg bg-white p-4">
         <div className="mb-2 flex items-center justify-between">
@@ -1167,24 +1208,38 @@ function InfoPanel({ entity, revisions, currentId, onNewRevision, onOpenRevision
   );
 }
 
-function Metric({ label, value, strong, danger, good, muted, amber, tooltip }: { label: string; value: string; strong?: boolean; danger?: boolean; good?: boolean; muted?: boolean; amber?: boolean; tooltip?: string }) {
+function ProductionFeeField({ value, onSave }: { value: number; onSave: (value: number) => Promise<void> }) {
+  const [draft, setDraft] = useState(String(value));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setDraft(String(value)), [value]);
+
+  async function commit() {
+    const next = Number(draft);
+    if (!Number.isFinite(next) || next === value) {
+      setDraft(String(value));
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(next);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <div>
-      <p className="group relative inline-flex items-center gap-1 text-[11px] font-medium uppercase text-gray-500">
-        {label}
-        {tooltip && (
-          <>
-            <button type="button" className="grid min-h-5 min-w-5 place-items-center rounded-full text-gray-400">
-              <Info size={12} />
-            </button>
-            <span className="pointer-events-none absolute left-0 top-6 z-40 hidden max-w-[220px] rounded bg-gray-900 px-2 py-1.5 text-left text-[13px] normal-case leading-snug text-white shadow-lg group-hover:block">
-              {tooltip}
-            </span>
-          </>
-        )}
-      </p>
-      <p className={`mt-1 tabular-nums ${strong ? "text-2xl font-medium" : "text-2xl font-medium"} ${danger ? "text-red-600" : good ? "text-emerald-700" : amber ? "text-amber-600" : muted ? "text-gray-400" : "text-gray-900"}`}>{value}</p>
-    </div>
+    <label className="mt-3 block">
+      <span className="mb-1 block text-xs font-medium text-gray-500">Production fee %</span>
+      <input
+        type="number"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => commit().catch(() => setDraft(String(value)))}
+        className="h-9 w-full rounded-lg border border-gray-200 px-3 text-[13px]"
+      />
+      <span className="mt-1 block text-[11px] text-gray-400">{saving ? "Saving..." : "Applies to client total only"}</span>
+    </label>
   );
 }
 
