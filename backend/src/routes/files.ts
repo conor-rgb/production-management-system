@@ -20,6 +20,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 },
 });
+const uploadFilesMiddleware = upload.array("files", 20);
 
 const previewableTypes = new Set(["application/pdf"]);
 
@@ -69,6 +70,20 @@ function pageNumber(value: unknown): number {
   return Math.floor(parsed);
 }
 
+function handleUpload(req: Request, res: Response, next: (err?: unknown) => void) {
+  uploadFilesMiddleware(req, res, (err: unknown) => {
+    if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+      res.status(413).json({ error: "Maximum file size is 100MB" });
+      return;
+    }
+    if (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : "Upload failed" });
+      return;
+    }
+    next();
+  });
+}
+
 // GET /api/files/production/:productionId/tree
 router.get("/production/:productionId/tree", async (req: Request, res: Response): Promise<void> => {
   const production = await prisma.production.findUnique({ where: { id: req.params.productionId }, select: { id: true } });
@@ -93,7 +108,7 @@ router.get("/production/:productionId/tree", async (req: Request, res: Response)
 // POST /api/files/production/:productionId/upload
 router.post(
   "/production/:productionId/upload",
-  upload.array("files", 20),
+  handleUpload,
   async (req: Request, res: Response): Promise<void> => {
     const { folder, notes } = req.body as { folder?: string; notes?: string };
     if (!folder || !isJobFolder(folder)) {
