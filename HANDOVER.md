@@ -92,6 +92,16 @@
 - Production Budget tab summary is no longer a placeholder; it shows client estimate, actual spend, variance, warning state, and an open button.
 - Opportunity detail now has Overview/Comms/Budget tabs, with Budget opening the full-screen bid view.
 - Opportunity cards and list rows show current budget grand total when a budget exists.
+- Refinement session fixed the budget table row controls and inline cell editing:
+  - duplicate/delete icon clicks stop propagation and trigger the intended API calls
+  - delete confirms before calling `DELETE /api/budgets/lines/:lineItemId`
+  - duplicate calls `POST /api/budgets/lines/:lineItemId/duplicate`
+  - description, internal rate, client rate, quantity, days, and unit are editable inline
+  - inline editors are borderless/backgroundless and auto-save on blur
+  - failed inline saves show a small top-right toast
+  - Unit uses a custom lightweight dropdown instead of the native select
+  - budget table spacing, section rows, summary bar, bottom totals bar, and right info panel were refined
+  - budget-view variance display now shows under budget as green, over budget as red, and zero as muted `£0.00`
 
 ### Files Integration
 - The Production Files preview panel now fetches the current production budget and populates the budget-line dropdown with real section/line/description options.
@@ -141,6 +151,15 @@
 - Test cleanup completed:
   - Removed disposable job folders.
   - Reset Settings to `jobCodeYear: 2026`, `jobCodeSequence: 46`; next real job code remains `2647`.
+- Budget UI refinement smoke test:
+  - Created disposable Production.
+  - Created a budget line.
+  - Patched client rate, quantity, days, unit, and description.
+  - Verified PATCH returned the updated line and updated revision totals.
+  - Verified duplicate returned a second line and updated revision state.
+  - Verified delete returned `204`.
+  - Deleted disposable Production and folder.
+  - Reset Settings to `jobCodeYear: 2026`, `jobCodeSequence: 46`; next real job code remains `2647`.
 
 ## Current Module State
 
@@ -172,7 +191,7 @@
 
 ### Budgets
 - Schema, service, API, full-screen budget shell, catalog insertion, line editing, revisions, invoice API, PDF export, and file linking are in place.
-- The UI supports single-line editing and duplication/deletion.
+- The UI supports borderless inline cell editing, row duplicate/delete actions, and immediate server-returned total updates.
 - Bulk select currently supports delete selected; move/duplicate selected is still technical debt.
 
 ### Email
@@ -181,7 +200,7 @@
 
 ## Known Issues And Technical Debt
 
-- Browser automation tooling is not installed, so I did not run Playwright screenshots at 390px. TypeScript production build passed and mobile-first classes were reviewed.
+- Browser automation tooling is not installed, so I did not run Playwright screenshots at 390px. TypeScript production build passed, mobile-first classes were reviewed, and mobile rows use the same inline description edit path.
 - The line item edit interaction is modal/full-screen rather than true inline expansion on desktop. The data flow is complete, but the interaction can be refined later.
 - Invoice sub-panel UI per line item is not fully built yet, although invoice API routes exist.
 - Catalog group insertion API exists, but the current catalog panel focuses on individual item insertion.
@@ -195,6 +214,7 @@
 - `Build Phase 5 budget schema`
 - `ab01212 Build Phase 5 budget service and APIs`
 - `acb4b2a build Phase 5 full screen budget UI`
+- `d9fc9c7 fix: inline cell editing and auto-save`
 
 ## Exact Next Step For Phase 6
 
