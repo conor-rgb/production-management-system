@@ -145,7 +145,13 @@ router.post("/revisions/:revisionId/catalog-group", async (req: Request, res: Re
 
 router.patch("/lines/:lineItemId", async (req: Request, res: Response): Promise<void> => {
   try {
-    res.json(await updateLineItem(req.params.lineItemId, req.body));
+    const line = await updateLineItem(req.params.lineItemId, req.body);
+    const owner = await prisma.budgetLineItem.findUnique({
+      where: { id: req.params.lineItemId },
+      select: { section: { select: { revisionId: true } } },
+    });
+    const revision = owner ? await getRevision(owner.section.revisionId) : null;
+    res.json({ line, revision });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Failed to update line item" });
   }
@@ -181,8 +187,10 @@ router.post("/lines/:lineItemId/duplicate", async (req: Request, res: Response):
       catalogItemId: line.catalogItemId,
       order: line.order + 1,
     },
+    include: { invoices: true },
   });
-  res.status(201).json(duplicate);
+  const revision = await getRevision(line.section.revisionId);
+  res.status(201).json({ line: duplicate, revision });
 });
 
 router.delete("/lines/:lineItemId", async (req: Request, res: Response): Promise<void> => {
