@@ -3,6 +3,7 @@ import prisma from "../prisma";
 import { Stage, LostReason } from "@prisma/client";
 import { generateJobCode } from "../utils/jobCode";
 import { ensureProductionFoldersForRecord } from "../services/fileStorage";
+import { cloneBudgetToProduction } from "../services/budgetService";
 
 const router = Router();
 
@@ -50,6 +51,7 @@ async function transitionOpportunityStage(
   if (!opp) return null;
 
   let production = stage === Stage.WON ? opp.productions[0] : undefined;
+  let budgetCloned = false;
 
   if (stage === Stage.WON && !production) {
     const jobCode = await generateJobCode();
@@ -72,6 +74,8 @@ async function transitionOpportunityStage(
       where: { id: production.id },
       select: productionSelect,
     });
+    const cloned = await cloneBudgetToProduction(opportunityId, production.id);
+    budgetCloned = Boolean(cloned);
   }
 
   const opportunity = await prisma.opportunity.update({
@@ -84,7 +88,7 @@ async function transitionOpportunityStage(
     include: fullInclude,
   });
 
-  return { opportunity, production };
+  return { opportunity, production, budgetCloned };
 }
 
 // GET /api/opportunities?stage=&overdue=true&search=

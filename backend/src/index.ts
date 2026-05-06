@@ -4,6 +4,7 @@ dotenv.config();
 import { createServer } from "./server";
 import prisma from "./prisma";
 import bcrypt from "bcryptjs";
+import { seedCatalogItems } from "./services/catalogSeed";
 
 async function seedAdmin() {
   const count = await prisma.settings.count();
@@ -45,6 +46,7 @@ async function seedCrewRoles() {
 async function main() {
   await seedAdmin();
   await seedCrewRoles();
+  await seedCatalogItems();
 
   const app = createServer();
   const port = parseInt(process.env.PORT ?? "3000", 10);

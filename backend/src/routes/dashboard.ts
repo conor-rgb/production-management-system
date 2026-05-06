@@ -60,7 +60,7 @@ router.get("/", async (_req: Request, res: Response): Promise<void> => {
       orderBy: { updatedAt: "desc" },
       include: {
         dates: { orderBy: [{ date: "asc" }, { time: "asc" }] },
-        budgets: { include: { sections: { include: { lineItems: true } } } },
+        budgets: { include: { currentRevision: { include: { sections: { include: { lineItems: true } } } } } },
       },
     }),
   ]);
@@ -78,11 +78,15 @@ router.get("/", async (_req: Request, res: Response): Promise<void> => {
     todaysAgenda,
     activeProductions: activeProductions.map((production) => {
       const actualSpend = production.budgets.reduce((budgetSum, budget) => (
-        budgetSum + budget.sections.reduce((sectionSum, section) => (
+        budgetSum + (budget.currentRevision?.sections.reduce((sectionSum, section) => (
           sectionSum + section.lineItems.reduce((lineSum, line) => lineSum + Number(line.actualCost ?? 0), 0)
-        ), 0)
+        ), 0) ?? 0)
       ), 0);
-      const quotedValue = Number(production.value ?? 0);
+      const currentRevision = production.budgets[0]?.currentRevision;
+      const clientTotal = currentRevision?.sections.reduce((sectionSum, section) => (
+        sectionSum + section.lineItems.reduce((lineSum, line) => lineSum + Number(line.clientSubtotal ?? 0), 0)
+      ), 0) ?? Number(production.value ?? 0);
+      const quotedValue = currentRevision ? clientTotal * (1 + currentRevision.productionFeePercent / 100) : Number(production.value ?? 0);
       const variance = actualSpend - quotedValue;
       const nextDate = production.dates.find((date) => {
         const d = new Date(date.date);
