@@ -21,6 +21,14 @@ import { formatBytes } from "../lib/types";
 
 type Folder = "inbox" | "sent" | "flagged" | "archived";
 type Filter = "all" | "unread" | "flagged";
+type ComposerDraft = {
+  to?: string;
+  subject?: string;
+  bodyHtml?: string;
+  linkedOpportunityId?: string;
+  linkedProductionId?: string;
+  attachments?: { id: string; filename: string; sizeBytes: number }[];
+};
 
 function timeLabel(value?: string) {
   if (!value) return "";
@@ -54,6 +62,7 @@ export default function Email() {
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
+  const [composeDraft, setComposeDraft] = useState<ComposerDraft | null>(null);
   const [replyOpen, setReplyOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -92,6 +101,15 @@ export default function Email() {
   useEffect(() => {
     loadAccounts().catch(console.error);
     api.get<EmailTemplate[]>("/api/email/templates").then(setTemplates).catch(console.error);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("compose") === "draft") {
+      const raw = localStorage.getItem("emailDraft");
+      if (raw) {
+        setComposeDraft(JSON.parse(raw) as ComposerDraft);
+        localStorage.removeItem("emailDraft");
+      }
+      setComposeOpen(true);
+    }
   }, []);
 
   useEffect(() => { loadThreads().catch(console.error); }, [activeAccountId, folder, filter]);
@@ -194,7 +212,7 @@ export default function Email() {
         <MailPlus size={22} />
       </button>
 
-      {composeOpen && <ComposerModal accounts={accounts} templates={templates} defaultAccountId={activeAccount?.id} onClose={() => setComposeOpen(false)} onSent={() => { setComposeOpen(false); loadThreads().catch(console.error); }} />}
+      {composeOpen && <ComposerModal accounts={accounts} templates={templates} defaultAccountId={activeAccount?.id} draft={composeDraft} onClose={() => { setComposeOpen(false); setComposeDraft(null); }} onSent={() => { setComposeOpen(false); setComposeDraft(null); loadThreads().catch(console.error); }} />}
       {replyOpen && thread && <ReplyComposer thread={thread} accounts={accounts} onClose={() => setReplyOpen(false)} onSent={() => { setReplyOpen(false); loadThread(thread.id).catch(console.error); }} />}
     </div>
   );
@@ -270,15 +288,15 @@ function MessageCard({ message }: { message: EmailMessage }) {
   );
 }
 
-function ComposerModal({ accounts, templates, defaultAccountId, onClose, onSent }: { accounts: EmailAccount[]; templates: EmailTemplate[]; defaultAccountId?: string; onClose: () => void; onSent: () => void }) {
+function ComposerModal({ accounts, templates, defaultAccountId, draft, onClose, onSent }: { accounts: EmailAccount[]; templates: EmailTemplate[]; defaultAccountId?: string; draft?: ComposerDraft | null; onClose: () => void; onSent: () => void }) {
   const [fromAccountId, setFromAccountId] = useState(defaultAccountId || accounts[0]?.id || "");
-  const [to, setTo] = useState("");
+  const [to, setTo] = useState(draft?.to ?? "");
   const [ccVisible, setCcVisible] = useState(false);
   const [bccVisible, setBccVisible] = useState(false);
   const [cc, setCc] = useState("");
   const [bcc, setBcc] = useState("");
-  const [subject, setSubject] = useState("");
-  const [bodyHtml, setBodyHtml] = useState("");
+  const [subject, setSubject] = useState(draft?.subject ?? "");
+  const [bodyHtml, setBodyHtml] = useState(draft?.bodyHtml ?? "");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
@@ -294,6 +312,8 @@ function ComposerModal({ accounts, templates, defaultAccountId, onClose, onSent 
         bcc: bcc.split(",").map((email) => email.trim()).filter(Boolean),
         subject,
         bodyHtml,
+        linkedOpportunityId: draft?.linkedOpportunityId,
+        linkedProductionId: draft?.linkedProductionId,
       });
       onSent();
     } catch (err) {
@@ -348,6 +368,15 @@ function ComposerModal({ accounts, templates, defaultAccountId, onClose, onSent 
             <textarea value={bodyHtml} onChange={(e) => setBodyHtml(e.target.value)} className="min-h-[200px] w-full resize-none border-0 p-3 text-sm outline-none" placeholder="Write your message..." />
           </div>
           <div className="rounded-lg bg-gray-50 p-3 text-xs text-gray-500">-- <br />Conor | unlimited.bond</div>
+          {draft?.attachments?.length ? (
+            <div className="flex flex-wrap gap-2">
+              {draft.attachments.map((attachment) => (
+                <span key={attachment.id} className="inline-flex min-h-9 items-center gap-2 rounded-full bg-gray-100 px-3 text-xs text-gray-700">
+                  <Paperclip size={13} /> {attachment.filename} <span className="text-gray-400">{formatBytes(attachment.sizeBytes)}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <footer className="flex min-h-14 items-center gap-2 border-t border-gray-100 px-4">

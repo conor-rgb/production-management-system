@@ -26,6 +26,7 @@ import type {
   BudgetRevisionStatus,
   BudgetRevisionSummary,
   CatalogSection,
+  JobFile,
   Production,
   OpportunityListItem,
   PurchaseOrder,
@@ -245,6 +246,24 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
     await reloadRevision();
   }
 
+  async function emailEstimate() {
+    if (!revision) return;
+    try {
+      const file = await api.post<JobFile>(`/api/budgets/revisions/${revision.id}/export-pdf`, { mode: "client" });
+      const label = entityLabel(entity);
+      localStorage.setItem("emailDraft", JSON.stringify({
+        subject: `Estimate — ${label} — ${revision.label}`,
+        bodyHtml: `<p>Please find attached our estimate for ${label}. Let me know if you have any questions.</p>`,
+        linkedProductionId: entity.type === "production" ? entity.id : undefined,
+        linkedOpportunityId: entity.type === "opportunity" ? entity.id : undefined,
+        attachments: [{ id: file.id, filename: file.originalFilename, sizeBytes: file.sizeBytes }],
+      }));
+      window.location.href = "/email?compose=draft";
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Failed to generate estimate PDF");
+    }
+  }
+
   function toggleSelected(lineId: string) {
     setSelectedIds((ids) => ids.includes(lineId) ? ids.filter((id) => id !== lineId) : [...ids, lineId]);
   }
@@ -291,7 +310,7 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-gray-100 bg-gray-50 px-4 text-sm">
         <button onClick={() => setSelectedIds([])} className="min-h-10 px-2 text-gray-600">Unselect all</button>
         <button onClick={() => exportPdf("client")} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-600 sm:flex sm:gap-1 sm:px-2"><Printer size={16} /><span className="hidden sm:inline">Print estimate</span></button>
-        <button className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-600 sm:flex sm:gap-1 sm:px-2"><Mail size={16} /><span className="hidden sm:inline">Email estimate</span></button>
+        <button onClick={emailEstimate} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-600 sm:flex sm:gap-1 sm:px-2"><Mail size={16} /><span className="hidden sm:inline">Email estimate</span></button>
         <button onClick={() => setRevisionsOpen(true)} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-600 sm:flex sm:gap-1 sm:px-2"><History size={16} /><span className="hidden sm:inline">Revision history</span></button>
         <div className="flex-1" />
         <button
