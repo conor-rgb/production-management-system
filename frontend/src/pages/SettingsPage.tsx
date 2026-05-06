@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
-import type { CrewRole } from "../lib/types";
+import type { CrewRole, StorageInfo } from "../lib/types";
+import { formatBytes } from "../lib/types";
 
 export default function SettingsPage() {
   const { email } = useAuth();
@@ -14,13 +15,17 @@ export default function SettingsPage() {
   const [roles, setRoles] = useState<CrewRole[]>([]);
   const [newRole, setNewRole] = useState("");
   const [roleError, setRoleError] = useState("");
+  const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
 
   async function loadRoles() {
     const data = await api.get<CrewRole[]>("/api/settings/crew-roles");
     setRoles(data);
   }
 
-  useEffect(() => { loadRoles().catch(console.error); }, []);
+  useEffect(() => {
+    loadRoles().catch(console.error);
+    api.get<StorageInfo>("/api/files/storage-info").then(setStorageInfo).catch(console.error);
+  }, []);
 
   async function handlePasswordChange(e: FormEvent) {
     e.preventDefault();
@@ -94,6 +99,24 @@ export default function SettingsPage() {
             <RoleRow key={role.id} role={role} onSave={updateRole} onDelete={deleteRole} />
           ))}
           {roles.length === 0 && <p className="p-4 text-center text-sm text-gray-400">No crew roles yet.</p>}
+        </div>
+      </div>
+
+      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-5">
+        <h2 className="mb-4 font-medium text-gray-900">Storage</h2>
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <div className="rounded-lg bg-gray-50 p-3">
+            <p className="text-xs text-gray-500">Used</p>
+            <p className="mt-1 font-semibold text-gray-900">{storageInfo ? formatBytes(storageInfo.totalBytes) : "Loading…"}</p>
+          </div>
+          <div className="rounded-lg bg-gray-50 p-3">
+            <p className="text-xs text-gray-500">Files</p>
+            <p className="mt-1 font-semibold text-gray-900">{storageInfo?.fileCount ?? "Loading…"}</p>
+          </div>
+        </div>
+        <div className="mt-3 rounded-lg bg-gray-50 p-3">
+          <p className="text-xs text-gray-500">Base path</p>
+          <p className="mt-1 break-all font-mono text-xs text-gray-700">{storageInfo?.basePath ?? "Loading…"}</p>
         </div>
       </div>
 
