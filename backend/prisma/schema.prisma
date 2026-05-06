@@ -119,16 +119,22 @@ enum PurchaseOrderStatus {
   PAID
 }
 
+enum EmailProvider {
+  GOOGLE
+  IMAP
+}
+
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 model Settings {
-  id              String   @id @default(cuid())
-  email           String   @unique
-  password        String
-  jobCodeYear     Int      @default(2026)
-  jobCodeSequence Int      @default(46)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  email                 String   @unique
+  password              String
+  jobCodeYear           Int      @default(2026)
+  jobCodeSequence       Int      @default(46)
+  defaultEmailSignature String   @default("")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@map("pms_settings")
 }
@@ -150,25 +156,25 @@ model Company {
 }
 
 model Contact {
-  id              String         @id @default(cuid())
+  id              String                 @id @default(cuid())
   firstName       String
   lastName        String?
   email           String?
   phone           String?
   companyId       String?
-  company         Company?       @relation(fields: [companyId], references: [id])
+  company         Company?               @relation(fields: [companyId], references: [id])
   jobTitle        String?
-  type            ContactType    @default(CLIENT)
-  source          ContactSource  @default(OTHER)
-  tags            String[]       @default([])
+  type            ContactType            @default(CLIENT)
+  source          ContactSource          @default(OTHER)
+  tags            String[]               @default([])
   lastContactedAt DateTime?
   notes           String?
   opportunities   Opportunity[]
   crewMembers     CrewMember[]
   productionDates ProductionDatePerson[]
-  emailMessages   EmailMessage[]
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  emailThreads    EmailThread[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
   @@map("pms_contacts")
 }
@@ -198,6 +204,7 @@ model Opportunity {
   budgets       Budget[]
   activityNotes OpportunityNote[]
   tasks         OpportunityTask[]
+  emailThreads  EmailThread[]
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
@@ -314,7 +321,7 @@ model CrewMember {
   name         String
   email        String?
   phone        String?
-  status       CrewStatus  @default(REQUESTED)
+  status       CrewStatus @default(REQUESTED)
   dayRate      Decimal?   @db.Decimal(10, 2)
   numberOfDays Decimal    @default(1) @db.Decimal(6, 2)
   notes        String?
@@ -372,45 +379,44 @@ model BudgetSection {
   updatedAt  DateTime         @updatedAt
 
   @@unique([revisionId, code])
-
   @@map("pms_budget_sections")
 }
 
 model BudgetLineItem {
-  id                   String            @id @default(cuid())
-  sectionId            String
-  section              BudgetSection     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  lineCode             String
-  description          String
-  privateMemo          String?
-  publicMemo           String?
-  internalUnitCost     Float             @default(0)
-  clientUnitCost       Float             @default(0)
-  quantity             Float             @default(1)
-  daysUnits            Float             @default(1)
-  unitLabel            String            @default("Days")
-  agencyMarkup         Float             @default(0)
-  internalSubtotal     Float             @default(0)
-  clientSubtotal       Float             @default(0)
-  marginAmount         Float             @default(0)
-  marginPercent        Float             @default(0)
-  actualCost           Float             @default(0)
-  variance             Float             @default(0)
-  isClosed             Boolean           @default(false)
-  isTaxable            Boolean           @default(false)
-  hasPW                Boolean           @default(false)
-  hasHealthSafety      Boolean           @default(false)
-  baseHours            Float?
-  overtime15x          Float?
-  overtime2x           Float?
-  catalogItemId        String?
-  catalogItem          CatalogItem?      @relation(fields: [catalogItemId], references: [id])
-  order                Int               @default(0)
-  invoices             LineItemInvoice[]
-  purchaseOrders       PurchaseOrder[]
-  jobFiles             JobFile[]
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
+  id               String            @id @default(cuid())
+  sectionId        String
+  section          BudgetSection     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  lineCode         String
+  description      String
+  privateMemo      String?
+  publicMemo       String?
+  internalUnitCost Float             @default(0)
+  clientUnitCost   Float             @default(0)
+  quantity         Float             @default(1)
+  daysUnits        Float             @default(1)
+  unitLabel        String            @default("Days")
+  agencyMarkup     Float             @default(0)
+  internalSubtotal Float             @default(0)
+  clientSubtotal   Float             @default(0)
+  marginAmount     Float             @default(0)
+  marginPercent    Float             @default(0)
+  actualCost       Float             @default(0)
+  variance         Float             @default(0)
+  isClosed         Boolean           @default(false)
+  isTaxable        Boolean           @default(false)
+  hasPW            Boolean           @default(false)
+  hasHealthSafety  Boolean           @default(false)
+  baseHours        Float?
+  overtime15x      Float?
+  overtime2x       Float?
+  catalogItemId    String?
+  catalogItem      CatalogItem?      @relation(fields: [catalogItemId], references: [id])
+  order            Int               @default(0)
+  invoices         LineItemInvoice[]
+  purchaseOrders   PurchaseOrder[]
+  jobFiles         JobFile[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@map("pms_budget_line_items")
 }
@@ -442,19 +448,19 @@ model PurchaseOrder {
 }
 
 model LineItemInvoice {
-  id             String         @id @default(cuid())
-  lineItemId     String
-  lineItem       BudgetLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
-  supplierName   String
-  invoiceNumber  String?
-  amount         Float
-  dateReceived   DateTime?      @db.Date
-  status         InvoiceStatus  @default(PENDING)
-  jobFileId      String?
-  jobFile        JobFile?       @relation(fields: [jobFileId], references: [id])
-  notes          String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id            String         @id @default(cuid())
+  lineItemId    String
+  lineItem      BudgetLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+  supplierName  String
+  invoiceNumber String?
+  amount        Float
+  dateReceived  DateTime?      @db.Date
+  status        InvoiceStatus  @default(PENDING)
+  jobFileId     String?
+  jobFile       JobFile?       @relation(fields: [jobFileId], references: [id])
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@map("pms_line_item_invoices")
 }
@@ -507,44 +513,82 @@ model CatalogGroupItem {
 // ─── Files ────────────────────────────────────────────────────────────────────
 
 model JobFile {
-  id                 String          @id @default(cuid())
-  productionId       String
-  production         Production      @relation(fields: [productionId], references: [id], onDelete: Cascade)
-  folder             String
-  originalFilename   String
-  storedFilename     String
-  mimeType           String
-  sizeBytes          Int
-  uploadedAt         DateTime        @default(now())
-  linkedBudgetLineId String?
-  linkedBudgetLine   BudgetLineItem? @relation(fields: [linkedBudgetLineId], references: [id])
-  isReceipt          Boolean         @default(false)
-  receiptVendor      String?
-  receiptAmount      Int?
-  receiptDate        DateTime?       @db.Date
-  notes              String?
-  invoices           LineItemInvoice[]
+  id                    String            @id @default(cuid())
+  productionId          String
+  production            Production        @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  folder                String
+  originalFilename      String
+  storedFilename        String
+  mimeType              String
+  sizeBytes             Int
+  uploadedAt            DateTime          @default(now())
+  linkedBudgetLineId    String?
+  linkedBudgetLine      BudgetLineItem?   @relation(fields: [linkedBudgetLineId], references: [id])
+  isReceipt             Boolean           @default(false)
+  receiptVendor         String?
+  receiptAmount         Int?
+  receiptDate           DateTime?         @db.Date
+  notes                 String?
+  invoices              LineItemInvoice[]
   purchaseOrderInvoices PurchaseOrder[]
 
   @@index([productionId, folder])
   @@index([originalFilename])
-
   @@map("pms_job_files")
 }
 
 // ─── Email ────────────────────────────────────────────────────────────────────
 
-model EmailThread {
-  id            String         @id @default(cuid())
-  productionId  String?
-  opportunityId String?
-  production    Production?    @relation(fields: [productionId], references: [id])
-  subject       String
-  gmailThreadId String?        @unique
-  messages      EmailMessage[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+model EmailAccount {
+  id                    String        @id @default(uuid())
+  label                 String
+  emailAddress          String
+  provider              EmailProvider
+  imapHost              String?
+  imapPort              Int?
+  smtpHost              String?
+  smtpPort              Int?
+  username              String?
+  encryptedPassword     String?
+  encryptedAccessToken  String?
+  encryptedRefreshToken String?
+  tokenExpiry           DateTime?
+  isActive              Boolean       @default(true)
+  isPrimary             Boolean       @default(false)
+  lastSyncedAt          DateTime?
+  threads               EmailThread[]
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 
+  @@map("pms_email_accounts")
+}
+
+model EmailThread {
+  id                  String         @id @default(uuid())
+  accountId           String?
+  account             EmailAccount?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  externalThreadId    String         @default(uuid())
+  subject             String
+  participants        String[]       @default([])
+  lastMessageAt       DateTime       @default(now())
+  isRead              Boolean        @default(false)
+  isFlagged           Boolean        @default(false)
+  isArchived          Boolean        @default(false)
+  linkedContactId     String?
+  linkedContact       Contact?       @relation(fields: [linkedContactId], references: [id], onDelete: SetNull)
+  linkedOpportunityId String?
+  linkedOpportunity   Opportunity?   @relation(fields: [linkedOpportunityId], references: [id], onDelete: SetNull)
+  linkedProductionId  String?
+  linkedProduction    Production?    @relation(fields: [linkedProductionId], references: [id], onDelete: SetNull)
+  messages            EmailMessage[]
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@unique([accountId, externalThreadId])
+  @@index([lastMessageAt])
+  @@index([linkedContactId])
+  @@index([linkedOpportunityId])
+  @@index([linkedProductionId])
   @@map("pms_email_threads")
 }
 
@@ -576,19 +620,37 @@ model ActivityTask {
 }
 
 model EmailMessage {
-  id             String      @id @default(cuid())
-  threadId       String
-  thread         EmailThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  gmailMessageId String?     @unique
-  from           String
-  to             String?
-  subject        String?
-  body           String?
-  htmlBody       String?
-  sentAt         DateTime?
-  contactId      String?
-  contact        Contact?    @relation(fields: [contactId], references: [id])
-  createdAt      DateTime    @default(now())
+  id                String      @id @default(uuid())
+  threadId          String
+  thread            EmailThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  externalMessageId String      @unique
+  fromAddress       String
+  fromName          String?
+  toAddresses       String[]    @default([])
+  ccAddresses       String[]    @default([])
+  bccAddresses      String[]    @default([])
+  subject           String
+  bodyHtml          String      @default("")
+  bodyText          String      @default("")
+  sentAt            DateTime
+  isFromMe          Boolean     @default(false)
+  hasAttachments    Boolean     @default(false)
+  attachments       Json        @default("[]")
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
   @@map("pms_email_messages")
+}
+
+model EmailTemplate {
+  id         String   @id @default(uuid())
+  name       String
+  subject    String
+  bodyHtml   String
+  defaultCc  String?
+  defaultBcc String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("pms_email_templates")
 }
