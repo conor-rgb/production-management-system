@@ -110,6 +110,35 @@ function remainingSectionCurrency(remaining?: number, accrual?: number) {
   return formatCurrency(remaining);
 }
 
+function isZeroOnlyLine(line: BudgetLineItem) {
+  return [
+    line.clientUnitCost,
+    line.internalUnitCost,
+    line.clientSubtotal,
+    line.internalSubtotal,
+    line.agencyMarkup,
+    line.totalPOs,
+    line.totalInvoiced,
+    line.totalPaid,
+    line.remainingAccrual,
+    line.marginAmount,
+  ].every(isZeroValue);
+}
+
+function hasSectionTotals(sectionTotal: BudgetRevision["totals"]["sectionTotals"][number] | undefined) {
+  if (!sectionTotal) return false;
+  return [
+    sectionTotal.internalTotal,
+    sectionTotal.clientTotal,
+    sectionTotal.marginAmount,
+    sectionTotal.accrual,
+    sectionTotal.totalPOs,
+    sectionTotal.totalInvoiced,
+    sectionTotal.totalPaid,
+    sectionTotal.remaining,
+  ].some((value) => !isZeroValue(value));
+}
+
 async function closeLine(line: BudgetLineItem, onSave: (line: BudgetLineItem, patch: Partial<BudgetLineItem>) => Promise<void>, onRefresh: () => Promise<void>) {
   const hasOpenPos = line.purchaseOrders.some((po) => po.status === "OPEN");
   if (hasOpenPos) {
@@ -374,13 +403,14 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
   const productionMode = revision.totals.mode === "production";
   const [openPoLineId, setOpenPoLineId] = useState<string | null>(null);
   const internalGrid = productionMode
-    ? "grid-cols-[32px_minmax(200px,1fr)_80px_90px_80px_70px_70px_70px_80px_80px_52px]"
-    : "grid-cols-[32px_minmax(200px,1fr)_80px_80px_60px_60px_70px_70px_80px_90px_80px_80px_52px]";
-  const clientGrid = "grid-cols-[minmax(200px,1fr)_80px_60px_60px_70px_90px]";
+    ? "grid-cols-[32px_minmax(180px,1fr)_72px_48px_48px_72px_88px_80px_72px_56px_64px_72px_80px_52px]"
+    : "grid-cols-[32px_minmax(180px,1fr)_72px_72px_48px_48px_72px_64px_88px_88px_80px_72px_52px]";
+  const clientGrid = "grid-cols-[minmax(180px,1fr)_72px_48px_48px_72px_88px]";
   const headers = mode === "internal"
     ? (productionMode
       ? [
         { label: "", tier: 3 }, { label: "Description", tier: 1 }, { label: "Rate", tier: 2 },
+        { label: "Qty", tier: 3 }, { label: "Days", tier: 3 }, { label: "Unit", tier: 3 },
         { label: "Total", tier: 1 }, { label: "Accrual", tier: 3 }, { label: "POs", tier: 3 },
         { label: "Inv.", tier: 3 }, { label: "Paid", tier: 3 }, { label: "Left", tier: 1 },
         { label: "Margin", tier: 1 }, { label: "", tier: 3 },
@@ -399,11 +429,11 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
 
   return (
     <div className="min-w-full">
-      <div className={`sticky top-0 z-10 hidden h-8 border-b border-gray-200 bg-gray-50 uppercase tracking-[0.5px] md:grid ${mode === "internal" ? internalGrid : clientGrid}`}>
+      <div className={`sticky top-0 z-10 hidden h-7 border-b border-gray-300 bg-white uppercase tracking-[0.6px] md:grid ${mode === "internal" ? internalGrid : clientGrid}`}>
         {headers.map((h, index) => (
           <div
             key={`${h.label}-${index}`}
-            className={`whitespace-nowrap px-3 py-2 text-right ${index === 0 || index === 1 && mode === "internal" ? "text-left" : ""} ${h.tier === 1 ? "text-[11px] font-medium text-gray-500" : h.tier === 2 ? "text-[11px] font-normal text-gray-500" : "text-[10px] font-normal text-gray-300"}`}
+            className={`whitespace-nowrap px-2 py-1.5 text-right text-[10px] text-gray-500 ${index === 0 || index === 1 && mode === "internal" ? "text-left" : ""} ${h.tier === 1 ? "font-medium" : "font-normal"}`}
           >
             {h.label}
           </div>
@@ -411,17 +441,18 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
       </div>
       {revision.sections.map((section) => {
         const sectionTotal = revision.totals.sectionTotals.find((item) => item.sectionId === section.id);
+        const showSectionTotal = section.lineItems.length > 0 && hasSectionTotals(sectionTotal);
         return (
           <div key={section.id} className="pt-2">
-            <div className="flex h-10 items-center gap-3 bg-[#1a1a1f] px-4 text-white">
-              <span className="rounded bg-[#2c2c2a] px-1.5 py-0.5 text-[11px] font-medium text-white">{section.code}</span>
-              <span className="text-[13px] font-medium">{section.name}</span>
-              <span className="ml-auto text-[13px] font-medium tabular-nums text-white">{formatCurrency(sectionTotal?.clientTotal)}</span>
-              <button onClick={() => onBrowseCatalog(section.code)} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-400 hover:text-white"><MoreHorizontal size={16} /></button>
+            <div className="flex h-9 items-center gap-2.5 border-b border-gray-200 bg-[#f0f0ee] px-4 text-gray-900">
+              <span className="rounded bg-[#1a1a1f] px-[5px] py-[3px] text-[11px] font-medium leading-none text-white">{section.code}</span>
+              <span className="text-[13px] font-semibold">{section.name}</span>
+              <span className="ml-auto text-[13px] font-medium tabular-nums text-gray-900">{formatCurrency(sectionTotal?.clientTotal)}</span>
+              <button onClick={() => onBrowseCatalog(section.code)} className="grid min-h-9 min-w-9 place-items-center rounded-lg text-gray-500 hover:text-gray-900"><MoreHorizontal size={16} /></button>
             </div>
             {section.lineItems.length === 0 ? (
-              <div className="flex h-10 items-center bg-[#2c2c2a] px-5 text-left text-[13px] text-gray-400">
-                <span>No line items — <button onClick={() => onBrowseCatalog(section.code)} className="text-gray-100">Browse catalog</button> or <button onClick={() => onAddLine(section.id)} className="text-gray-100">+ Add line</button></span>
+              <div className="flex h-9 items-center bg-[#f0f0ee] px-5 text-left text-[13px] text-gray-500">
+                <span>No line items — <button onClick={() => onBrowseCatalog(section.code)} className="text-gray-900">Browse catalog</button> or <button onClick={() => onAddLine(section.id)} className="text-gray-900">+ Add line</button></span>
               </div>
             ) : section.lineItems.map((line) => (
               <LineRow
@@ -443,14 +474,14 @@ function BudgetTable({ revision, mode, selectedIds, onToggleSelected, onEdit, on
                 onRefresh={onRefresh}
               />
             ))}
-            {section.lineItems.length > 0 && (
-              <div className={`hidden h-8 border-b border-gray-100 bg-gray-50 text-xs font-medium text-gray-500 md:grid ${mode === "internal" ? internalGrid : clientGrid}`}>
+            {showSectionTotal && (
+              <div className={`hidden h-7 bg-[#f8f8f6] text-[11px] text-gray-500 md:grid ${mode === "internal" ? internalGrid : clientGrid}`}>
                 {mode === "internal" && productionMode ? (
-                  <><div /><div className="py-2 pl-5 pr-3 text-[11px] italic text-gray-300">Section total</div><div /><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.clientTotal)}</div><div className="px-3 py-2 text-right text-xs font-medium italic tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.accrual)}</div><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.totalPOs)}</div><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.totalInvoiced)}</div><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.totalPaid)}</div><div className={`px-3 py-2 text-right text-xs font-medium tabular-nums ${remainingTextClass({ totalRemaining: sectionTotal?.remaining, totalAccrual: sectionTotal?.accrual })}`}>{remainingSectionCurrency(sectionTotal?.remaining, sectionTotal?.accrual)}</div><div className={`px-3 py-2 text-right text-xs font-medium tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{nonZeroCurrency(sectionTotal?.marginAmount)}</div><div /></>
+                  <><div /><div className="py-1.5 pl-5 pr-2 text-[11px] italic text-gray-300">Section total</div><div /><div /><div /><div /><div className="px-2 py-1.5 text-right text-[11px] font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.clientTotal)}</div><div className="px-2 py-1.5 text-right text-[11px] font-medium italic tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.accrual)}</div><div className="px-2 py-1.5 text-right text-[11px] font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.totalPOs)}</div><div className="px-2 py-1.5 text-right text-[11px] font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.totalInvoiced)}</div><div className="px-2 py-1.5 text-right text-[11px] font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.totalPaid)}</div><div className={`px-2 py-1.5 text-right text-[11px] font-medium tabular-nums ${remainingTextClass({ totalRemaining: sectionTotal?.remaining, totalAccrual: sectionTotal?.accrual })}`}>{remainingSectionCurrency(sectionTotal?.remaining, sectionTotal?.accrual)}</div><div className={`px-2 py-1.5 text-right text-[11px] font-medium tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{nonZeroCurrency(sectionTotal?.marginAmount)}</div><div /></>
                 ) : mode === "internal" ? (
-                  <><div /><div className="py-2 pl-5 pr-3 text-[11px] italic text-gray-300">Section total</div><div /><div /><div /><div /><div /><div /><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.internalTotal)}</div><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.clientTotal)}</div><div className={`px-3 py-2 text-right text-xs font-medium tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{nonZeroCurrency(sectionTotal?.marginAmount)}</div><div className={`px-3 py-2 text-right text-xs font-medium tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{nonZeroPercent(sectionTotal?.marginPercent)}</div><div /></>
+                  <><div /><div className="py-1.5 pl-5 pr-2 text-[11px] italic text-gray-300">Section total</div><div /><div /><div /><div /><div /><div /><div className="px-2 py-1.5 text-right text-[11px] font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.internalTotal)}</div><div className="px-2 py-1.5 text-right text-[11px] font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.clientTotal)}</div><div className={`px-2 py-1.5 text-right text-[11px] font-medium tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{nonZeroCurrency(sectionTotal?.marginAmount)}</div><div className={`px-2 py-1.5 text-right text-[11px] font-medium tabular-nums ${marginTextClass(sectionTotal?.marginAmount)}`}>{nonZeroPercent(sectionTotal?.marginPercent)}</div><div /></>
                 ) : (
-                  <><div className="py-2 pl-5 pr-3 text-[11px] italic text-gray-300">Section total</div><div /><div /><div /><div /><div className="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.clientTotal)}</div></>
+                  <><div className="py-1.5 pl-5 pr-2 text-[11px] italic text-gray-300">Section total</div><div /><div /><div /><div /><div className="px-2 py-1.5 text-right text-[11px] font-medium tabular-nums text-gray-800">{nonZeroCurrency(sectionTotal?.clientTotal)}</div></>
                 )}
               </div>
             )}
@@ -501,6 +532,8 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
     longPressRef.current = null;
   }
 
+  const zeroOnly = isZeroOnlyLine(line);
+
   return (
     <div className={`group relative border-b border-gray-100 hover:bg-gray-50 ${line.isClosed ? "bg-gray-50 text-gray-400" : ""} ${productionMode && line.isOverBudget ? "border-l-[3px] border-l-red-900" : productionMode && line.isOverAccrual ? "border-l-[3px] border-l-red-600" : productionMode && Number(line.accrualUsedPercent ?? 0) > 80 ? "border-l-[3px] border-l-amber-500" : ""}`}>
       <div
@@ -523,18 +556,21 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
           <button onClick={() => { setMobileActionsOpen(false); onDelete(); }} className="flex min-h-11 w-36 items-center gap-2 px-3 text-red-600"><Trash2 size={15} /> Delete</button>
         </div>
       )}
-      <div className={`hidden h-10 items-center tabular-nums md:grid ${mode === "internal" ? productionMode ? "grid-cols-[32px_minmax(200px,1fr)_80px_90px_80px_70px_70px_70px_80px_80px_52px]" : "grid-cols-[32px_minmax(200px,1fr)_80px_80px_60px_60px_70px_70px_80px_90px_80px_80px_52px]" : "grid-cols-[minmax(200px,1fr)_80px_60px_60px_70px_90px]"}`}>
+      <div className={`hidden h-9 items-center tabular-nums md:grid ${mode === "internal" ? productionMode ? "grid-cols-[32px_minmax(180px,1fr)_72px_48px_48px_72px_88px_80px_72px_56px_64px_72px_80px_52px]" : "grid-cols-[32px_minmax(180px,1fr)_72px_72px_48px_48px_72px_64px_88px_88px_80px_72px_52px]" : "grid-cols-[minmax(180px,1fr)_72px_48px_48px_72px_88px]"}`}>
         {mode === "internal" ? (
           productionMode ? (
           <>
             <div className="px-2"><input type="checkbox" checked={checked} onChange={onCheck} className="opacity-0 group-hover:opacity-100" /></div>
             <div className="min-w-0 pl-5 pr-4 text-left">
-              <InlineTextCell line={line} field="description" value={line.description} align="left" onSave={saveCell} muted={line.isClosed} />
+              <InlineTextCell line={line} field="description" value={line.description} align="left" onSave={saveCell} muted={line.isClosed} quiet={zeroOnly} />
               {line.publicMemo && <span className="block truncate text-xs italic text-gray-500">{line.publicMemo}</span>}
               {line.isClosed && <span className="text-[11px] text-gray-400">Closed</span>}
               {!line.isClosed && line.purchaseOrders.length > 0 && line.purchaseOrders.every((po) => po.status !== "OPEN") && <button onClick={() => closeLine(line, onSaveCell, onRefresh).catch(onSaveError)} className="text-[11px] text-indigo-600">All POs settled — close this line?</button>}
             </div>
             <InlineNumberCell line={line} field="clientUnitCost" value={line.clientUnitCost} onSave={saveCell} />
+            <InlineNumberCell line={line} field="quantity" value={line.quantity} onSave={saveCell} plain muted small />
+            <InlineNumberCell line={line} field="daysUnits" value={line.daysUnits} onSave={saveCell} plain muted small />
+            <UnitDropdown value={line.unitLabel} onSave={(value) => saveCell("unitLabel", value)} />
             <Cell strong color={isZeroValue(line.clientSubtotal) ? "tertiary" : undefined}>{formatCurrency(line.clientSubtotal)}</Cell>
             <InlineNumberCell line={line} field="internalUnitCost" value={line.internalUnitCost} displayValue={line.internalSubtotal} onSave={saveCell} muted italic small />
             <div className="px-3 text-right text-xs font-normal tabular-nums">
@@ -558,7 +594,7 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
           <>
             <div className="px-2"><input type="checkbox" checked={checked} onChange={onCheck} className="opacity-0 group-hover:opacity-100" /></div>
             <div className="min-w-0 pl-5 pr-4 text-left">
-              <InlineTextCell line={line} field="description" value={line.description} align="left" onSave={saveCell} />
+              <InlineTextCell line={line} field="description" value={line.description} align="left" onSave={saveCell} quiet={zeroOnly} />
               {line.publicMemo && <span className="block truncate text-xs italic text-gray-500">{line.publicMemo}</span>}
             </div>
             <InlineNumberCell line={line} field="internalUnitCost" value={line.internalUnitCost} onSave={saveCell} muted small />
@@ -573,7 +609,7 @@ function LineRow({ line, mode, checked, onCheck, onEdit, onDuplicate, onDelete, 
           )
         ) : (
           <>
-            <div className="min-w-0 pl-5 pr-4 text-left"><InlineTextCell line={line} field="description" value={line.description} align="left" onSave={saveCell} />{line.publicMemo && <span className="block truncate text-xs italic text-gray-500">{line.publicMemo}</span>}</div>
+            <div className="min-w-0 pl-5 pr-4 text-left"><InlineTextCell line={line} field="description" value={line.description} align="left" onSave={saveCell} quiet={zeroOnly} />{line.publicMemo && <span className="block truncate text-xs italic text-gray-500">{line.publicMemo}</span>}</div>
             <InlineNumberCell line={line} field="clientUnitCost" value={line.clientUnitCost} onSave={saveCell} strong color="blue" />
             <InlineNumberCell line={line} field="quantity" value={line.quantity} onSave={saveCell} plain />
             <InlineNumberCell line={line} field="daysUnits" value={line.daysUnits} onSave={saveCell} plain />
@@ -703,16 +739,17 @@ function InlineExpandedEditor({ line, mode, productionMode, onClose, onSave, onD
 
 function Cell({ children, muted, strong, center, color, className = "" }: { children: ReactNode; muted?: boolean; strong?: boolean; center?: boolean; color?: "red" | "green" | "blue" | "muted" | "amber" | "tertiary"; className?: string }) {
   const colorClass = color === "red" ? "text-red-600" : color === "green" ? "text-emerald-700" : color === "blue" ? "text-blue-700" : color === "amber" ? "text-amber-600" : color === "tertiary" ? "text-gray-300" : muted || color === "muted" ? "text-gray-500" : "text-gray-800";
-  return <div className={`px-3 text-[13px] ${center ? "text-center" : "text-right"} ${strong ? "font-medium" : ""} ${colorClass} ${className}`}>{children}</div>;
+  return <div className={`px-2 text-xs ${center ? "text-center" : "text-right"} ${strong ? "font-medium" : ""} ${colorClass} ${className}`}>{children}</div>;
 }
 
-function InlineTextCell({ line, field, value, align, onSave, muted }: {
+function InlineTextCell({ line, field, value, align, onSave, muted, quiet }: {
   line: BudgetLineItem;
   field: EditableLineField;
   value: string;
   align: "left" | "right";
   onSave: (field: EditableLineField, value: string) => Promise<void>;
   muted?: boolean;
+  quiet?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -745,7 +782,7 @@ function InlineTextCell({ line, field, value, align, onSave, muted }: {
           if (e.key === "Enter") e.currentTarget.blur();
           if (e.key === "Escape") { setDraft(value); setEditing(false); }
         }}
-        className={`w-full border-0 bg-transparent p-0 text-[13px] font-medium outline-none shadow-none ${muted ? "text-gray-400 line-through" : "text-gray-900"} ${align === "right" ? "text-right" : "text-left"}`}
+        className={`w-full border-0 bg-transparent p-0 text-xs outline-none shadow-none ${quiet ? "font-normal text-gray-300" : "font-medium"} ${muted ? "text-gray-400 line-through" : "text-gray-900"} ${align === "right" ? "text-right" : "text-left"}`}
       />
     );
   }
@@ -753,7 +790,7 @@ function InlineTextCell({ line, field, value, align, onSave, muted }: {
   return (
     <button
       onClick={() => setEditing(true)}
-      className={`block w-full cursor-text truncate border-0 bg-transparent p-0 text-[13px] font-medium ${muted ? "text-gray-400 line-through" : "text-gray-900"} ${align === "right" ? "text-right" : "text-left"}`}
+      className={`block w-full cursor-text truncate border-0 bg-transparent p-0 text-xs group-hover:underline group-hover:decoration-gray-300 group-hover:underline-offset-4 ${quiet ? "font-normal text-gray-300" : "font-medium"} ${muted ? "text-gray-400 line-through" : "text-gray-900"} ${align === "right" ? "text-right" : "text-left"}`}
     >
       {value}
     </button>
@@ -796,7 +833,7 @@ function InlineNumberCell({ line, field, value, displayValue, onSave, plain, str
   const shownValue = displayValue ?? value;
   const colorClass = isZeroValue(shownValue) ? "text-gray-300" : color === "blue" ? "text-blue-700" : muted ? "text-gray-500" : "text-gray-800";
   const display = plain ? String(shownValue) : formatCurrency(shownValue);
-  const textSize = small ? "text-xs" : "text-[13px]";
+  const textSize = small ? "text-xs" : "text-xs";
 
   if (editing) {
     return (
@@ -810,7 +847,7 @@ function InlineNumberCell({ line, field, value, displayValue, onSave, plain, str
           if (e.key === "Enter") e.currentTarget.blur();
           if (e.key === "Escape") { setDraft(String(value)); setEditing(false); }
         }}
-        className={`w-full border-0 bg-transparent px-3 text-right ${textSize} tabular-nums outline-none shadow-none ${strong ? "font-medium" : ""} ${italic ? "italic" : ""} ${colorClass}`}
+        className={`w-full border-0 bg-transparent px-2 text-right ${textSize} tabular-nums outline-none shadow-none ${strong ? "font-medium" : ""} ${italic ? "italic" : ""} ${colorClass}`}
       />
     );
   }
@@ -818,7 +855,7 @@ function InlineNumberCell({ line, field, value, displayValue, onSave, plain, str
   return (
     <button
       onClick={() => setEditing(true)}
-      className={`w-full cursor-text border-0 bg-transparent px-3 text-right ${textSize} tabular-nums group-hover:underline group-hover:decoration-gray-300 group-hover:underline-offset-4 ${strong ? "font-medium" : ""} ${italic ? "italic" : ""} ${colorClass}`}
+      className={`w-full cursor-text border-0 bg-transparent px-2 text-right ${textSize} tabular-nums group-hover:underline group-hover:decoration-gray-300 group-hover:underline-offset-4 ${strong ? "font-medium" : ""} ${italic ? "italic" : ""} ${colorClass}`}
     >
       {display}
     </button>
@@ -843,7 +880,7 @@ function UnitDropdown({ value, onSave }: { value: string; onSave: (value: string
   }
 
   return (
-    <div ref={ref} className="relative px-4 text-center">
+    <div ref={ref} className="relative px-2 text-center">
       <button onClick={() => setOpen(!open)} className="inline-flex min-h-8 items-center gap-1 border-0 bg-transparent text-xs text-gray-500 hover:underline hover:decoration-gray-300 hover:underline-offset-4">
         {value}<ChevronDown size={12} />
       </button>
@@ -882,43 +919,43 @@ function PoPanel({ line, onChanged }: { line: BudgetLineItem; onChanged: () => P
   }
 
   return (
-    <div className="mb-2 border-t border-gray-200 bg-gray-50 p-3 md:ml-8 md:p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-gray-900">Purchase Orders</h3>
-        <button onClick={() => { setAdding(true); setEditing(null); }} className="min-h-11 rounded-lg bg-gray-900 px-3 text-sm font-medium text-white">+ Add PO</button>
+    <div className="relative mb-2 bg-[#fafaf8] py-2 pl-12 pr-3 shadow-sm md:ml-8 md:pr-4">
+      <div className="absolute bottom-0 left-4 top-0 w-px bg-[#888]" />
+      <div className="mb-2 flex items-center justify-between gap-3 pt-2">
+        <h3 className="text-[11px] font-medium uppercase tracking-[0.5px] text-gray-500">Purchase Orders</h3>
+        <button onClick={() => { setAdding(true); setEditing(null); }} className="min-h-9 px-2 text-[11px] font-medium text-gray-700 hover:text-gray-900">+ Add PO</button>
       </div>
       {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
-      <div className="space-y-2">
+      <div className="space-y-1">
         {line.purchaseOrders.map((po) => (
-          <div key={po.id} className="rounded-lg border border-gray-200 bg-white p-3">
+          <div key={po.id} className="group/po rounded border border-gray-100 bg-white px-2">
             {editing?.id === po.id ? (
               <PoForm lineId={line.id} po={po} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />
             ) : (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-gray-900 px-2 py-1 font-mono text-xs text-white">{po.poNumber}</span>
+              <div className="flex h-9 items-center gap-2">
+                <span className="rounded bg-gray-900 px-1.5 py-0.5 font-mono text-[10px] text-white">{po.poNumber}</span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-gray-900">{po.supplierName}</p>
-                  {po.description && <p className="truncate text-xs text-gray-500">{po.description}</p>}
-                  <p className="text-xs text-gray-400">{new Date(po.dateRaised).toLocaleDateString("en-GB")}</p>
+                  <p className="truncate text-xs text-gray-900">{po.supplierName}</p>
+                  {po.description && <p className="truncate text-xs italic text-gray-500">{po.description}</p>}
                 </div>
-                <span className="text-sm font-semibold tabular-nums">{formatCurrency(po.agreedAmount)}</span>
+                <span className="text-xs font-medium tabular-nums text-gray-900">{formatCurrency(po.agreedAmount)}</span>
                 <StatusPill status={po.status} />
-                <button onClick={() => setEditing(po)} className="min-h-11 rounded-lg px-3 text-sm text-gray-600">Edit</button>
-                {po.status === "OPEN" && <button onClick={() => remove(po)} className="min-h-11 rounded-lg px-3 text-sm text-red-600">Delete</button>}
+                <button onClick={() => setEditing(po)} className="hidden min-h-8 px-2 text-[11px] text-gray-500 group-hover/po:block">Edit</button>
+                {po.status === "OPEN" && <button onClick={() => remove(po)} className="hidden min-h-8 px-2 text-[11px] text-red-600 group-hover/po:block">Delete</button>}
               </div>
             )}
           </div>
         ))}
-        {line.purchaseOrders.length === 0 && <p className="rounded-lg border border-dashed border-gray-200 bg-white p-4 text-center text-sm text-gray-400">No purchase orders yet.</p>}
+        {line.purchaseOrders.length === 0 && <p className="rounded border border-dashed border-gray-200 bg-white p-3 text-center text-xs text-gray-400">No purchase orders yet.</p>}
       </div>
       {adding && <PoForm lineId={line.id} onCancel={() => setAdding(false)} onSaved={() => { setAdding(false); onChanged(); }} />}
-      <div className="mt-3 grid gap-2 rounded-lg bg-white p-3 text-sm md:grid-cols-4">
+      <div className="mt-2 grid gap-2 rounded bg-white p-2 text-xs md:grid-cols-4">
         <MiniTotal label="Total agreed" value={poTotal} />
         <MiniTotal label="Open POs" value={openTotal} />
         <MiniTotal label="Invoiced" value={invoicedTotal} />
         <MiniTotal label="Paid" value={paidPoTotal} />
       </div>
-      <div className="mt-3 max-w-[280px] border-t border-gray-200 pt-2 text-xs">
+      <div className="mt-2 max-w-[280px] border-t border-gray-200 pt-2 text-xs">
         <StackRow label="Accrual held" value={formatCurrency(line.internalSubtotal)} />
         <StackRow label="Total committed" value={formatCurrency(line.totalCommitted)} />
         <StackRow label="Remaining" value={formatCurrency(line.remainingAccrual)} valueClass={remainingTextClass({ remainingAccrual: line.remainingAccrual, internalSubtotal: line.internalSubtotal })} />
@@ -931,9 +968,9 @@ function PoPanel({ line, onChanged }: { line: BudgetLineItem; onChanged: () => P
 
 function StackRow({ label, value, valueClass = "text-gray-900" }: { label: string; value: string; valueClass?: string }) {
   return (
-    <div className="grid h-8 grid-cols-[120px_120px] items-center gap-4">
-      <span className="text-xs text-gray-500">{label}</span>
-      <span className={`text-right text-xs font-medium tabular-nums ${valueClass}`}>{value}</span>
+    <div className="grid h-6 grid-cols-[120px_120px] items-center gap-4">
+      <span className="text-[11px] text-gray-500">{label}</span>
+      <span className={`text-right text-[11px] font-medium tabular-nums ${valueClass}`}>{value}</span>
     </div>
   );
 }
@@ -1092,11 +1129,11 @@ function PlainField({ label, value, onChange, type = "text" }: { label: string; 
 
 function StatusPill({ status }: { status: PurchaseOrderStatus }) {
   const cls = status === "PAID" ? "bg-emerald-100 text-emerald-700" : status === "INVOICED" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700";
-  return <span className={`rounded-full px-2 py-1 text-xs font-medium ${cls}`}>{status.toLowerCase()}</span>;
+  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{status.toLowerCase()}</span>;
 }
 
 function MiniTotal({ label, value }: { label: string; value: number }) {
-  return <div><p className="text-xs text-gray-500">{label}</p><p className="font-medium tabular-nums text-gray-900">{formatCurrency(value)}</p></div>;
+  return <div><p className="text-[11px] text-gray-500">{label}</p><p className="text-[11px] font-medium tabular-nums text-gray-900">{formatCurrency(value)}</p></div>;
 }
 
 function LineEditor({ line, mode, onClose, onSave, onDuplicate, onDelete }: {

@@ -166,8 +166,11 @@
   - Production row hover actions now include a Purchase Orders button between edit and duplicate, wired to the existing PO panel toggle.
   - The top budget summary bar was removed; summary figures now live in a two-row fixed bottom bar for both bidding and production modes.
   - The production fee percentage control moved into the right info panel Notes card and saves on blur.
-  - Budget table hierarchy was refined for readability: dark section headers, compact 40px rows, stronger primary values, receded secondary values, and near-invisible zero values.
+  - Budget table hierarchy was refined for readability: section headers now use a softer warm gray treatment with a small dark section-code badge, compact 36px line rows, 28px column headers, stronger primary values, receded secondary values, and near-invisible zero values.
+  - Production internal budget rows now include QTY, DAYS, and UNIT columns again, aligned to the same grid as the header.
+  - Zero-only catalog rows are visually quieter, and section total rows are hidden when the section has no non-zero totals.
   - PO panel financial stack is compact and left-aligned.
+  - PO panels are visually nested below their parent line item with an inset connector, lighter background, smaller PO rows, and link-style actions.
   - Section headers, column headers, empty sections, right panel revisions, and projected margin tooltip were refined.
 
 ### Email
@@ -191,6 +194,7 @@
   - Frontend margin colors are consistent: positive green, zero muted gray, negative red.
   - Smoke test through `GET /api/budgets/revisions/:revisionId` confirmed a `Pre-production days` line at £300 internal and £350 client returns `marginAmount: 50` and `marginPercent: 14.285714285714285`, with the section total matching.
 - Browser automation tooling is not installed, so I did not run Playwright screenshots at 390px. TypeScript production builds passed and mobile-first layouts were reviewed.
+- Latest frontend build passed and was deployed to `/var/www/agent` after the budget table spacing/density refinement.
 - PO invoice-file dropdown is not fully populated from job receipts yet; backend fields are ready.
 - Invoice sub-panel remains lighter than the PO panel.
 - Bulk select still only supports delete selected.
@@ -207,6 +211,7 @@
 - `fix: compact line item edit form and add PO hover button`
 - `refactor: move budget summary from top bar to bottom bar`
 - `refactor: budget table visual hierarchy and readability`
+- `refactor: budget table spacing density and hierarchy refinement`
 
 ## Exact Next Step For Phase 6
 
