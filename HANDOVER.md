@@ -172,6 +172,12 @@
 
 ## Known Issues And Technical Debt
 
+- Margin bug fix completed after the financial stack work:
+  - Budget API now derives line margin from `clientSubtotal - internalSubtotal` before returning revisions, so stale stored zero values cannot leak into the UI.
+  - Section totals now calculate `marginAmount` as the sum of derived line margins and `marginPercent` as `sectionMarginAmount / sectionClientSubtotal * 100`.
+  - Existing stored budget line margins were backfilled; 2 of 10 rows were corrected.
+  - Frontend margin colors are consistent: positive green, zero muted gray, negative red.
+  - Smoke test through `GET /api/budgets/revisions/:revisionId` confirmed a `Pre-production days` line at £300 internal and £350 client returns `marginAmount: 50` and `marginPercent: 14.285714285714285`, with the section total matching.
 - Browser automation tooling is not installed, so I did not run Playwright screenshots at 390px. TypeScript production builds passed and mobile-first layouts were reviewed.
 - PO invoice-file dropdown is not fully populated from job receipts yet; backend fields are ready.
 - Invoice sub-panel remains lighter than the PO panel.
@@ -184,6 +190,7 @@
 - `fb0c289 add purchase order financial schema`
 - `6d3ddc0 update budget financial stack logic`
 - `4e2aff4 update budget modes and purchase order UI`
+- `fix: budget margin calculations and colors`
 
 ## Exact Next Step For Phase 6
 

@@ -52,6 +52,15 @@ export function recalculateLineItem<T extends LineItemInput>(data: T) {
   return { internalSubtotal, clientSubtotal, variance, marginAmount, marginPercent };
 }
 
+function calculateMarginFromSubtotals(line: Pick<FullLineItem, "clientSubtotal" | "internalSubtotal">) {
+  const clientSubtotal = Number(line.clientSubtotal ?? 0);
+  const internalSubtotal = Number(line.internalSubtotal ?? 0);
+  const marginAmount = clientSubtotal - internalSubtotal;
+  const marginPercent = clientSubtotal > 0 ? (marginAmount / clientSubtotal) * 100 : 0;
+
+  return { marginAmount, marginPercent };
+}
+
 function invoiceAmountByStatus(line: FullLineItem, status: InvoiceStatus) {
   return line.invoices
     .filter((invoice) => invoice.status === status)
@@ -88,10 +97,15 @@ function enrichRevision(revision: FullRevision) {
   const productionMode = Boolean(revision.budget.productionId);
   const sections = revision.sections.map((section) => ({
     ...section,
-    lineItems: section.lineItems.map((line) => ({
-      ...line,
-      ...(productionMode ? calculateLineFinancialStack(line, productionMode) : {}),
-    })),
+    lineItems: section.lineItems.map((line) => {
+      const margin = calculateMarginFromSubtotals(line);
+      const enrichedLine = { ...line, ...margin };
+
+      return {
+        ...enrichedLine,
+        ...(productionMode ? calculateLineFinancialStack(enrichedLine, productionMode) : {}),
+      };
+    }),
   }));
 
   return { ...revision, sections };
@@ -111,7 +125,7 @@ export function calculateRevisionTotalsFromRevision(revision: FullRevision) {
   const sectionTotals = revision.sections.map((section) => {
     const internalTotal = section.lineItems.reduce((sum, line) => sum + line.internalSubtotal, 0);
     const clientTotal = section.lineItems.reduce((sum, line) => sum + line.clientSubtotal, 0);
-    const marginAmount = section.lineItems.reduce((sum, line) => sum + line.marginAmount, 0);
+    const marginAmount = section.lineItems.reduce((sum, line) => sum + calculateMarginFromSubtotals(line).marginAmount, 0);
     const marginPercent = clientTotal > 0 ? (marginAmount / clientTotal) * 100 : 0;
     const stacks = section.lineItems.map((line) => calculateLineFinancialStack(line, productionMode));
     const totalPOs = stacks.reduce((sum, stack) => sum + stack.totalPOs, 0);
@@ -271,6 +285,7 @@ export async function createRevision(budgetId: string, options?: { label?: strin
         data: { revisionId: created.id, code: section.code, name: section.name, order: section.order },
       });
       for (const line of section.lineItems) {
+        const margin = calculateMarginFromSubtotals(line);
         await tx.budgetLineItem.create({
           data: {
             sectionId: createdSection.id,
@@ -286,8 +301,8 @@ export async function createRevision(budgetId: string, options?: { label?: strin
             agencyMarkup: line.agencyMarkup,
             internalSubtotal: line.internalSubtotal,
             clientSubtotal: line.clientSubtotal,
-            marginAmount: line.marginAmount,
-            marginPercent: line.marginPercent,
+            marginAmount: margin.marginAmount,
+            marginPercent: margin.marginPercent,
             actualCost: 0,
             variance: -line.clientSubtotal,
             isClosed: false,
@@ -442,6 +457,7 @@ export async function cloneBudgetToProduction(opportunityId: string, productionI
         data: { revisionId: revision.id, code: section.code, name: section.name, order: section.order },
       });
       for (const line of section.lineItems) {
+        const margin = calculateMarginFromSubtotals(line);
         await tx.budgetLineItem.create({
           data: {
             sectionId: createdSection.id,
@@ -457,8 +473,8 @@ export async function cloneBudgetToProduction(opportunityId: string, productionI
             agencyMarkup: line.agencyMarkup,
             internalSubtotal: line.internalSubtotal,
             clientSubtotal: line.clientSubtotal,
-            marginAmount: line.marginAmount,
-            marginPercent: line.marginPercent,
+            marginAmount: margin.marginAmount,
+            marginPercent: margin.marginPercent,
             actualCost: 0,
             variance: -line.clientSubtotal,
             isClosed: false,
