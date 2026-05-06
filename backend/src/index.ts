@@ -16,8 +16,35 @@ async function seedAdmin() {
   }
 }
 
+async function seedCrewRoles() {
+  const roles = [
+    "Director",
+    "DOP",
+    "Photographer",
+    "1st AD",
+    "Stylist",
+    "Hair & Makeup",
+    "Set Designer",
+    "Producer",
+    "Production Manager",
+    "Runner",
+    "Other",
+  ];
+
+  await Promise.all(
+    roles.map((name) =>
+      prisma.crewRole.upsert({
+        where: { name },
+        update: {},
+        create: { name },
+      })
+    )
+  );
+}
+
 async function main() {
   await seedAdmin();
+  await seedCrewRoles();
 
   const app = createServer();
   const port = parseInt(process.env.PORT ?? "3000", 10);

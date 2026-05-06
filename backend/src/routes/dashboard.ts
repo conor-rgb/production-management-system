@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import prisma from "../prisma";
-import { Stage } from "@prisma/client";
+import { ProductionStatus, Stage } from "@prisma/client";
 
 const router = Router();
 
@@ -15,6 +15,8 @@ router.get("/", async (_req: Request, res: Response): Promise<void> => {
     companyCount,
     stageCounts,
     overdueOpportunities,
+    todaysAgenda,
+    activeProductions,
   ] = await Promise.all([
     prisma.opportunity.count({ where: { stage: { notIn: [Stage.WON, Stage.LOST] } } }),
     prisma.production.count(),
@@ -41,6 +43,26 @@ router.get("/", async (_req: Request, res: Response): Promise<void> => {
         value: true,
       },
     }),
+    prisma.productionDate.findMany({
+      where: {
+        date: {
+          gte: today,
+          lt: new Date(today.getTime() + 86_400_000),
+        },
+      },
+      orderBy: [{ time: "asc" }, { createdAt: "asc" }],
+      include: {
+        production: { select: { id: true, title: true, jobCode: true, clientName: true, brand: true } },
+      },
+    }),
+    prisma.production.findMany({
+      where: { status: { not: ProductionStatus.WRAPPED } },
+      orderBy: { updatedAt: "desc" },
+      include: {
+        dates: { orderBy: [{ date: "asc" }, { time: "asc" }] },
+        budgets: { include: { sections: { include: { lineItems: true } } } },
+      },
+    }),
   ]);
 
   const stageMap: Record<string, number> = {};
@@ -53,6 +75,35 @@ router.get("/", async (_req: Request, res: Response): Promise<void> => {
     companyCount,
     stageCounts: stageMap,
     overdueOpportunities,
+    todaysAgenda,
+    activeProductions: activeProductions.map((production) => {
+      const actualSpend = production.budgets.reduce((budgetSum, budget) => (
+        budgetSum + budget.sections.reduce((sectionSum, section) => (
+          sectionSum + section.lineItems.reduce((lineSum, line) => lineSum + Number(line.actualCost ?? 0), 0)
+        ), 0)
+      ), 0);
+      const quotedValue = Number(production.value ?? 0);
+      const variance = actualSpend - quotedValue;
+      const nextDate = production.dates.find((date) => {
+        const d = new Date(date.date);
+        d.setHours(23, 59, 59, 999);
+        return d >= new Date();
+      });
+
+      return {
+        id: production.id,
+        title: production.title,
+        jobCode: production.jobCode,
+        clientName: production.clientName,
+        brand: production.brand,
+        status: production.status,
+        quotedValue,
+        actualSpend,
+        variance,
+        overBudget: variance > 0,
+        nextDate,
+      };
+    }),
   });
 });
 

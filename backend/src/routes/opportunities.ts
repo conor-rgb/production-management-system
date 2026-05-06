@@ -192,7 +192,7 @@ router.post("/:id/stage", async (req: Request, res: Response): Promise<void> => 
         opportunityId: opp.id,
         contactId: opp.contactId,
         jobCode,
-        status: "PLANNING",
+        status: "PRE_PRO",
       },
     });
     res.json({ opportunity: updated, production });

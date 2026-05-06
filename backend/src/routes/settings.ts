@@ -40,4 +40,37 @@ router.patch("/email", async (req: Request, res: Response): Promise<void> => {
   res.json({ email: updated.email });
 });
 
+router.get("/crew-roles", async (_req: Request, res: Response): Promise<void> => {
+  const roles = await prisma.crewRole.findMany({ orderBy: { name: "asc" } });
+  res.json(roles);
+});
+
+router.post("/crew-roles", async (req: Request, res: Response): Promise<void> => {
+  const { name, description } = req.body;
+  if (!name) { res.status(400).json({ error: "name required" }); return; }
+
+  const role = await prisma.crewRole.create({ data: { name, description } });
+  res.status(201).json(role);
+});
+
+router.patch("/crew-roles/:id", async (req: Request, res: Response): Promise<void> => {
+  const { name, description } = req.body;
+  const role = await prisma.crewRole.update({
+    where: { id: req.params.id },
+    data: { name, description },
+  });
+  res.json(role);
+});
+
+router.delete("/crew-roles/:id", async (req: Request, res: Response): Promise<void> => {
+  const inUse = await prisma.crewMember.count({ where: { roleId: req.params.id } });
+  if (inUse > 0) {
+    res.status(400).json({ error: "Role is used by crew and cannot be deleted" });
+    return;
+  }
+
+  await prisma.crewRole.delete({ where: { id: req.params.id } });
+  res.status(204).end();
+});
+
 export default router;
