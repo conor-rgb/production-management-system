@@ -13,6 +13,73 @@ const fullInclude = {
   productions: { select: { id: true, title: true, jobCode: true, status: true } },
 };
 
+const productionSelect = {
+  id: true,
+  title: true,
+  clientName: true,
+  brand: true,
+  jobType: true,
+  value: true,
+  contactId: true,
+  opportunityId: true,
+  jobCode: true,
+  status: true,
+  createdAt: true,
+} as const;
+
+async function transitionOpportunityStage(
+  opportunityId: string,
+  stage: Stage,
+  lostReason?: LostReason,
+  lostNote?: string
+) {
+  if (stage === Stage.LOST) {
+    if (!lostReason) throw new Error("lostReason required when marking Lost");
+    const validReasons = Object.values(LostReason);
+    if (!validReasons.includes(lostReason)) {
+      throw new Error(`lostReason must be one of: ${validReasons.join(", ")}`);
+    }
+  }
+
+  const opp = await prisma.opportunity.findUnique({
+    where: { id: opportunityId },
+    include: { productions: { select: productionSelect } },
+  });
+  if (!opp) return null;
+
+  let production = stage === Stage.WON ? opp.productions[0] : undefined;
+
+  if (stage === Stage.WON && !production) {
+    const jobCode = await generateJobCode();
+    production = await prisma.production.create({
+      data: {
+        title: opp.title,
+        clientName: opp.clientName,
+        brand: opp.brand,
+        jobType: opp.jobType,
+        value: opp.value,
+        opportunityId: opp.id,
+        contactId: opp.contactId,
+        jobCode,
+        status: "PRE_PRO",
+      },
+      select: productionSelect,
+    });
+  }
+
+  const opportunity = await prisma.opportunity.update({
+    where: { id: opportunityId },
+    data: {
+      stage,
+      lostReason: stage === Stage.LOST ? lostReason : null,
+      lostNote: stage === Stage.LOST ? (lostNote ?? null) : null,
+    },
+    include: fullInclude,
+  });
+
+  return { opportunity, production };
+}
+
 // GET /api/opportunities?stage=&overdue=true&search=
 router.get("/", async (req: Request, res: Response): Promise<void> => {
   const { stage, overdue, search } = req.query;
@@ -131,8 +198,25 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
 router.patch("/:id", async (req: Request, res: Response): Promise<void> => {
   const {
     title, clientName, brand, jobType, source, contactId, companyId,
-    description, value, followUpDate, dateReceived, notes,
+    description, value, followUpDate, dateReceived, notes, stage, lostReason, lostNote,
   } = req.body;
+
+  if (stage !== undefined) {
+    if (!Object.values(Stage).includes(stage)) {
+      res.status(400).json({ error: `stage must be one of: ${Object.values(Stage).join(", ")}` });
+      return;
+    }
+
+    try {
+      const result = await transitionOpportunityStage(req.params.id, stage, lostReason, lostNote);
+      if (!result) { res.status(404).json({ error: "Not found" }); return; }
+      res.json(result);
+      return;
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : "Invalid stage transition" });
+      return;
+    }
+  }
 
   const item = await prisma.opportunity.update({
     where: { id: req.params.id },
@@ -152,54 +236,18 @@ router.patch("/:id", async (req: Request, res: Response): Promise<void> => {
 router.post("/:id/stage", async (req: Request, res: Response): Promise<void> => {
   const { stage, lostReason, lostNote } = req.body;
   if (!stage) { res.status(400).json({ error: "stage required" }); return; }
-
-  if (stage === Stage.LOST) {
-    if (!lostReason) { res.status(400).json({ error: "lostReason required when marking Lost" }); return; }
-    const validReasons = Object.values(LostReason);
-    if (!validReasons.includes(lostReason)) {
-      res.status(400).json({ error: `lostReason must be one of: ${validReasons.join(", ")}` });
-      return;
-    }
-  }
-
-  const opp = await prisma.opportunity.findUnique({
-    where: { id: req.params.id },
-    include: { contact: true },
-  });
-  if (!opp) { res.status(404).json({ error: "Not found" }); return; }
-
-  // Update opportunity stage
-  const updated = await prisma.opportunity.update({
-    where: { id: req.params.id },
-    data: {
-      stage,
-      lostReason: stage === Stage.LOST ? lostReason : null,
-      lostNote: stage === Stage.LOST ? (lostNote ?? null) : null,
-    },
-    include: fullInclude,
-  });
-
-  // Auto-create Production when Won
-  if (stage === Stage.WON) {
-    const jobCode = await generateJobCode();
-    const production = await prisma.production.create({
-      data: {
-        title: opp.title,
-        clientName: opp.clientName,
-        brand: opp.brand,
-        jobType: opp.jobType,
-        value: opp.value,
-        opportunityId: opp.id,
-        contactId: opp.contactId,
-        jobCode,
-        status: "PRE_PRO",
-      },
-    });
-    res.json({ opportunity: updated, production });
+  if (!Object.values(Stage).includes(stage)) {
+    res.status(400).json({ error: `stage must be one of: ${Object.values(Stage).join(", ")}` });
     return;
   }
 
-  res.json({ opportunity: updated });
+  try {
+    const result = await transitionOpportunityStage(req.params.id, stage, lostReason, lostNote);
+    if (!result) { res.status(404).json({ error: "Not found" }); return; }
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Invalid stage transition" });
+  }
 });
 
 // DELETE /api/opportunities/:id

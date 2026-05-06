@@ -6,9 +6,9 @@ import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, daysOverdue } from "../lib/ty
 import OpportunityModal from "../components/opportunities/OpportunityModal";
 import OpportunityDetail from "../components/opportunities/OpportunityDetail";
 import LostModal from "../components/opportunities/LostModal";
-import { Plus, List, LayoutGrid, AlertCircle, X, TrendingUp } from "lucide-react";
+import { Plus, List, LayoutGrid, AlertCircle, TrendingUp } from "lucide-react";
 
-type WonResult = { oppTitle: string; productionId: string; jobCode: string };
+type PendingWon = { id: string; title: string };
 
 export default function Opportunities() {
   const navigate = useNavigate();
@@ -21,7 +21,7 @@ export default function Opportunities() {
   const [selected, setSelected] = useState<OpportunityListItem | null>(null);
   const [editOpp, setEditOpp] = useState<OpportunityListItem | null | "new">(null);
   const [lostTarget, setLostTarget] = useState<string | null>(null);
-  const [wonResult, setWonResult] = useState<WonResult | null>(null);
+  const [pendingWon, setPendingWon] = useState<PendingWon | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
 
@@ -53,22 +53,27 @@ export default function Opportunities() {
       return;
     }
     if (stage === "WON") {
-      const res = await api.post<{ opportunity: OpportunityListItem; production?: { id: string; jobCode: string } }>(
-        `/api/opportunities/${oppId}/stage`, { stage }
-      );
-      if (res.production) {
-        setWonResult({
-          oppTitle: res.opportunity.title,
-          productionId: res.production.id,
-          jobCode: res.production.jobCode,
-        });
-      }
-      if (selected?.id === oppId) setSelected(null);
-      await load();
+      const opp = opportunities.find((item) => item.id === oppId) ?? selected;
+      setPendingWon({ id: oppId, title: opp?.title ?? "this opportunity" });
       return;
     }
-    await api.post(`/api/opportunities/${oppId}/stage`, { stage });
+    await api.patch(`/api/opportunities/${oppId}`, { stage });
     await load();
+  }
+
+  async function confirmWon() {
+    if (!pendingWon) return;
+    const target = pendingWon;
+    const res = await api.patch<{ opportunity: OpportunityListItem; production?: { id: string; jobCode: string } }>(
+      `/api/opportunities/${target.id}`,
+      { stage: "WON" }
+    );
+    if (!res.production) throw new Error("Production was not returned after marking opportunity Won");
+
+    if (selected?.id === target.id) setSelected(null);
+    setSearchParams({}, { replace: true });
+    setPendingWon(null);
+    navigate(`/productions?production=${res.production.id}`);
   }
 
   function onDragStart(oppId: string) { setDragging(oppId); }
@@ -181,14 +186,13 @@ export default function Opportunities() {
           onSaved={() => { setLostTarget(null); if (selected?.id === lostTarget) setSelected(null); load(); }}
         />
       )}
-      {wonResult && (
-        <WonConfirmation
-          result={wonResult}
-          onClose={() => setWonResult(null)}
-          onGoToProduction={() => { setWonResult(null); navigate("/productions"); }}
+      {pendingWon && (
+        <WonConfirmPrompt
+          opportunityTitle={pendingWon.title}
+          onClose={() => setPendingWon(null)}
+          onConfirm={confirmWon}
         />
       )}
-
       {/* Mobile detail sheet */}
       {selected && (
         <div className="md:hidden fixed inset-0 bg-white z-40 overflow-auto">
@@ -371,29 +375,47 @@ function ListView({
 
 // ─── Won confirmation ─────────────────────────────────────────────────────────
 
-function WonConfirmation({ result, onClose, onGoToProduction }: {
-  result: WonResult;
+function WonConfirmPrompt({ opportunityTitle, onClose, onConfirm }: {
+  opportunityTitle: string;
   onClose: () => void;
-  onGoToProduction: () => void;
+  onConfirm: () => Promise<void>;
 }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function confirm() {
+    setSaving(true);
+    setError("");
+    try {
+      await onConfirm();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to mark opportunity Won");
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center">
-        <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-          <TrendingUp size={24} className="text-green-600" />
-        </div>
-        <h2 className="font-semibold text-gray-900 text-lg mb-1">Opportunity won!</h2>
-        <p className="text-sm text-gray-500 mb-2">{result.oppTitle}</p>
-        <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 text-sm font-medium px-4 py-2 rounded-xl mb-6">
-          <span className="font-mono text-base">{result.jobCode}</span>
-          <span className="text-xs text-indigo-500">production created</span>
-        </div>
+      <div className="bg-white rounded-2xl w-full max-w-sm p-6">
+        <h2 className="font-semibold text-gray-900 text-lg mb-1">Mark opportunity as Won?</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          This will create a production record for {opportunityTitle}.
+        </p>
+        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 hover:bg-gray-50">
-            <X size={14} className="inline mr-1" /> Close
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="flex-1 min-h-11 border border-gray-300 rounded-xl text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancel
           </button>
-          <button onClick={onGoToProduction} className="flex-1 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-medium hover:bg-gray-700">
-            View Productions
+          <button
+            onClick={confirm}
+            disabled={saving}
+            className="flex-1 min-h-11 bg-gray-900 text-white rounded-xl text-sm font-medium hover:bg-gray-700 disabled:opacity-50"
+          >
+            {saving ? "Creating…" : "Confirm"}
           </button>
         </div>
       </div>
