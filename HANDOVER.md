@@ -1,163 +1,130 @@
-# Phase 5 Handover — Budgets, Bid Estimates, Catalog, and Revisions
+# Phase 5 Handover — Budget Financial Stack And Purchase Orders
 
-## Built
+## Built This Session
 
-### Backend Schema And Migration
-- Added Phase 5 budget schema through Prisma migration `20260506180000_phase5_budgets_catalog_revisions`.
-- Added `Budget`, `BudgetRevision`, `BudgetSection`, expanded `BudgetLineItem`, `LineItemInvoice`, `CatalogItem`, `CatalogGroup`, and `CatalogGroupItem`.
-- Budgets can belong to either a Production or an Opportunity. The service enforces one parent only.
-- Added `BudgetRevisionStatus` and `InvoiceStatus` enums.
-- Added `Opportunity.budgets` and `JobFile.invoices` relations.
-- Existing Phase 4 file metadata remains intact.
+### Schema And Migration
+- Added Prisma migration `20260506200000_budget_purchase_orders_financial_stack`.
+- Added `PurchaseOrderStatus` enum:
+  - `OPEN`
+  - `INVOICED`
+  - `PAID`
+- Added `PurchaseOrder` model:
+  - linked to `BudgetLineItem`
+  - linked to `Production`
+  - optional linked invoice file through `JobFile`
+  - PO number, supplier, description, agreed amount, status, invoice metadata, notes, timestamps
+- Added `Production.lastPoSequence` for per-job PO numbering.
+- Added `BudgetLineItem.marginAmount`, `marginPercent`, and `isClosed`.
+- Added `BudgetLineItem.purchaseOrders`.
+- Added `Production.purchaseOrders`.
+- Added `JobFile.purchaseOrderInvoices`.
 
-### Budget Service
-- Added `backend/src/services/budgetService.ts`.
-- Implemented:
-  - `getOrCreateBudget`
-  - `getRevision`
-  - `createRevision`
-  - `calculateRevisionTotals`
-  - `syncProductionTotals`
-  - `cloneBudgetToProduction`
-  - `recalculateLineItem`
-  - `insertCatalogItem`
-  - `insertCatalogGroup`
-- All totals are calculated server-side:
+### Backend Financial Logic
+- Rebuilt `budgetService` calculations around two modes:
+  - bidding mode when budget has `opportunityId`
+  - production mode when budget has `productionId`
+- `recalculateLineItem` now stores:
+  - `internalSubtotal`
+  - `clientSubtotal`
+  - `marginAmount`
+  - `marginPercent`
+  - legacy `variance` for compatibility
+- Bidding-mode totals now return:
   - internal total
   - client total
   - production fee
   - client grand total
-  - actual total
-  - variance
-  - over-budget flag
-  - per-section totals
-- Production `value` syncs to the current revision client grand total for production budgets.
-- Opportunity Won flow now clones the opportunity bid budget into the new production and returns `budgetCloned`.
+  - total margin amount
+  - total margin percent
+  - section margin totals
+- Production-mode totals now return:
+  - client grand total
+  - accrual held
+  - total POs
+  - total pending invoices
+  - total paid invoices
+  - total committed
+  - total remaining accrual
+  - projected margin and percent
+  - over-accrual and over-budget flags
+  - per-line computed PO/accrual stack
+- Closed lines:
+  - keep paid invoices as committed
+  - release remaining accrual back to projected margin
+  - report remaining accrual as zero
+- `cloneBudgetToProduction` preserves bid margin and accrual baseline while copying no POs or invoices.
+- Added `generatePoNumber(productionId)` with format `PO-YYNN-NNN`.
+- `syncProductionTotals` still persists `Production.value = clientGrandTotal`; production list/dashboard financials now derive committed spend and accrual remaining live from budget records.
 
-### Catalog
-- Added `backend/src/services/aicp.ts` with all 16 AICP sections and the requested seed item list.
-- Added `backend/src/services/catalogSeed.ts`; first app boot seeds the catalog if empty.
-- Added `/api/catalog` routes:
-  - List active items grouped by AICP section
-  - Create/update/soft-delete/reorder items
-  - List/create/update/delete groups
-  - Add/remove items from groups
+### Purchase Order API
+- Added:
+  - `GET /api/budgets/lines/:lineItemId/pos`
+  - `POST /api/budgets/lines/:lineItemId/pos`
+  - `PATCH /api/budgets/pos/:poId`
+  - `DELETE /api/budgets/pos/:poId`
+- POST auto-generates PO number from the production job code and per-production sequence.
+- DELETE only allows Open POs.
+- PO create/update/delete syncs production totals.
+- Invoice create/update/delete now syncs production totals.
+- Existing `GET /api/budgets/revisions/:revisionId`, production budget, and opportunity budget responses include the new mode-aware totals and line-level financial stack.
 
-### Budget API
-- Replaced budget placeholder routes with:
-  - `GET /api/budgets/production/:productionId`
-  - `GET /api/budgets/opportunity/:opportunityId`
-  - `GET /api/budgets/:budgetId/revisions`
-  - `GET /api/budgets/revisions/:revisionId`
-  - `POST /api/budgets/:budgetId/revisions`
-  - `PATCH /api/budgets/revisions/:revisionId`
-  - `POST /api/budgets/revisions/:revisionId/sections/:sectionId/lines`
-  - `POST /api/budgets/revisions/:revisionId/catalog-item`
-  - `POST /api/budgets/revisions/:revisionId/catalog-group`
-  - `PATCH /api/budgets/lines/:lineItemId`
-  - `POST /api/budgets/lines/:lineItemId/duplicate`
-  - `DELETE /api/budgets/lines/:lineItemId`
-  - `PATCH /api/budgets/lines/:lineItemId/reorder`
-  - `POST /api/budgets/lines/:lineItemId/invoices`
-  - `PATCH /api/budgets/invoices/:invoiceId`
-  - `DELETE /api/budgets/invoices/:invoiceId`
-  - `POST /api/budgets/revisions/:revisionId/export-pdf`
+### Frontend Budget UI
+- Updated shared TypeScript budget types for:
+  - purchase orders
+  - mode-aware totals
+  - stored margins
+  - line-level accrual/PO stack
+  - closed lines
+- Full-screen budget now renders different internal columns by mode:
+  - Opportunity/bidding: internal/client costs and margin columns.
+  - Production: client value, accrual, POs, invoiced, paid, remaining, margin.
+- Summary bar now changes by mode:
+  - Bidding: client estimate, internal cost, total margin, margin percent.
+  - Production: client value, accrual held, committed, remaining, projected margin.
+- Bottom totals bar now changes by mode.
+- Production rows show accrual/commitment status via left border color.
+- Closed lines render muted with strikethrough description.
+- Added production-mode PO panel per line:
+  - lists POs
+  - add/edit form
+  - status changes
+  - delete for Open POs only
+  - PO totals footer
+  - financial stack summary
+- Added close-line prompt for settled lines and close action.
+- Receipt-created line item invoices now default to `PAID`, so Phase 7 receipts will count immediately toward paid spend.
 
-### PDF Export
-- Installed `pdfkit` and `@types/pdfkit`.
-- Added `backend/src/services/budgetPdf.ts`.
-- Client PDF excludes internal costs, actuals, and variance.
-- Internal PDF includes internal/client/actual/variance data and an `INTERNAL` watermark.
-- Export increments revision version and auto-files the PDF into the production job `Estimates/` folder via Phase 4 `autoFileDocument()`.
-- Filename format is `YYNN_Estimate_R{revisionNumber}_V{version}_{client|internal}.pdf`.
+## Existing Phase 5 State
 
-### Full-Screen Budget UI
-- Added `frontend/src/components/budgets/BudgetView.tsx`.
-- Production Budget tab now navigates to `/productions?production=<id>&view=budget`.
-- Opportunity Budget tab now navigates to `/opportunities?opportunity=<id>&view=budget`.
-- Full-screen budget view includes:
-  - top bar with back button, revision selector, internal/client toggle, export button
-  - action bar with print, email placeholder, revision history, add line
-  - pinned summary metrics
-  - desktop stage indicator
-  - AICP section table
-  - internal and client column layouts
-  - mobile compact rows
-  - line item editor modal/bottom-sheet style view
-  - catalog side panel
-  - revision history sheet
-  - desktop info/revision side panel
-  - bottom totals bar
-- The Production Overview tab now includes a budget summary row with an “Open budget” link.
-- Production Budget tab summary is no longer a placeholder; it shows client estimate, actual spend, variance, warning state, and an open button.
-- Opportunity detail now has Overview/Comms/Budget tabs, with Budget opening the full-screen bid view.
-- Opportunity cards and list rows show current budget grand total when a budget exists.
-- Refinement session fixed the budget table row controls and inline cell editing:
-  - duplicate/delete icon clicks stop propagation and trigger the intended API calls
-  - delete confirms before calling `DELETE /api/budgets/lines/:lineItemId`
-  - duplicate calls `POST /api/budgets/lines/:lineItemId/duplicate`
-  - description, internal rate, client rate, quantity, days, and unit are editable inline
-  - inline editors are borderless/backgroundless and auto-save on blur
-  - failed inline saves show a small top-right toast
-  - Unit uses a custom lightweight dropdown instead of the native select
-  - budget table spacing, section rows, summary bar, bottom totals bar, and right info panel were refined
-  - budget-view variance display now shows under budget as green, over budget as red, and zero as muted `£0.00`
-
-### Files Integration
-- The Production Files preview panel now fetches the current production budget and populates the budget-line dropdown with real section/line/description options.
-- Linking a file calls `PATCH /api/files/:fileId`.
-- If the file is a receipt and has a parsed amount, linking it creates a pending `LineItemInvoice` against the selected budget line.
-
-### Settings
-- Added an Item Catalog section to Settings.
-- Catalog Items view lists all 16 AICP sections, active items, add item controls, inline description/client rate edits, and soft delete.
-- Line Item Groups view lists existing groups and item counts.
-- Existing crew roles, storage info, and password settings remain.
-
-## Decisions
-
-- Budget screens are full-screen because the table cannot work inside the narrow production detail panel.
-- The Budget tab still exists in detail panels, but clicking it opens the full-screen budget route.
-- Server-side calculations are the source of truth; the frontend displays returned totals and does not calculate financial summaries.
-- Monetary values are stored as `Float` in pounds, matching the Phase 5 prompt.
-- AICP sections are seeded as data and also shared as constants for predictable section creation.
-- PDF generation uses `pdfkit` only. No Puppeteer dependency was added.
-- Revisions deep-copy sections and line items, but not invoices, so actuals start fresh on each revision.
-- The Settings catalog manager is intentionally compact; it exposes the core create/edit/delete workflow without building a heavy drag UI yet.
+- Budget schema, revisions, AICP sections, catalog, PDF export, full-screen budget shell, files integration, and settings catalog manager remain in place.
+- Opportunity Won flow creates a Production and clones the active opportunity budget.
+- Budget PDFs still auto-file to the job `Estimates/` folder.
+- Production and Opportunity detail panels still navigate to the full-screen budget route.
 
 ## Verification
 
-- `npx prisma migrate deploy` applied the Phase 5 migration.
-- `npx prisma generate` completed.
+- Prisma migration applied successfully with `npx prisma migrate deploy`.
+- Prisma Client regenerated.
 - Backend build passes: `npm run build`.
 - Frontend build passes: `npm run build`.
 - PM2 API reloaded.
 - Frontend build deployed to `/var/www/agent`.
-- Live HTTPS smoke test 1:
+- Live HTTPS smoke test completed:
   - Created disposable Production.
-  - Created/get current budget.
-  - Inserted a catalog item.
-  - Exported client PDF.
-  - Verified the PDF appeared in the job `Estimates/` folder tree.
-  - Deleted file and disposable Production.
-- Live HTTPS smoke test 2:
-  - Created disposable Opportunity.
-  - Created opportunity budget.
-  - Inserted a catalog item.
-  - Marked Opportunity Won.
-  - Verified API returned `budgetCloned: true`.
-  - Verified new Production budget contained the cloned line item.
-  - Deleted disposable Production and Opportunity.
-- Test cleanup completed:
-  - Removed disposable job folders.
-  - Reset Settings to `jobCodeYear: 2026`, `jobCodeSequence: 46`; next real job code remains `2647`.
-- Budget UI refinement smoke test:
-  - Created disposable Production.
-  - Created a budget line.
-  - Patched client rate, quantity, days, unit, and description.
-  - Verified PATCH returned the updated line and updated revision totals.
-  - Verified duplicate returned a second line and updated revision state.
-  - Verified delete returned `204`.
+  - Created production budget line with £100 internal / £200 client.
+  - Created PO and verified `PO-2647-001`.
+  - Added pending invoice and paid invoice.
+  - Verified revision stack:
+    - mode `production`
+    - total committed `£90.00`
+    - remaining accrual `£10.00`
+    - total POs `£60.00`
+    - pending invoiced `£20.00`
+    - paid `£10.00`
+    - line margin `£100.00`
+  - Verified Open PO deletion returns `204`.
+  - Created another PO, moved it to Paid, then closed the line.
+  - Verified closed line reports committed paid-only spend and zero remaining accrual.
   - Deleted disposable Production and folder.
   - Reset Settings to `jobCodeYear: 2026`, `jobCodeSequence: 46`; next real job code remains `2647`.
 
@@ -165,56 +132,58 @@
 
 ### Dashboard
 - Phase 2 and Phase 3 dashboard widgets remain.
-- Production financial widgets now read live budget-derived production figures where budgets exist.
+- Active production widget financials now reflect committed spend and accrual remaining rather than paid receipts only.
 
 ### Opportunities
-- Opportunity CRUD and follow-ups remain.
-- Won flow creates Production and now clones any active bid budget.
-- Budget full-screen view is available from Opportunity detail.
-- Kanban/list cards show current budget grand total if present.
+- Opportunity CRUD and Won flow remain.
+- Opportunity budgets are now bidding-mode budgets with margin totals and no accrual/actual stack.
 
 ### Productions
 - Production CRUD, dates, crew, comms, files remain.
-- Production financials are budget-aware.
-- Budget full-screen view is available from Production detail.
-- Budget PDFs auto-file to `Estimates/`.
+- Production budgets now have accrual, PO, invoiced, paid, remaining, projected margin, and closed-line logic.
+- Production cards/list financials are budget-aware and committed-spend aware.
 
 ### Files
 - Phase 4 file system remains.
-- File preview budget-line linking now uses real budget data.
-- Receipt-to-invoice auto-create is prepared for Phase 7 parsed receipt metadata.
+- Budget line linking remains.
+- Receipt-created invoices now default to Paid.
+- Invoice-file linking for POs has backend support; frontend form field is still light and does not yet populate real receipt files.
 
 ### Settings
-- Account, crew roles, storage info remain.
-- Item Catalog manager added.
-- Group management is list-only in the UI for now; API supports full group mutation.
+- Account, crew roles, storage info, and item catalog manager remain.
 
 ### Budgets
-- Schema, service, API, full-screen budget shell, catalog insertion, line editing, revisions, invoice API, PDF export, and file linking are in place.
-- The UI supports borderless inline cell editing, row duplicate/delete actions, and immediate server-returned total updates.
-- Bulk select currently supports delete selected; move/duplicate selected is still technical debt.
+- Bidding and production modes are distinguished by budget owner, not hardcoded screen state.
+- All core financial calculations are server-side.
+- PO creation and edit workflows are in the production budget UI.
+- Close-line behavior is implemented.
 
 ### Email
 - Still placeholder.
-- “Email estimate” is a UI placeholder awaiting Phase 6 email composer/attachment support.
+- “Email estimate” remains a placeholder for Phase 6 composer integration.
+
+## Decisions
+
+- Used `Production.lastPoSequence` instead of a JSON sequence map because PO sequence is strictly per production.
+- Kept `Production.actualSpend` and `Production.variance` as computed API fields rather than adding stored columns, matching the existing Phase 3/5 architecture.
+- Production-mode `totalPOs` counts all non-closed PO agreed amounts. Pending and paid invoices are tracked separately from PO status.
+- Closed lines count paid invoices only and release unspent accrual back into projected margin.
+- The PO panel is intentionally compact and built into the existing budget table rather than adding a new module.
 
 ## Known Issues And Technical Debt
 
-- Browser automation tooling is not installed, so I did not run Playwright screenshots at 390px. TypeScript production build passed, mobile-first classes were reviewed, and mobile rows use the same inline description edit path.
-- The line item edit interaction is modal/full-screen rather than true inline expansion on desktop. The data flow is complete, but the interaction can be refined later.
-- Invoice sub-panel UI per line item is not fully built yet, although invoice API routes exist.
-- Catalog group insertion API exists, but the current catalog panel focuses on individual item insertion.
-- Revision read-only historical viewing and “make current from old revision” are not fully surfaced in UI.
-- PDF layout is functional and auto-filed, but visual polish can be improved before client use.
-- The PM2 error log contains old session-table noise from earlier runs. Current HTTPS login and authenticated API calls work.
+- Browser automation tooling is not installed, so I did not run Playwright screenshots at 390px. TypeScript production builds passed and mobile-first layouts were reviewed.
+- PO invoice-file dropdown is not fully populated from job receipts yet; backend fields are ready.
+- Invoice sub-panel remains lighter than the PO panel.
+- Bulk select still only supports delete selected.
+- PDF export still uses the earlier Phase 5 layout and has not been visually redesigned for the new PO/accrual stack.
 - Existing unrelated worktree changes remain untouched: deleted repo metadata/docs files and untracked `BRIEF.md` / `CLAUDE.md`.
 
 ## Commits
 
-- `Build Phase 5 budget schema`
-- `ab01212 Build Phase 5 budget service and APIs`
-- `acb4b2a build Phase 5 full screen budget UI`
-- `d9fc9c7 fix: inline cell editing and auto-save`
+- `fb0c289 add purchase order financial schema`
+- `6d3ddc0 update budget financial stack logic`
+- `4e2aff4 update budget modes and purchase order UI`
 
 ## Exact Next Step For Phase 6
 
