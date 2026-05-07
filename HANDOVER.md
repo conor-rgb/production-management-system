@@ -2,6 +2,78 @@
 
 ## Built This Session
 
+## Phase 7 — Receipt Capture — 2026-05-07
+
+### Built
+- Added backend receipt parsing infrastructure.
+  - Installed `@anthropic-ai/sdk`.
+  - Added `backend/src/services/receiptParser.ts`.
+  - Uses Claude model `claude-opus-4-5` for image receipt parsing.
+  - Extracts vendor, amount in pence, date, currency, description, suggested AICP section, confidence, and raw text.
+  - If `ANTHROPIC_API_KEY` is missing, parsing fails gracefully with `API key not configured`.
+  - PDF receipt capture is accepted and can be assigned manually, but AI parsing currently fails gracefully because the Anthropic image path cannot parse PDFs as images.
+- Added receipt capture schema.
+  - New `ReceiptCaptureStatus` enum.
+  - New `ReceiptCapture` model mapped to `pms_receipt_captures`.
+  - Relations added to Production, BudgetLineItem, and JobFile.
+  - Stores pending file metadata, parsed Claude fields, assignment fields, offline/sync fields, and timestamps.
+- Added receipt API at `/api/receipts`.
+  - `POST /api/receipts/capture`
+  - `POST /api/receipts/:captureId/parse`
+  - `GET /api/receipts`
+  - `GET /api/receipts/:captureId`
+  - `GET /api/receipts/:captureId/file`
+  - `PATCH /api/receipts/:captureId`
+  - `PATCH /api/receipts/:captureId/assign`
+  - `DELETE /api/receipts/:captureId`
+- Receipt capture files are stored first under:
+  - `/backend/storage/receipts/pending/`
+- On assignment:
+  - the file is moved to the production `Receipts/` folder
+  - a `JobFile` is created with `isReceipt: true`
+  - receipt vendor, amount, and date are copied onto the `JobFile`
+  - a paid `LineItemInvoice` is created against the selected budget line
+  - `syncProductionTotals()` is called for the production
+- Added Dashboard receipt capture.
+  - Desktop capture button beside the Dashboard title.
+  - Desktop drag/drop upload zone above the dashboard widgets.
+  - Mobile floating 56px camera button using `accept="image/*"` and `capture="environment"`.
+  - Upload opens a right-side review panel on desktop and bottom-sheet style panel on mobile.
+  - Review panel supports parsing, parsed, failed/manual, and assigned states.
+  - Polls receipt status every 2 seconds while parsing.
+  - User can edit vendor, amount, date, and AICP category before assignment.
+  - User can search/select production and budget line.
+  - Pending parsed/failed receipts show a Dashboard attention badge.
+  - Offline upload fallback stores images as base64 in `localStorage` and retries when the browser comes back online.
+- Updated Production Files receipt display.
+  - Receipt files now use a receipt icon.
+  - Receipt rows show parsed vendor and amount when available.
+  - Receipt preview panel shows an `Assign to a budget line` hint when no budget line is linked.
+
+### Verification
+- Migration applied: `20260507120000_phase7_receipt_capture`.
+- Prisma client regenerated.
+- Backend build passes: `cd backend && npm run build`.
+- Frontend build passes: `cd frontend && npm run build`.
+- Frontend bundle copied to `/var/www/agent`.
+- API reloaded with `pm2 reload 0 --update-env`.
+- API health check passes at `http://localhost:3000/api/health`.
+
+### Known Gaps / Technical Debt
+- AI parsing currently supports receipt images only. PDF receipts are accepted into the queue and can be manually assigned, but AI parse returns a failed state.
+- Receipt review panel currently lives on Dashboard. Opening a receipt file from Production Files shows receipt metadata in the file preview but does not open the full Dashboard review panel.
+- Budget invoice rows were not rebuilt in this pass; receipt-created invoices are created and visible through existing invoice data, but a dedicated camera icon/modal inside the budget invoice stack still needs a UI pass.
+- Offline queue uses localStorage and warns on files over 5MB; this is pragmatic for v1 but IndexedDB would be more robust for repeated large receipt captures.
+
+## Exact Next Step For Phase 8
+
+Start FreeAgent + Automations:
+1. Add FreeAgent OAuth connection management in Settings.
+2. Pull invoice status into Production records and Dashboard outstanding invoices.
+3. Implement Wrapped production invoice prompt to create a FreeAgent invoice draft from budget totals.
+4. Add weekly digest cron job.
+5. Add remaining automation hardening for follow-ups, over-accrual/over-budget alerts, and email digest content.
+
 ## Unlinked Mail Attachments — 2026-05-07
 
 ### Fixed
@@ -488,7 +560,8 @@
 ### Files
 - Phase 4 file storage remains.
 - Budget PDFs continue auto-filing to `Estimates/`.
-- Email attachment “Save to job” UI is visible but not fully wired to stream IMAP attachment content into the file system yet.
+- Email attachments can now be filed to production-linked or unlinked `Mail Attachments`.
+- Receipt assignment creates receipt `JobFile` records in production `Receipts/`.
 
 ### Settings
 - Existing account, crew roles, storage, and item catalog settings remain.
@@ -497,19 +570,14 @@
 ## Decisions
 - Used Prisma enum values `GOOGLE` and `IMAP` to match existing uppercase enum style.
 - Kept synced email threads/messages when an account is deleted by making `EmailThread.accountId` nullable and using `onDelete: SetNull`.
-- Kept IMAP attachment download as a clear `501` route for now because raw MIME bodies are not stored locally and the current schema only stores attachment metadata. Full on-demand IMAP attachment fetch needs provider UID/mailbox tracking in Phase 6 hardening or Phase 7/9 polish.
 - Composer attachment chips for budget PDFs currently show generated file metadata; actual SMTP binary attachment from a `JobFile` still needs a send-time file-loading path.
 - Email HTML rendering uses DOMPurify rather than iframes to keep the implementation lightweight and safe.
 - Used local storage for the budget-to-email draft handoff so the Budget view can open the Email route without adding global state.
 
 ## Known Issues And Technical Debt
-- Gmail OAuth has not been tested with real Google credentials; credentials are currently blank.
-- IMAP/SMTP live connection has not been tested against a real mailbox in this session.
-- `GET /api/email/messages/:messageId/attachment/:index` returns `501` until raw message UID/mailbox storage is added.
 - Composer rich text controls are visual placeholders; the body is currently a textarea accepting HTML/plain text.
 - Contact autocomplete in composer is not implemented yet.
 - Attach-from-job in composer is not implemented yet.
-- Save email attachment to job is UI-only until attachment streaming is implemented.
 - Sent budget estimate emails show the generated PDF as an attachment chip before send, but the backend `sendEmail` route does not yet load `JobFile` binary content into Nodemailer attachments.
 - Opportunity budget PDF email export still needs an opportunity/bid PDF path; current PDF export service requires a production budget.
 - IMAP seen/flag/archive state updates are currently database-only; provider flag writes are still to do.
@@ -522,14 +590,13 @@
 - `feat: add email client UI and settings`
 - `feat: show linked email threads in comms timelines`
 - `feat: open email composer from budget estimate`
+- `feat: dashboard receipt capture and parsing`
 
-## Exact Next Step For Phase 7
+## Exact Next Step For Phase 8
 
-Start Phase 7 with Receipt Capture:
-1. Build the Dashboard receipt capture widget for camera/upload/drag-drop.
-2. Save captured receipt files into the selected production `Receipts/` folder.
-3. Add Claude API receipt parsing for vendor, amount, date, and suggested budget line.
-4. Build the confirmation/assignment UI to attach a receipt to a production and budget line.
-5. Create a `LineItemInvoice` with status `PAID` when a receipt is assigned.
-6. Update the relevant budget financial stack immediately after assignment.
-7. Add offline/mobile-friendly capture queue behavior if time allows.
+Start FreeAgent + Automations:
+1. Add FreeAgent OAuth connection management in Settings.
+2. Pull invoice status into Production records and Dashboard outstanding invoices.
+3. Implement Wrapped production invoice prompt to create a FreeAgent invoice draft from budget totals.
+4. Add weekly digest cron job.
+5. Add remaining automation hardening for follow-ups, over-accrual/over-budget alerts, and email digest content.

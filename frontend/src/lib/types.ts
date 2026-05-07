@@ -12,6 +12,7 @@ export type JobFolder = "Briefs" | "Estimates" | "Budgets" | "Contracts" | "Crew
 export type BudgetRevisionStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED" | "SUPERSEDED";
 export type InvoiceStatus = "PENDING" | "PAID";
 export type PurchaseOrderStatus = "OPEN" | "INVOICED" | "PAID";
+export type ReceiptCaptureStatus = "PENDING" | "PARSING" | "PARSED" | "ASSIGNED" | "FAILED";
 export type EmailProvider = "GOOGLE" | "IMAP";
 
 export interface Company {
@@ -361,6 +362,37 @@ export interface JobFile {
     brand?: string;
     title: string;
   };
+}
+
+export interface ReceiptCapture {
+  id: string;
+  status: ReceiptCaptureStatus;
+  originalFilename: string;
+  storedFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  storedPath: string;
+  parsedVendor?: string | null;
+  parsedAmount?: number | null;
+  parsedDate?: string | null;
+  parsedCurrency: string;
+  parsedDescription?: string | null;
+  parsedAicpSection?: string | null;
+  parsedAicpSectionName?: string | null;
+  parseConfidence?: "high" | "medium" | "low" | string | null;
+  parseRawText?: string | null;
+  parsedAt?: string | null;
+  productionId?: string | null;
+  production?: Pick<Production, "id" | "title" | "jobCode" | "clientName" | "brand"> | null;
+  lineItemId?: string | null;
+  lineItem?: (Pick<BudgetLineItem, "id" | "lineCode" | "description"> & { section?: { code: string; name: string } }) | null;
+  jobFileId?: string | null;
+  jobFile?: JobFile | null;
+  assignedAt?: string | null;
+  capturedOffline: boolean;
+  syncedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface FileTreeFolder {

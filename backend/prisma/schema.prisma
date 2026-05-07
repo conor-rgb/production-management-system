@@ -119,6 +119,16 @@ enum PurchaseOrderStatus {
   PAID
 }
 
+enum ReceiptCaptureStatus {
+  PENDING
+  PARSING
+  PARSED
+  ASSIGNED
+  FAILED
+
+  @@map("pms_receipt_capture_status")
+}
+
 enum EmailProvider {
   GOOGLE
   IMAP
@@ -261,6 +271,7 @@ model Production {
   jobFiles               JobFile[]
   purchaseOrders         PurchaseOrder[]
   emailThreads           EmailThread[]
+  receiptCaptures        ReceiptCapture[]
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 
@@ -415,6 +426,7 @@ model BudgetLineItem {
   invoices         LineItemInvoice[]
   purchaseOrders   PurchaseOrder[]
   jobFiles         JobFile[]
+  receiptCaptures  ReceiptCapture[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -537,12 +549,50 @@ model JobFile {
   sourceEmailFilename        String?
   invoices                   LineItemInvoice[]
   purchaseOrderInvoices      PurchaseOrder[]
+  receiptCaptures            ReceiptCapture[]
 
   @@index([productionId, folder])
   @@index([originalFilename])
   @@index([sourceEmailThreadId])
   @@index([sourceEmailMessageId, sourceEmailAttachmentIndex])
   @@map("pms_job_files")
+}
+
+model ReceiptCapture {
+  id                    String               @id @default(uuid())
+  status                ReceiptCaptureStatus @default(PENDING)
+  originalFilename      String
+  storedFilename        String
+  mimeType              String
+  sizeBytes             Int
+  storedPath            String
+  parsedVendor          String?
+  parsedAmount          Int?
+  parsedDate            DateTime?            @db.Date
+  parsedCurrency        String               @default("GBP")
+  parsedDescription     String?
+  parsedAicpSection     String?
+  parsedAicpSectionName String?
+  parseConfidence       String?
+  parseRawText          String?
+  parsedAt              DateTime?
+  productionId          String?
+  production            Production?          @relation(fields: [productionId], references: [id], onDelete: SetNull)
+  lineItemId            String?
+  lineItem              BudgetLineItem?      @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+  jobFileId             String?
+  jobFile               JobFile?             @relation(fields: [jobFileId], references: [id], onDelete: SetNull)
+  assignedAt            DateTime?
+  capturedOffline       Boolean              @default(false)
+  syncedAt              DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([status])
+  @@index([productionId])
+  @@index([lineItemId])
+  @@index([jobFileId])
+  @@map("pms_receipt_captures")
 }
 
 // ─── Email ────────────────────────────────────────────────────────────────────

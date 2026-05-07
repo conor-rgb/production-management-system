@@ -10,6 +10,7 @@ import {
   Folder,
   MoreHorizontal,
   Pencil,
+  ReceiptText,
   Trash2,
   Upload,
   X,
@@ -25,6 +26,7 @@ interface Props {
 type UploadMode = "camera" | "photos" | "files";
 
 function iconFor(file: JobFile) {
+  if (file.isReceipt) return <ReceiptText size={18} className="text-amber-600" />;
   if (file.mimeType === "application/pdf") return <FileText size={18} className="text-red-500" />;
   if (file.mimeType.startsWith("image/")) return <FileImage size={18} className="text-emerald-600" />;
   if (file.mimeType.startsWith("video/")) return <FileVideo size={18} className="text-blue-600" />;
@@ -252,7 +254,9 @@ function FileRow({ file, selected, onOpen, onRename, onMove, onDelete }: {
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-gray-900">{file.originalFilename}</span>
             <span className="block truncate text-xs text-gray-500">
-              {formatBytes(file.sizeBytes)} · {new Date(file.uploadedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+              {file.isReceipt && (file.receiptVendor || file.receiptAmount)
+                ? `${file.receiptVendor ?? "Unknown vendor"} · ${file.receiptAmount ? `£${(file.receiptAmount / 100).toFixed(2)}` : "Amount pending"}`
+                : `${formatBytes(file.sizeBytes)} · ${new Date(file.uploadedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`}
             </span>
           </span>
         </button>
@@ -404,6 +408,7 @@ export function PreviewPanel({ file, productionId, folders, onClose, onPatch }: 
               <div className="flex justify-between gap-3"><dt className="text-gray-500">Amount</dt><dd>{file.receiptAmount ? `£${(file.receiptAmount / 100).toFixed(2)}` : "Pending"}</dd></div>
               <div className="flex justify-between gap-3"><dt className="text-gray-500">Date</dt><dd>{file.receiptDate ? new Date(file.receiptDate).toLocaleDateString("en-GB") : "Pending"}</dd></div>
             </dl>
+            {!file.linkedBudgetLineId && <p className="mt-3 rounded-lg bg-amber-50 p-2 text-xs text-amber-800">Assign to a budget line using the dropdown above.</p>}
           </div>
         )}
       </div>

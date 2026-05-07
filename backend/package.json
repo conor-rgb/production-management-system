@@ -12,6 +12,7 @@
     "db:seed": "ts-node src/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.0",
     "@prisma/client": "^5.22.0",
     "@types/mailparser": "^3.4.6",
     "@types/nodemailer": "^8.0.0",
