@@ -774,6 +774,7 @@ export async function sendEmail(options: SendEmailOptions) {
 
 export async function getThreads(options: ThreadListOptions) {
   const page = Math.max(1, options.page ?? 1);
+  const folder = options.folder ?? "inbox";
   const andFilters: Prisma.EmailThreadWhereInput[] = [];
 
   if (options.linkedTo) {
@@ -799,7 +800,7 @@ export async function getThreads(options: ThreadListOptions) {
     });
   }
 
-  switch (options.folder ?? "inbox") {
+  switch (folder) {
     case "sent":
       andFilters.push({ messages: { some: { isFromMe: true } } });
       break;
@@ -825,35 +826,85 @@ export async function getThreads(options: ThreadListOptions) {
     linkedProductionId: options.linkedProductionId,
     AND: andFilters.length ? andFilters : undefined,
   };
-  const [threads, total] = await Promise.all([
-    prisma.emailThread.findMany({
-      where,
-      orderBy: { lastMessageAt: "desc" },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-      include: {
-        account: true,
-        linkedContact: { include: { company: true } },
-        linkedOpportunity: true,
-        linkedProduction: true,
-        messages: {
-          orderBy: { sentAt: "desc" },
-          take: 1,
-          select: {
-            id: true,
-            fromAddress: true,
-            fromName: true,
-            bodyText: true,
-            sentAt: true,
-            isFromMe: true,
-            hasAttachments: true,
-          },
-        },
-        _count: { select: { messages: true } },
+  const threadInclude = {
+    account: true,
+    linkedContact: { include: { company: true } },
+    linkedOpportunity: true,
+    linkedProduction: true,
+    messages: {
+      orderBy: { sentAt: "desc" as const },
+      take: 1,
+      select: {
+        id: true,
+        fromAddress: true,
+        fromName: true,
+        bodyText: true,
+        sentAt: true,
+        isFromMe: true,
+        hasAttachments: true,
       },
-    }),
-    prisma.emailThread.count({ where }),
-  ]);
+    },
+    _count: { select: { messages: true } },
+  };
+
+  const sentMessageByThread = new Map<string, { sentAt: Date; bodyText: string; fromAddress: string; fromName: string | null; isFromMe: boolean; hasAttachments: boolean }>();
+  let threads: Array<Prisma.EmailThreadGetPayload<{ include: typeof threadInclude }>>;
+  let total: number;
+
+  if (folder === "sent") {
+    const sentWhere: Prisma.EmailMessageWhereInput = { isFromMe: true, thread: { is: where } };
+    const [sentGroups, allSentGroups] = await Promise.all([
+      prisma.emailMessage.groupBy({
+        by: ["threadId"],
+        where: sentWhere,
+        _max: { sentAt: true },
+        orderBy: { _max: { sentAt: "desc" } },
+        skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
+      }),
+      prisma.emailMessage.groupBy({
+        by: ["threadId"],
+        where: sentWhere,
+      }),
+    ]);
+    total = allSentGroups.length;
+    const orderedIds = sentGroups.map((group) => group.threadId);
+    const [foundThreads, latestSentMessages] = await Promise.all([
+      prisma.emailThread.findMany({
+        where: { id: { in: orderedIds } },
+        include: threadInclude,
+      }),
+      prisma.emailMessage.findMany({
+        where: { threadId: { in: orderedIds }, isFromMe: true },
+        orderBy: { sentAt: "desc" },
+        select: {
+          threadId: true,
+          fromAddress: true,
+          fromName: true,
+          bodyText: true,
+          sentAt: true,
+          isFromMe: true,
+          hasAttachments: true,
+        },
+      }),
+    ]);
+    for (const message of latestSentMessages) {
+      if (!sentMessageByThread.has(message.threadId)) sentMessageByThread.set(message.threadId, message);
+    }
+    const threadById = new Map(foundThreads.map((thread) => [thread.id, thread]));
+    threads = orderedIds.map((id) => threadById.get(id)).filter((thread): thread is Prisma.EmailThreadGetPayload<{ include: typeof threadInclude }> => Boolean(thread));
+  } else {
+    [threads, total] = await Promise.all([
+      prisma.emailThread.findMany({
+        where,
+        orderBy: { lastMessageAt: "desc" },
+        skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
+        include: threadInclude,
+      }),
+      prisma.emailThread.count({ where }),
+    ]);
+  }
   const threadIds = threads.map((thread) => thread.id);
   const attachmentRows = threadIds.length
     ? await prisma.emailMessage.findMany({
@@ -870,7 +921,8 @@ export async function getThreads(options: ThreadListOptions) {
   const contactByEmail = new Map(contacts.map((contact) => [contact.email?.toLowerCase(), contact]));
   return {
     threads: threads.map((thread) => {
-      const latest = thread.messages[0];
+      const latestSent = sentMessageByThread.get(thread.id);
+      const latest = latestSent ?? thread.messages[0];
       const latestContact = latest ? contactByEmail.get(latest.fromAddress.toLowerCase()) : null;
       const resolvedSenderName = latest
         ? resolveDisplayName(latest.fromAddress, latest.fromName, contactDisplayName(latestContact))
@@ -878,6 +930,7 @@ export async function getThreads(options: ThreadListOptions) {
       const avatarColor = latest?.isFromMe ? "#1a1a1f" : getAvatarColor(latest?.fromAddress ?? thread.participants[0] ?? "");
       return {
         ...thread,
+        lastMessageAt: latestSent?.sentAt ?? thread.lastMessageAt,
         latestPreview: latest?.bodyText.slice(0, 100) ?? "",
         resolvedSenderName,
         avatarColor,
