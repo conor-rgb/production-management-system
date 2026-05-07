@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import { CalendarMiniWidget } from "../components/calendar/CalendarView";
 import {
   ACTIVE_STAGES,
   DATE_TYPE_LABELS,
@@ -16,7 +17,7 @@ import {
   type ProductionStatus,
   type ReceiptCapture,
 } from "../lib/types";
-import { AlertCircle, TrendingUp, Film, Users, Calendar, Mail, Camera, Upload, X, Loader2, CheckCircle, Trash2 } from "lucide-react";
+import { AlertCircle, TrendingUp, Film, Users, Mail, Camera, Upload, X, Loader2, CheckCircle, Trash2 } from "lucide-react";
 
 interface OverdueItem {
   id: string;
@@ -286,38 +287,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-              <Calendar size={15} /> Today's agenda
-            </h2>
-            <button onClick={() => navigate("/productions")} className="text-xs text-indigo-600 hover:underline">View productions</button>
-          </div>
-          {data ? (
-            data.todaysAgenda.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">No production dates today</p>
-            ) : (
-              <div className="space-y-2">
-                {data.todaysAgenda.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => navigate(`/productions?production=${item.production?.id}`)}
-                    className="w-full rounded-xl p-2.5 text-left hover:bg-gray-50"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-medium text-gray-900">{DATE_TYPE_LABELS[item.dateType]} · {item.production?.title}</p>
-                      <span className="shrink-0 text-xs text-gray-500">{item.time || "All day"}</span>
-                    </div>
-                    <p className="truncate text-xs text-gray-500">{item.location || item.production?.clientName || ""}</p>
-                    {item.zoomLink && <span className="mt-1 inline-block text-xs font-medium text-indigo-600">Zoom</span>}
-                  </button>
-                ))}
-              </div>
-            )
-          ) : (
-            <div className="h-24 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
-          )}
-        </div>
+        <CalendarMiniWidget />
 
         {/* Pipeline by stage */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">

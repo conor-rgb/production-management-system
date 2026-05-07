@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import BudgetView from "../components/budgets/BudgetView";
 import FileBrowser from "../components/files/FileBrowser";
+import CalendarView from "../components/calendar/CalendarView";
 import type {
   ActivityNote,
   ActivityTask,
@@ -469,6 +470,7 @@ function ProductionBudgetSummary({ production, onOpenBudget }: { production: Pro
 
 function DatesTab({ production, onReload }: { production: Production; onReload: () => void }) {
   const [editing, setEditing] = useState<ProductionDate | "new" | null>(null);
+  const [view, setView] = useState<"list" | "calendar">("list");
 
   async function remove(dateId: string) {
     if (!window.confirm("Delete this production date?")) return;
@@ -478,9 +480,24 @@ function DatesTab({ production, onReload }: { production: Production; onReload: 
 
   return (
     <div className="space-y-3">
-      <button onClick={() => setEditing("new")} className="min-h-11 w-full rounded-lg bg-gray-900 px-4 text-sm font-medium text-white">
-        Add date
-      </button>
+      <div className="flex gap-2">
+        <div className="flex flex-1 rounded-lg bg-gray-100 p-1">
+          <button onClick={() => setView("list")} className={`min-h-10 flex-1 rounded-md text-sm font-medium ${view === "list" ? "bg-white shadow-sm" : "text-gray-600"}`}>List view</button>
+          <button onClick={() => setView("calendar")} className={`min-h-10 flex-1 rounded-md text-sm font-medium ${view === "calendar" ? "bg-white shadow-sm" : "text-gray-600"}`}>Calendar view</button>
+        </div>
+        {view === "list" && (
+          <button onClick={() => setEditing("new")} className="min-h-11 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white">
+            Add date
+          </button>
+        )}
+      </div>
+      {view === "calendar" && (
+        <div className="h-[640px] overflow-hidden rounded-xl border border-gray-200">
+          <CalendarView mode="full" initialView="month" productionId={production.id} />
+        </div>
+      )}
+      {view === "list" && (
+        <>
       {production.dates.length === 0 ? <Empty text="No dates yet." /> : production.dates.map((date) => (
         <div key={date.id} className="rounded-lg border border-gray-200 p-3">
           <div className="flex items-start justify-between gap-2">
@@ -503,6 +520,8 @@ function DatesTab({ production, onReload }: { production: Production; onReload: 
           {date.notes && <p className="mt-2 whitespace-pre-wrap text-sm text-gray-600">{date.notes}</p>}
         </div>
       ))}
+        </>
+      )}
       {editing && <DateForm productionId={production.id} date={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onReload(); }} />}
     </div>
   );

@@ -26,6 +26,7 @@ export default function SettingsPage() {
   const [emailHealth, setEmailHealth] = useState<Record<string, boolean>>({});
   const [emailSignature, setEmailSignature] = useState("");
   const [emailSettingsError, setEmailSettingsError] = useState("");
+  const [calendarSyncStatus, setCalendarSyncStatus] = useState("");
   const [imapOpen, setImapOpen] = useState(false);
   const [imapTested, setImapTested] = useState(false);
   const [imapForm, setImapForm] = useState({
@@ -223,6 +224,16 @@ export default function SettingsPage() {
     await loadEmailSettings();
   }
 
+  async function syncCalendar() {
+    setCalendarSyncStatus("Syncing calendar...");
+    try {
+      const result = await api.post<{ count: number }>("/api/calendar/sync", {});
+      setCalendarSyncStatus(`Calendar synced. ${result.count} events available.`);
+    } catch (err) {
+      setCalendarSyncStatus(err instanceof Error ? err.message : "Calendar sync failed");
+    }
+  }
+
   return (
     <div className="max-w-3xl p-4 md:p-6">
       <h1 className="mb-6 text-2xl font-semibold text-gray-900">Settings</h1>
@@ -230,6 +241,17 @@ export default function SettingsPage() {
       <div className="mb-4 rounded-lg border border-gray-200 bg-white p-5">
         <h2 className="mb-1 font-medium text-gray-900">Account</h2>
         <p className="text-sm text-gray-500">Signed in as <span className="text-gray-700">{email}</span></p>
+      </div>
+
+      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-medium text-gray-900">Calendar</h2>
+            <p className="mt-1 text-sm text-gray-500">Sync production dates, follow-ups, and Google Calendar events.</p>
+          </div>
+          <button onClick={syncCalendar} className="flex min-h-11 items-center gap-2 rounded-lg bg-gray-900 px-3 text-sm font-medium text-white"><RefreshCw size={16} /> Sync all</button>
+        </div>
+        {calendarSyncStatus && <p className="mt-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">{calendarSyncStatus}</p>}
       </div>
 
       <div className="mb-4 rounded-lg border border-gray-200 bg-white p-5">

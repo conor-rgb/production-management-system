@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Email from "./pages/Email";
 import Opportunities from "./pages/Opportunities";
 import Productions from "./pages/Productions";
+import CalendarPage from "./pages/CalendarPage";
 import Budgets from "./pages/Budgets";
 import Contacts from "./pages/Contacts";
 import Files from "./pages/Files";
@@ -21,6 +22,7 @@ function AuthedRoutes() {
           <Route path="email" element={<Email />} />
           <Route path="opportunities" element={<Opportunities />} />
           <Route path="productions" element={<Productions />} />
+          <Route path="calendar" element={<CalendarPage />} />
           <Route path="budgets" element={<Budgets />} />
           <Route path="contacts" element={<Contacts />} />
           <Route path="files" element={<Files />} />

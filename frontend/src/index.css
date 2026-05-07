@@ -15,3 +15,53 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+.input {
+  min-height: 44px;
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(229 231 235);
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+  color: rgb(17 24 39);
+  outline: none;
+}
+
+.input:focus {
+  border-color: rgb(17 24 39);
+}
+
+.calendar-rbc .rbc-calendar {
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.calendar-rbc .rbc-time-view,
+.calendar-rbc .rbc-month-view,
+.calendar-rbc .rbc-agenda-view {
+  border-color: rgb(229 231 235);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.calendar-rbc .rbc-timeslot-group,
+.calendar-rbc .rbc-time-content,
+.calendar-rbc .rbc-time-header-content,
+.calendar-rbc .rbc-day-slot .rbc-time-slot {
+  border-color: rgb(243 244 246);
+}
+
+.calendar-rbc .rbc-header {
+  min-height: 36px;
+  border-color: rgb(229 231 235);
+  padding: 10px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgb(107 114 128);
+  text-transform: uppercase;
+}
+
+.calendar-rbc .rbc-event {
+  min-height: 28px;
+  padding: 4px 6px;
+}

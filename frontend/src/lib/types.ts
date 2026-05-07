@@ -14,6 +14,7 @@ export type InvoiceStatus = "PENDING" | "PAID";
 export type PurchaseOrderStatus = "OPEN" | "INVOICED" | "PAID";
 export type ReceiptCaptureStatus = "PENDING" | "PARSING" | "PARSED" | "ASSIGNED" | "FAILED";
 export type EmailProvider = "GOOGLE" | "IMAP";
+export type CalendarEventType = "SHOOT_DAY" | "PPM" | "RECCE" | "FITTING" | "MEETING" | "POST_DELIVERY" | "FOLLOW_UP" | "GOOGLE_SYNC" | "STANDALONE" | "OTHER";
 
 export interface Company {
   id: string;
@@ -161,6 +162,34 @@ export interface ProductionDate {
   label?: string;
   people: ProductionDatePerson[];
   production?: Pick<Production, "id" | "title" | "jobCode" | "clientName" | "brand" | "status">;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  isAllDay: boolean;
+  location?: string | null;
+  zoomLink?: string | null;
+  notes?: string | null;
+  color?: string | null;
+  eventType: CalendarEventType;
+  productionId?: string | null;
+  productionDateId?: string | null;
+  opportunityId?: string | null;
+  contactIds: string[];
+  googleCalendarEventId?: string | null;
+  googleCalendarId?: string | null;
+  syncedFromGoogle: boolean;
+  lastSyncedAt?: string | null;
+  icon: string;
+  formattedType: string;
+  productionColor?: string | null;
+  production?: Pick<Production, "id" | "title" | "jobCode" | "clientName" | "brand" | "status"> | null;
+  opportunity?: Pick<OpportunityListItem, "id" | "title" | "clientName" | "brand" | "stage" | "value"> | null;
   createdAt: string;
   updatedAt: string;
 }
