@@ -9,9 +9,11 @@ const PAGE_SIZE = 50;
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_SCOPES = [
-  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://mail.google.com/",
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/gmail.modify",
+  "email",
+  "profile",
 ];
 
 type IdleState = {
@@ -30,6 +32,18 @@ type GoogleTokenResponse = {
 
 type GoogleUserInfo = {
   email?: string;
+  id?: string;
+  name?: string;
+  verified_email?: boolean;
+  picture?: string;
+  error?: string;
+  error_description?: string;
+};
+
+type GoogleTokenInfo = {
+  email?: string;
+  error?: string;
+  error_description?: string;
 };
 
 type FetchMessageWithThread = {
@@ -86,7 +100,7 @@ export async function exchangeGoogleCode(code: string): Promise<{
   accessToken: string;
   refreshToken?: string;
   expiresAt?: Date;
-  emailAddress?: string;
+  emailAddress: string;
 }> {
   if (!googleOAuthConfigured()) throw new Error("Google OAuth not configured");
   const response = await fetch(GOOGLE_TOKEN_URL, {
@@ -109,15 +123,31 @@ export async function exchangeGoogleCode(code: string): Promise<{
     console.error("[OAUTH] Token exchange failed:", JSON.stringify(token));
     throw new Error(`Token exchange failed: ${token.error_description ?? token.error ?? "unknown"}`);
   }
-  const userInfo = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+  const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
     headers: { Authorization: `Bearer ${token.access_token}` },
-  }).then((res) => res.ok ? res.json() as Promise<GoogleUserInfo> : Promise.resolve({ email: undefined }));
-  console.log(`[OAUTH] User email: ${userInfo.email ?? "unknown"}`);
+  });
+  const userInfo = await userInfoRes.json() as GoogleUserInfo;
+  console.log("[OAUTH] Userinfo response:", JSON.stringify(userInfo));
+
+  let emailAddress = userInfo.email;
+  if (!emailAddress || emailAddress === "unknown") {
+    console.error("[OAUTH] Could not get real email from userinfo:", userInfo);
+    const tokenInfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${token.access_token}`);
+    const tokenInfo = await tokenInfoRes.json() as GoogleTokenInfo;
+    console.log("[OAUTH] Token info response:", JSON.stringify(tokenInfo));
+    emailAddress = tokenInfo.email;
+  }
+
+  if (!emailAddress) {
+    throw new Error("Could not get email address. Please try again.");
+  }
+
+  console.log(`[OAUTH] User email: ${emailAddress}`);
   return {
     accessToken: token.access_token,
     refreshToken: token.refresh_token,
     expiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : undefined,
-    emailAddress: userInfo.email,
+    emailAddress,
   };
 }
 

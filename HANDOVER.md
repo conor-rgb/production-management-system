@@ -2,6 +2,32 @@
 
 ## Built This Session
 
+## OAuth Email Scope Fix — 2026-05-07
+
+### Fixed
+- Updated the Google OAuth authorization URL to request:
+  - `https://mail.google.com/`
+  - `https://www.googleapis.com/auth/gmail.send`
+  - `https://www.googleapis.com/auth/gmail.modify`
+  - `email`
+  - `profile`
+- Added full `[OAUTH] Userinfo response:` logging after token exchange.
+- Added fallback to Google tokeninfo when `userinfo.email` is missing or returns `unknown`.
+- OAuth callback now fails visibly with `Could not get email address. Please try again.` instead of creating a placeholder Gmail account.
+- OAuth callback deletes placeholder accounts with `unknown.local` or `unknown` email addresses before creating the newly connected Gmail account.
+
+### Verification
+- Backend build passes: `cd backend && npm run build`.
+- Generated OAuth URL scope was checked and includes `email profile`.
+- Removed 1 existing placeholder email account from the database.
+- API reloaded with `pm2 reload 0 --update-env`.
+- API health check passes at `http://localhost:3000/api/health`.
+
+### Remaining Manual Test
+- Reconnect Gmail through Settings → Email → Connect Gmail.
+- Expected log after consent: `[OAUTH] User email: conor@unlimited.bond`.
+- Full Google consent flow still requires browser interaction, so it was not completed from the terminal.
+
 ## Phase 6 Hardening Update — 2026-05-07
 
 ### Fixed

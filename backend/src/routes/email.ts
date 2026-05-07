@@ -199,7 +199,15 @@ export async function googleOAuthCallbackHandler(req: Request, res: Response): P
   }
   try {
     const token = await exchangeGoogleCode(code);
-    const emailAddress = token.emailAddress ?? "gmail-account@unknown.local";
+    const emailAddress = token.emailAddress;
+    await prisma.emailAccount.deleteMany({
+      where: {
+        OR: [
+          { emailAddress: { contains: "unknown.local" } },
+          { emailAddress: "unknown" },
+        ],
+      },
+    });
     const account = await prisma.emailAccount.create({
       data: {
         label: "Gmail",
