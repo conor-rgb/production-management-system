@@ -258,6 +258,8 @@ export interface EmailThread {
   linkedOpportunity?: OpportunityListItem;
   linkedProduction?: Pick<Production, "id" | "title" | "jobCode" | "clientName" | "brand">;
   messages: EmailMessage[];
+  hasMoreOlder?: boolean;
+  totalMessageCount?: number;
   latestPreview?: string;
   participantNames?: string[];
   resolvedSenderName?: string;

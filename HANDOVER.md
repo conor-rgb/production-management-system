@@ -2,6 +2,33 @@
 
 ## Built This Session
 
+## Email Thread Performance — 2026-05-07
+
+### Fixed
+- Thread detail loading is now paginated.
+  - Opening a thread loads the latest 10 messages first.
+  - Older messages are loaded in batches of 20 via `before=<sentAt>&limit=20`.
+  - Thread responses now include `hasMoreOlder` and `totalMessageCount`.
+- Added a `Load earlier messages` button at the top of long email threads.
+- Reduced frontend render cost for long threads.
+  - Collapsed messages no longer run DOMPurify, quote detection, or signature splitting.
+  - Expensive HTML processing now runs only when a message is expanded.
+  - Latest message still expands immediately.
+- Added database index `pms_email_messages_threadId_sentAt_idx` to make per-thread chronological paging fast.
+
+### Verification
+- Migration applied: `20260507102000_email_message_thread_sent_index`.
+- Prisma client regenerated.
+- Backend build passes: `cd backend && npm run build`.
+- Frontend build passes: `cd frontend && npm run build`.
+- Frontend bundle copied to `/var/www/agent`.
+- API reloaded with `pm2 reload 0 --update-env`.
+- API health check passes at `http://localhost:3000/api/health`.
+
+### Notes
+- IMAP is still only used for sync and raw attachment retrieval. Opening a thread now uses Postgres only.
+- A future optimisation would be storing precomputed sanitized/quote-stripped HTML per message, but this pass avoids that complexity by lazy-processing expanded messages only.
+
 ## Email Attachment Filing — Mail Attachments Folder — 2026-05-07
 
 ### Built

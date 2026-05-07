@@ -288,7 +288,11 @@ router.get("/threads", async (req: Request, res: Response): Promise<void> => {
 });
 
 router.get("/threads/:threadId", async (req: Request, res: Response): Promise<void> => {
-  const thread = await getThread(req.params.threadId);
+  const before = typeof req.query.before === "string" ? new Date(req.query.before) : undefined;
+  const thread = await getThread(req.params.threadId, {
+    before: before && !Number.isNaN(before.getTime()) ? before : undefined,
+    limit: intValue(req.query.limit),
+  });
   if (!thread) {
     res.status(404).json({ error: "Thread not found" });
     return;

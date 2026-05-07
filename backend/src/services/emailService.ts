@@ -126,6 +126,8 @@ type EmailAttachmentContent = {
   content: Buffer;
 };
 
+const THREAD_MESSAGE_LIMIT = 10;
+
 type SyncMailboxResult = {
   threadCount: number;
   messageCount: number;
@@ -1080,7 +1082,8 @@ export async function getThreads(options: ThreadListOptions) {
   };
 }
 
-export async function getThread(threadId: string) {
+export async function getThread(threadId: string, options?: { before?: Date; limit?: number }) {
+  const limit = Math.min(Math.max(options?.limit ?? THREAD_MESSAGE_LIMIT, 1), 50);
   const thread = await prisma.emailThread.findUnique({
     where: { id: threadId },
     include: {
@@ -1088,11 +1091,35 @@ export async function getThread(threadId: string) {
       linkedContact: { include: { company: true } },
       linkedOpportunity: true,
       linkedProduction: true,
-      messages: { orderBy: { sentAt: "asc" } },
     },
   });
   if (!thread) return null;
-  const messageIds = thread.messages.map((message) => message.id);
+
+  const messageWhere: Prisma.EmailMessageWhereInput = {
+    threadId,
+    ...(options?.before ? { sentAt: { lt: options.before } } : {}),
+  };
+
+  const [totalMessageCount, olderTotalCount, recentMessagesDesc, allAttachmentsMessages] = await Promise.all([
+    prisma.emailMessage.count({ where: { threadId } }),
+    prisma.emailMessage.count({ where: messageWhere }),
+    prisma.emailMessage.findMany({
+      where: messageWhere,
+      orderBy: { sentAt: "desc" },
+      take: limit,
+    }),
+    prisma.emailMessage.findMany({
+      where: { threadId, hasAttachments: true },
+      orderBy: { sentAt: "asc" },
+      select: { id: true, attachments: true },
+    }),
+  ]);
+
+  const messages = recentMessagesDesc.reverse();
+  const messageIds = Array.from(new Set([
+    ...messages.map((message) => message.id),
+    ...allAttachmentsMessages.map((message) => message.id),
+  ]));
   const sourceFiles = messageIds.length
     ? await prisma.jobFile.findMany({
         where: { sourceEmailMessageId: { in: messageIds } },
@@ -1103,11 +1130,11 @@ export async function getThread(threadId: string) {
   );
   const emails = Array.from(new Set([
     ...thread.participants,
-    ...thread.messages.flatMap((message) => [message.fromAddress, ...message.toAddresses, ...message.ccAddresses]),
+    ...messages.flatMap((message) => [message.fromAddress, ...message.toAddresses, ...message.ccAddresses]),
   ].filter(Boolean)));
   const contacts = await prisma.contact.findMany({ where: { email: { in: emails, mode: "insensitive" } }, include: { company: true } });
   const contactByEmail = new Map(contacts.map((contact) => [contact.email?.toLowerCase(), contact]));
-  const attachments = thread.messages.flatMap((message) => parseAttachments(message.attachments)
+  const attachments = allAttachmentsMessages.flatMap((message) => parseAttachments(message.attachments)
     .map((attachment, index) => ({
       messageId: message.id,
       attachmentIndex: index,
@@ -1121,7 +1148,7 @@ export async function getThread(threadId: string) {
     .filter((attachment) => !attachment.isInline));
   return {
     ...thread,
-    messages: thread.messages.map((message) => {
+    messages: messages.map((message) => {
       const contact = contactByEmail.get(message.fromAddress.toLowerCase());
       const messageAttachments = parseAttachments(message.attachments)
         .map((attachment, index) => ({
@@ -1137,6 +1164,8 @@ export async function getThread(threadId: string) {
         avatarColor: message.isFromMe ? "#1a1a1f" : getAvatarColor(message.fromAddress),
       };
     }),
+    hasMoreOlder: totalMessageCount > (options?.before ? totalMessageCount - olderTotalCount + messages.length : messages.length),
+    totalMessageCount,
     participantNames: thread.participants.map((email) => {
       const contact = contactByEmail.get(email.toLowerCase());
       return resolveDisplayName(email, null, contactDisplayName(contact));

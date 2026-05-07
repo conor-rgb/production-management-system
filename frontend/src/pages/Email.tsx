@@ -201,6 +201,7 @@ export default function Email() {
   const [saveAttachment, setSaveAttachment] = useState<SaveAttachmentState | null>(null);
   const [previewFile, setPreviewFile] = useState<JobFile | null>(null);
   const [filingAttachment, setFilingAttachment] = useState("");
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -230,9 +231,25 @@ export default function Email() {
   }
 
   async function loadThread(id: string) {
-    const data = await api.get<EmailThread>(`/api/email/threads/${id}`);
+    const data = await api.get<EmailThread>(`/api/email/threads/${id}?limit=10`);
     setThread(data);
     setThreads((items) => items.map((item) => item.id === id ? { ...item, isRead: true } : item));
+  }
+
+  async function loadOlderMessages() {
+    if (!thread || thread.messages.length === 0) return;
+    setLoadingOlder(true);
+    try {
+      const before = encodeURIComponent(thread.messages[0].sentAt);
+      const older = await api.get<EmailThread>(`/api/email/threads/${thread.id}?before=${before}&limit=20`);
+      setThread({
+        ...older,
+        messages: [...older.messages, ...thread.messages],
+        hasMoreOlder: older.hasMoreOlder,
+      });
+    } finally {
+      setLoadingOlder(false);
+    }
   }
 
   useEffect(() => {
@@ -384,6 +401,8 @@ export default function Email() {
             thread={thread}
             filingAttachment={filingAttachment}
             onOpenAttachment={(attachment) => { fileAttachment(attachment, thread.linkedProductionId).catch(console.error); }}
+            loadingOlder={loadingOlder}
+            onLoadOlder={() => { loadOlderMessages().catch(console.error); }}
             onBack={() => setSelectedThreadId(null)}
             onOpenReply={() => openReply(thread)}
             onFlag={async () => { await api.patch(`/api/email/threads/${thread.id}/flag`, {}); await loadThread(thread.id); await loadThreads(); }}
@@ -478,7 +497,7 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
   );
 }
 
-function ThreadDetail({ thread, filingAttachment, onOpenAttachment, onBack, onOpenReply, onFlag, onArchive }: { thread: EmailThread; filingAttachment: string; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onArchive: () => void }) {
+function ThreadDetail({ thread, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onArchive }: { thread: EmailThread; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onArchive: () => void }) {
   const [expandedAttachments, setExpandedAttachments] = useState(false);
   const attachments = thread.attachments ?? [];
   const visibleAttachments = expandedAttachments ? attachments : attachments.slice(0, 3);
@@ -513,6 +532,18 @@ function ThreadDetail({ thread, filingAttachment, onOpenAttachment, onBack, onOp
         )}
       </header>
       <div className="flex-1 overflow-auto bg-white p-2 pb-28 md:p-4">
+        {thread.hasMoreOlder && (
+          <div className="mb-3 flex justify-center">
+            <button
+              type="button"
+              onClick={onLoadOlder}
+              disabled={loadingOlder}
+              className="min-h-10 rounded-full bg-[#f0f0ee] px-4 text-xs font-medium text-gray-600 hover:bg-gray-200 disabled:opacity-60"
+            >
+              {loadingOlder ? "Loading..." : `Load earlier messages${thread.totalMessageCount ? ` (${thread.totalMessageCount - thread.messages.length} older)` : ""}`}
+            </button>
+          </div>
+        )}
         {thread.messages.map((message, index) => (
           <MessageBlock
             key={message.id}
@@ -559,21 +590,31 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, def
   const [showQuoted, setShowQuoted] = useState(false);
   const name = message.resolvedFromName || message.fromName || message.fromAddress;
   const toLabel = message.isFromMe ? `to ${message.toAddresses[0] ?? "recipient"}` : "to me";
-  const hasImages = /<img[\s>]/i.test(message.bodyHtml);
-  const htmlQuote = message.bodyHtml ? hideQuotedContent(message.bodyHtml) : null;
-  const htmlSignature = message.bodyHtml ? splitHtmlSignature(htmlQuote?.visible ?? message.bodyHtml) : null;
-  const plainQuote = splitPlainTextQuote(message.bodyText || "");
-  const plainSignature = splitPlainTextSignature(plainQuote.visible);
-  const bodyHtml = message.bodyHtml
-    ? sanitizeEmailHtml(htmlSignature?.body ?? htmlQuote?.visible ?? message.bodyHtml, showImages)
-    : DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainSignature.body)}</pre>`);
-  const signatureHtml = message.bodyHtml
-    ? sanitizeEmailHtml(htmlSignature?.signature ?? "", showImages)
-    : plainSignature.signature ? DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainSignature.signature)}</pre>`) : "";
-  const quotedHtml = message.bodyHtml
-    ? sanitizeEmailHtml(htmlQuote?.quoted ?? "", showImages)
-    : plainQuote.quoted ? DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainQuote.quoted)}</pre>`) : "";
-  const hasQuote = Boolean((htmlQuote?.hasQuote && quotedHtml) || plainQuote.hasQuote);
+  const hasImages = expanded && /<img[\s>]/i.test(message.bodyHtml);
+  const renderedBody = useMemo(() => {
+    if (!expanded) {
+      return { bodyHtml: "", signatureHtml: "", quotedHtml: "", hasQuote: false };
+    }
+    const htmlQuote = message.bodyHtml ? hideQuotedContent(message.bodyHtml) : null;
+    const htmlSignature = message.bodyHtml ? splitHtmlSignature(htmlQuote?.visible ?? message.bodyHtml) : null;
+    const plainQuote = message.bodyHtml ? null : splitPlainTextQuote(message.bodyText || "");
+    const plainSignature = plainQuote ? splitPlainTextSignature(plainQuote.visible) : null;
+    const bodyHtml = message.bodyHtml
+      ? sanitizeEmailHtml(htmlSignature?.body ?? htmlQuote?.visible ?? message.bodyHtml, showImages)
+      : DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainSignature?.body ?? "")}</pre>`);
+    const signatureHtml = message.bodyHtml
+      ? sanitizeEmailHtml(htmlSignature?.signature ?? "", showImages)
+      : plainSignature?.signature ? DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainSignature.signature)}</pre>`) : "";
+    const quotedHtml = message.bodyHtml
+      ? sanitizeEmailHtml(htmlQuote?.quoted ?? "", showImages)
+      : plainQuote?.quoted ? DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainQuote.quoted)}</pre>`) : "";
+    return {
+      bodyHtml,
+      signatureHtml,
+      quotedHtml,
+      hasQuote: Boolean((htmlQuote?.hasQuote && quotedHtml) || plainQuote?.hasQuote),
+    };
+  }, [expanded, message.bodyHtml, message.bodyText, showImages]);
 
   return (
     <>
@@ -606,15 +647,15 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, def
         {expanded && (
           <div className="px-12 pb-4">
             {hasImages && !showImages && <button onClick={() => setShowImages(true)} className="mb-3 min-h-9 rounded bg-gray-100 px-3 text-xs text-gray-700">Show images</button>}
-            <div className="prose prose-sm max-w-none text-[13px] leading-6 text-gray-800" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
-            {signatureHtml && (
-              <div className="prose prose-sm mt-3 max-w-none text-xs italic text-gray-400" dangerouslySetInnerHTML={{ __html: signatureHtml }} />
+            <div className="prose prose-sm max-w-none text-[13px] leading-6 text-gray-800" dangerouslySetInnerHTML={{ __html: renderedBody.bodyHtml }} />
+            {renderedBody.signatureHtml && (
+              <div className="prose prose-sm mt-3 max-w-none text-xs italic text-gray-400" dangerouslySetInnerHTML={{ __html: renderedBody.signatureHtml }} />
             )}
-            {hasQuote && !showQuoted && (
+            {renderedBody.hasQuote && !showQuoted && (
               <button onClick={() => setShowQuoted(true)} className="mt-3 min-h-7 rounded-full bg-[#f0f0ee] px-3 text-[11px] text-gray-500 hover:bg-gray-200">Show previous message</button>
             )}
-            {hasQuote && showQuoted && (
-              <div className="mt-3 border-l-2 border-gray-200 pl-3 text-xs text-gray-500" dangerouslySetInnerHTML={{ __html: quotedHtml }} />
+            {renderedBody.hasQuote && showQuoted && (
+              <div className="mt-3 border-l-2 border-gray-200 pl-3 text-xs text-gray-500" dangerouslySetInnerHTML={{ __html: renderedBody.quotedHtml }} />
             )}
             {message.attachments.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
