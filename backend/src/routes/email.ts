@@ -398,16 +398,15 @@ router.post("/messages/:messageId/attachment/:index/save-to-job", async (req: Re
       res.status(400).json({ error: "Invalid attachment index" });
       return;
     }
-    const body = req.body as { productionId?: string; folder?: string; notes?: string };
-    if (!body.productionId || !body.folder) {
-      res.status(400).json({ error: "productionId and folder are required" });
+    const body = req.body as { productionId?: string; notes?: string };
+    if (body.productionId !== undefined && !body.productionId) {
+      res.status(400).json({ error: "productionId must not be empty" });
       return;
     }
     const file = await saveEmailAttachmentToJob({
       messageId: req.params.messageId,
       attachmentIndex: index,
       productionId: body.productionId,
-      folder: body.folder,
       notes: body.notes,
     });
     res.status(201).json(file);

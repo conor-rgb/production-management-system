@@ -513,27 +513,35 @@ model CatalogGroupItem {
 // ─── Files ────────────────────────────────────────────────────────────────────
 
 model JobFile {
-  id                    String            @id @default(cuid())
-  productionId          String
-  production            Production        @relation(fields: [productionId], references: [id], onDelete: Cascade)
-  folder                String
-  originalFilename      String
-  storedFilename        String
-  mimeType              String
-  sizeBytes             Int
-  uploadedAt            DateTime          @default(now())
-  linkedBudgetLineId    String?
-  linkedBudgetLine      BudgetLineItem?   @relation(fields: [linkedBudgetLineId], references: [id])
-  isReceipt             Boolean           @default(false)
-  receiptVendor         String?
-  receiptAmount         Int?
-  receiptDate           DateTime?         @db.Date
-  notes                 String?
-  invoices              LineItemInvoice[]
-  purchaseOrderInvoices PurchaseOrder[]
+  id                         String            @id @default(cuid())
+  productionId               String
+  production                 Production        @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  folder                     String
+  originalFilename           String
+  storedFilename             String
+  mimeType                   String
+  sizeBytes                  Int
+  uploadedAt                 DateTime          @default(now())
+  linkedBudgetLineId         String?
+  linkedBudgetLine           BudgetLineItem?   @relation(fields: [linkedBudgetLineId], references: [id])
+  isReceipt                  Boolean           @default(false)
+  receiptVendor              String?
+  receiptAmount              Int?
+  receiptDate                DateTime?         @db.Date
+  notes                      String?
+  sourceEmailThreadId        String?
+  sourceEmailThread          EmailThread?      @relation("JobFileSourceEmailThread", fields: [sourceEmailThreadId], references: [id], onDelete: SetNull)
+  sourceEmailMessageId       String?
+  sourceEmailMessage         EmailMessage?     @relation("JobFileSourceEmailMessage", fields: [sourceEmailMessageId], references: [id], onDelete: SetNull)
+  sourceEmailAttachmentIndex Int?
+  sourceEmailFilename        String?
+  invoices                   LineItemInvoice[]
+  purchaseOrderInvoices      PurchaseOrder[]
 
   @@index([productionId, folder])
   @@index([originalFilename])
+  @@index([sourceEmailThreadId])
+  @@index([sourceEmailMessageId, sourceEmailAttachmentIndex])
   @@map("pms_job_files")
 }
 
@@ -581,6 +589,7 @@ model EmailThread {
   linkedProductionId  String?
   linkedProduction    Production?    @relation(fields: [linkedProductionId], references: [id], onDelete: SetNull)
   messages            EmailMessage[]
+  sourceJobFiles      JobFile[]      @relation("JobFileSourceEmailThread")
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
 
@@ -638,6 +647,7 @@ model EmailMessage {
   attachments       Json        @default("[]")
   imapMailbox       String?
   imapUid           Int?
+  sourceJobFiles    JobFile[]   @relation("JobFileSourceEmailMessage")
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 

@@ -87,6 +87,28 @@ type ThreadAttachmentSummary = {
   filename: string;
   mimeType: string;
   sizeBytes: number;
+  isInline?: boolean;
+  jobFileId?: string;
+  jobFile?: {
+    id: string;
+    productionId: string;
+    folder: string;
+    originalFilename: string;
+    storedFilename: string;
+    mimeType: string;
+    sizeBytes: number;
+    uploadedAt: Date;
+    linkedBudgetLineId: string | null;
+    isReceipt: boolean;
+    receiptVendor: string | null;
+    receiptAmount: number | null;
+    receiptDate: Date | null;
+    notes: string | null;
+    sourceEmailThreadId: string | null;
+    sourceEmailMessageId: string | null;
+    sourceEmailAttachmentIndex: number | null;
+    sourceEmailFilename: string | null;
+  };
 };
 
 type StoredAttachment = {
@@ -94,6 +116,7 @@ type StoredAttachment = {
   mimeType?: string;
   sizeBytes?: number;
   contentId?: string | null;
+  isInline?: boolean;
 };
 
 type EmailAttachmentContent = {
@@ -387,12 +410,20 @@ function threadKey(mail: ParsedMail): string {
 }
 
 function attachmentMetadata(mail: ParsedMail): Prisma.InputJsonValue {
+  const html = typeof mail.html === "string" ? mail.html : "";
   return mail.attachments.map((attachment) => ({
     filename: attachment.filename ?? "attachment",
     mimeType: attachment.contentType,
     sizeBytes: attachment.size,
     contentId: attachment.contentId,
+    isInline: isInlineMailAttachment(attachment.contentId, html),
   }));
+}
+
+function isInlineMailAttachment(contentId: string | undefined, html: string): boolean {
+  if (!contentId) return false;
+  const cleanContentId = contentId.replace(/[<>]/g, "");
+  return html.includes(`cid:${contentId}`) || html.includes(`cid:${cleanContentId}`);
 }
 
 function contactDisplayName(contact?: { firstName: string; lastName: string | null } | null): string | null {
@@ -411,6 +442,7 @@ function parseAttachments(value: Prisma.JsonValue): StoredAttachment[] {
       mimeType: typeof attachment.mimeType === "string" ? attachment.mimeType : "application/octet-stream",
       sizeBytes: typeof attachment.sizeBytes === "number" ? attachment.sizeBytes : 0,
       contentId: typeof attachment.contentId === "string" ? attachment.contentId : null,
+      isInline: typeof attachment.isInline === "boolean" ? attachment.isInline : false,
     });
   }
   return attachments;
@@ -505,11 +537,13 @@ async function syncMailbox(client: ImapFlow, account: EmailAccount, folderName: 
       const existingMessage = await prisma.emailMessage.findFirst({
         where: { externalMessageId },
       });
+      const bodyHtml = parsed.html || parsed.textAsHtml || "";
       const attachments = parsed.attachments.map((attachment) => ({
         filename: attachment.filename ?? "attachment",
         mimeType: attachment.contentType ?? "application/octet-stream",
         sizeBytes: attachment.size ?? 0,
         contentId: attachment.contentId ?? null,
+        isInline: isInlineMailAttachment(attachment.contentId, bodyHtml),
       }));
 
       if (!existingMessage) {
@@ -526,7 +560,7 @@ async function syncMailbox(client: ImapFlow, account: EmailAccount, folderName: 
             ccAddresses,
             bccAddresses,
             subject: parsed.subject ?? "(no subject)",
-            bodyHtml: parsed.html || parsed.textAsHtml || "",
+            bodyHtml,
             bodyText: parsed.text ?? "",
             sentAt,
             isFromMe: forceFromMe || fromAddress === accountEmail,
@@ -769,19 +803,47 @@ export async function getEmailAttachment(messageId: string, attachmentIndex: num
 export async function saveEmailAttachmentToJob(options: {
   messageId: string;
   attachmentIndex: number;
-  productionId: string;
-  folder: string;
+  productionId?: string;
   notes?: string;
 }) {
-  if (!isJobFolder(options.folder)) throw new Error("Invalid job folder");
+  const message = await prisma.emailMessage.findUnique({
+    where: { id: options.messageId },
+    include: { thread: true },
+  });
+  if (!message) throw new Error("Email message not found");
+
+  const attachmentSummary = parseAttachments(message.attachments)[options.attachmentIndex];
+  if (!attachmentSummary) throw new Error("Attachment not found");
+  if (attachmentSummary.isInline) throw new Error("Inline email images are not saved as job files");
+
+  const productionId = options.productionId ?? message.thread.linkedProductionId ?? undefined;
+  if (!productionId) throw new Error("Choose a production before saving this attachment");
+
+  const existing = await prisma.jobFile.findFirst({
+    where: {
+      sourceEmailMessageId: options.messageId,
+      sourceEmailAttachmentIndex: options.attachmentIndex,
+      productionId,
+    },
+  });
+  if (existing) return existing;
+
+  const folder: JobFolder = "Mail Attachments";
+  if (!isJobFolder(folder)) throw new Error("Mail Attachments folder is not configured");
   const attachment = await getEmailAttachment(options.messageId, options.attachmentIndex);
   return autoFileDocument(
-    options.productionId,
-    options.folder as JobFolder,
+    productionId,
+    folder,
     attachment.content,
     attachment.filename,
     attachment.mimeType,
-    { notes: options.notes }
+    {
+      notes: options.notes,
+      sourceEmailThreadId: message.threadId,
+      sourceEmailMessageId: options.messageId,
+      sourceEmailAttachmentIndex: options.attachmentIndex,
+      sourceEmailFilename: attachment.filename,
+    }
   );
 }
 
@@ -1030,26 +1092,47 @@ export async function getThread(threadId: string) {
     },
   });
   if (!thread) return null;
+  const messageIds = thread.messages.map((message) => message.id);
+  const sourceFiles = messageIds.length
+    ? await prisma.jobFile.findMany({
+        where: { sourceEmailMessageId: { in: messageIds } },
+      })
+    : [];
+  const sourceFileByAttachment = new Map(
+    sourceFiles.map((file) => [`${file.sourceEmailMessageId}:${file.sourceEmailAttachmentIndex}`, file])
+  );
   const emails = Array.from(new Set([
     ...thread.participants,
     ...thread.messages.flatMap((message) => [message.fromAddress, ...message.toAddresses, ...message.ccAddresses]),
   ].filter(Boolean)));
   const contacts = await prisma.contact.findMany({ where: { email: { in: emails, mode: "insensitive" } }, include: { company: true } });
   const contactByEmail = new Map(contacts.map((contact) => [contact.email?.toLowerCase(), contact]));
-  const attachments = thread.messages.flatMap((message) => parseAttachments(message.attachments).map((attachment, index) => ({
-    messageId: message.id,
-    attachmentIndex: index,
-    filename: attachment.filename ?? "attachment",
-    mimeType: attachment.mimeType ?? "application/octet-stream",
-    sizeBytes: attachment.sizeBytes ?? 0,
-  } satisfies ThreadAttachmentSummary)));
+  const attachments = thread.messages.flatMap((message) => parseAttachments(message.attachments)
+    .map((attachment, index) => ({
+      messageId: message.id,
+      attachmentIndex: index,
+      filename: attachment.filename ?? "attachment",
+      mimeType: attachment.mimeType ?? "application/octet-stream",
+      sizeBytes: attachment.sizeBytes ?? 0,
+      isInline: attachment.isInline,
+      jobFileId: sourceFileByAttachment.get(`${message.id}:${index}`)?.id,
+      jobFile: sourceFileByAttachment.get(`${message.id}:${index}`),
+    } satisfies ThreadAttachmentSummary))
+    .filter((attachment) => !attachment.isInline));
   return {
     ...thread,
     messages: thread.messages.map((message) => {
       const contact = contactByEmail.get(message.fromAddress.toLowerCase());
+      const messageAttachments = parseAttachments(message.attachments)
+        .map((attachment, index) => ({
+          ...attachment,
+          jobFileId: sourceFileByAttachment.get(`${message.id}:${index}`)?.id,
+          jobFile: sourceFileByAttachment.get(`${message.id}:${index}`),
+        }))
+        .filter((attachment) => !attachment.isInline);
       return {
         ...message,
-        attachments: parseAttachments(message.attachments),
+        attachments: messageAttachments,
         resolvedFromName: resolveDisplayName(message.fromAddress, message.fromName, contactDisplayName(contact)),
         avatarColor: message.isFromMe ? "#1a1a1f" : getAvatarColor(message.fromAddress),
       };

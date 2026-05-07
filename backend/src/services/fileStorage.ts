@@ -16,6 +16,7 @@ export const JOB_FOLDERS = [
   "References",
   "Selects",
   "Delivery",
+  "Mail Attachments",
 ] as const;
 
 export type JobFolder = typeof JOB_FOLDERS[number];
@@ -106,6 +107,10 @@ export async function autoFileDocument(
     receiptVendor?: string;
     receiptAmount?: number;
     receiptDate?: Date;
+    sourceEmailThreadId?: string;
+    sourceEmailMessageId?: string;
+    sourceEmailAttachmentIndex?: number;
+    sourceEmailFilename?: string;
   }
 ) {
   const basePath = await ensureProductionFolders(productionId);
@@ -129,6 +134,10 @@ export async function autoFileDocument(
         receiptVendor: options?.receiptVendor,
         receiptAmount: options?.receiptAmount,
         receiptDate: options?.receiptDate,
+        sourceEmailThreadId: options?.sourceEmailThreadId,
+        sourceEmailMessageId: options?.sourceEmailMessageId,
+        sourceEmailAttachmentIndex: options?.sourceEmailAttachmentIndex,
+        sourceEmailFilename: options?.sourceEmailFilename,
       },
     });
   } catch (err) {

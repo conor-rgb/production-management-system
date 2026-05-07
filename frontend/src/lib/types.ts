@@ -8,7 +8,7 @@ export type ProductionStatus = "PRE_PRO" | "SHOOT" | "POST" | "WRAPPED" | "PLANN
 export type FreeAgentInvoiceStatus = "NOT_RAISED" | "DRAFT" | "SENT" | "VIEWED" | "PAID" | "OVERDUE";
 export type ProductionDateType = "PPM" | "RECCE" | "FITTING" | "MEETING" | "SHOOT_DAY" | "POST_DELIVERY" | "OTHER";
 export type CrewStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFIRMED" | "RELEASED";
-export type JobFolder = "Briefs" | "Estimates" | "Budgets" | "Contracts" | "Crew Deals" | "Receipts" | "References" | "Selects" | "Delivery";
+export type JobFolder = "Briefs" | "Estimates" | "Budgets" | "Contracts" | "Crew Deals" | "Receipts" | "References" | "Selects" | "Delivery" | "Mail Attachments";
 export type BudgetRevisionStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED" | "SUPERSEDED";
 export type InvoiceStatus = "PENDING" | "PAID";
 export type PurchaseOrderStatus = "OPEN" | "INVOICED" | "PAID";
@@ -222,7 +222,7 @@ export interface EmailMessage {
   sentAt: string;
   isFromMe: boolean;
   hasAttachments: boolean;
-  attachments: { filename: string; mimeType: string; sizeBytes: number; contentId?: string }[];
+  attachments: Array<{ filename: string; mimeType: string; sizeBytes: number; contentId?: string; isInline?: boolean; jobFileId?: string; jobFile?: JobFile }>;
   resolvedFromName?: string;
   avatarColor?: string;
   createdAt: string;
@@ -235,6 +235,9 @@ export interface EmailAttachmentSummary {
   filename: string;
   mimeType: string;
   sizeBytes: number;
+  isInline?: boolean;
+  jobFileId?: string;
+  jobFile?: JobFile;
 }
 
 export interface EmailThread {
@@ -345,6 +348,10 @@ export interface JobFile {
   receiptAmount?: number;
   receiptDate?: string;
   notes?: string;
+  sourceEmailThreadId?: string;
+  sourceEmailMessageId?: string;
+  sourceEmailAttachmentIndex?: number;
+  sourceEmailFilename?: string;
   production?: {
     id: string;
     jobCode?: string;
@@ -561,7 +568,7 @@ export interface BudgetRevisionSummary {
   clientGrandTotal: number;
 }
 
-export const JOB_FOLDERS: JobFolder[] = ["Briefs", "Estimates", "Budgets", "Contracts", "Crew Deals", "Receipts", "References", "Selects", "Delivery"];
+export const JOB_FOLDERS: JobFolder[] = ["Briefs", "Estimates", "Budgets", "Contracts", "Crew Deals", "Receipts", "References", "Selects", "Delivery", "Mail Attachments"];
 
 export const PRODUCTION_STATUS_LABELS: Record<ProductionStatus, string> = {
   PRE_PRO: "Pre-pro",

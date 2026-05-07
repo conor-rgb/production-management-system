@@ -23,7 +23,8 @@ import {
   X,
 } from "lucide-react";
 import { api } from "../lib/api";
-import type { EmailAccount, EmailAttachmentSummary, EmailMessage, EmailTemplate, EmailThread, EmailThreadsResponse, JobFile, JobFolder, Production } from "../lib/types";
+import { PreviewPanel } from "../components/files/FileBrowser";
+import type { EmailAccount, EmailAttachmentSummary, EmailMessage, EmailTemplate, EmailThread, EmailThreadsResponse, JobFile, Production } from "../lib/types";
 import { formatBytes, JOB_FOLDERS } from "../lib/types";
 
 type Folder = "inbox" | "sent" | "flagged" | "archived";
@@ -47,6 +48,7 @@ type ReplyState = {
 
 type SaveAttachmentState = {
   attachment: EmailAttachmentSummary;
+  productionId?: string;
 };
 
 function timeLabel(value?: string) {
@@ -183,10 +185,6 @@ function escapeHtml(text: string) {
   return text.replace(/[<>&]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[char] ?? char));
 }
 
-function attachmentUrl(item: EmailAttachmentSummary) {
-  return `/api/email/messages/${item.messageId}/attachment/${item.attachmentIndex}`;
-}
-
 export default function Email() {
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
@@ -201,6 +199,8 @@ export default function Email() {
   const [composeDraft, setComposeDraft] = useState<ComposerDraft | null>(null);
   const [replyState, setReplyState] = useState<ReplyState | null>(null);
   const [saveAttachment, setSaveAttachment] = useState<SaveAttachmentState | null>(null);
+  const [previewFile, setPreviewFile] = useState<JobFile | null>(null);
+  const [filingAttachment, setFilingAttachment] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -289,6 +289,32 @@ export default function Email() {
     });
   }
 
+  async function fileAttachment(attachment: EmailAttachmentSummary, productionId?: string) {
+    if (attachment.jobFile) {
+      setPreviewFile(attachment.jobFile);
+      return;
+    }
+
+    const key = `${attachment.messageId}-${attachment.attachmentIndex}`;
+    setFilingAttachment(key);
+    try {
+      const file = await api.post<JobFile>(`/api/email/messages/${attachment.messageId}/attachment/${attachment.attachmentIndex}/save-to-job`, {
+        productionId,
+      });
+      setPreviewFile(file);
+      if (selectedThreadId) await loadThread(selectedThreadId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Choose a production before saving this attachment";
+      if (message.toLowerCase().includes("choose a production")) {
+        setSaveAttachment({ attachment, productionId });
+      } else {
+        setError(message);
+      }
+    } finally {
+      setFilingAttachment("");
+    }
+  }
+
   return (
     <div className="flex h-full bg-white">
       <aside className="hidden w-[200px] shrink-0 flex-col bg-[#1a1a1f] text-white md:flex">
@@ -356,7 +382,8 @@ export default function Email() {
         {thread ? (
           <ThreadDetail
             thread={thread}
-            onSaveAttachment={(attachment) => setSaveAttachment({ attachment })}
+            filingAttachment={filingAttachment}
+            onOpenAttachment={(attachment) => { fileAttachment(attachment, thread.linkedProductionId).catch(console.error); }}
             onBack={() => setSelectedThreadId(null)}
             onOpenReply={() => openReply(thread)}
             onFlag={async () => { await api.patch(`/api/email/threads/${thread.id}/flag`, {}); await loadThread(thread.id); await loadThreads(); }}
@@ -391,8 +418,25 @@ export default function Email() {
       {saveAttachment && (
         <SaveAttachmentModal
           attachment={saveAttachment.attachment}
+          productionId={saveAttachment.productionId}
           onClose={() => setSaveAttachment(null)}
-          onSaved={() => setSaveAttachment(null)}
+          onSaved={(file) => {
+            setSaveAttachment(null);
+            setPreviewFile(file);
+            if (selectedThreadId) loadThread(selectedThreadId).catch(console.error);
+          }}
+        />
+      )}
+      {previewFile && (
+        <PreviewPanel
+          file={previewFile}
+          productionId={previewFile.productionId}
+          folders={JOB_FOLDERS}
+          onClose={() => setPreviewFile(null)}
+          onPatch={async (patch) => {
+            const updated = await api.patch<JobFile>(`/api/files/${previewFile.id}`, patch);
+            setPreviewFile(updated);
+          }}
         />
       )}
     </div>
@@ -434,7 +478,7 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
   );
 }
 
-function ThreadDetail({ thread, onSaveAttachment, onBack, onOpenReply, onFlag, onArchive }: { thread: EmailThread; onSaveAttachment: (attachment: EmailAttachmentSummary) => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onArchive: () => void }) {
+function ThreadDetail({ thread, filingAttachment, onOpenAttachment, onBack, onOpenReply, onFlag, onArchive }: { thread: EmailThread; filingAttachment: string; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onArchive: () => void }) {
   const [expandedAttachments, setExpandedAttachments] = useState(false);
   const attachments = thread.attachments ?? [];
   const visibleAttachments = expandedAttachments ? attachments : attachments.slice(0, 3);
@@ -454,7 +498,14 @@ function ThreadDetail({ thread, onSaveAttachment, onBack, onOpenReply, onFlag, o
         <p className="truncate text-xs text-gray-500">{participantNames}</p>
         {attachments.length > 0 && (
           <div className="mt-2 hidden flex-wrap gap-2 md:flex">
-            {visibleAttachments.map((attachment) => <AttachmentChip key={`${attachment.messageId}-${attachment.attachmentIndex}`} attachment={attachment} onSave={onSaveAttachment} />)}
+            {visibleAttachments.map((attachment) => (
+              <AttachmentChip
+                key={`${attachment.messageId}-${attachment.attachmentIndex}`}
+                attachment={attachment}
+                filing={filingAttachment === `${attachment.messageId}-${attachment.attachmentIndex}`}
+                onOpen={onOpenAttachment}
+              />
+            ))}
             {attachments.length > 3 && !expandedAttachments && (
               <button onClick={() => setExpandedAttachments(true)} className="min-h-8 rounded bg-[#f0f0ee] px-2 text-xs text-gray-600">+ {attachments.length - 3} more</button>
             )}
@@ -466,7 +517,8 @@ function ThreadDetail({ thread, onSaveAttachment, onBack, onOpenReply, onFlag, o
           <MessageBlock
             key={message.id}
             message={message}
-            onSaveAttachment={onSaveAttachment}
+            filingAttachment={filingAttachment}
+            onOpenAttachment={onOpenAttachment}
             latest={message.id === latestId}
             defaultExpanded={defaultExpanded.has(message.id)}
             showNewDivider={index > 0 && !message.isFromMe && !thread.isRead}
@@ -482,20 +534,26 @@ function ThreadDetail({ thread, onSaveAttachment, onBack, onOpenReply, onFlag, o
   );
 }
 
-function AttachmentChip({ attachment, onSave }: { attachment: EmailAttachmentSummary; onSave: (attachment: EmailAttachmentSummary) => void }) {
+function AttachmentChip({ attachment, filing, onOpen }: { attachment: EmailAttachmentSummary; filing: boolean; onOpen: (attachment: EmailAttachmentSummary) => void }) {
   return (
-    <span className="inline-flex min-h-8 items-center gap-1 rounded bg-[#f0f0ee] px-2 text-xs text-gray-700">
-      <a href={attachmentUrl(attachment)} className="inline-flex min-h-8 items-center gap-1">
+    <button
+      type="button"
+      onClick={() => onOpen(attachment)}
+      disabled={filing}
+      className="inline-flex min-h-8 items-center gap-1 rounded bg-[#f0f0ee] px-2 text-left text-xs text-gray-700 hover:bg-gray-200 disabled:opacity-60"
+      title={attachment.jobFileId ? "Open saved attachment preview" : "File attachment to Mail Attachments"}
+    >
         <Paperclip size={13} className={fileTone(attachment.mimeType)} />
         <span className="max-w-[160px] truncate">{attachment.filename}</span>
         <span className="text-gray-400">{formatBytes(attachment.sizeBytes)}</span>
-      </a>
-      <button onClick={() => onSave(attachment)} className="ml-1 min-h-7 rounded px-1.5 text-[11px] text-gray-500 hover:bg-gray-200">Save to job</button>
-    </span>
+        <span className="ml-1 rounded-full bg-white/70 px-1.5 py-0.5 text-[10px] text-gray-500">
+          {filing ? "Filing..." : attachment.jobFileId ? "Filed" : "Mail Attachments"}
+        </span>
+    </button>
   );
 }
 
-function MessageBlock({ message, onSaveAttachment, latest, defaultExpanded, showNewDivider }: { message: EmailMessage; onSaveAttachment: (attachment: EmailAttachmentSummary) => void; latest: boolean; defaultExpanded: boolean; showNewDivider: boolean }) {
+function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, defaultExpanded, showNewDivider }: { message: EmailMessage; filingAttachment: string; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; latest: boolean; defaultExpanded: boolean; showNewDivider: boolean }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [showImages, setShowImages] = useState(false);
   const [showQuoted, setShowQuoted] = useState(false);
@@ -561,7 +619,21 @@ function MessageBlock({ message, onSaveAttachment, latest, defaultExpanded, show
             {message.attachments.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
                 {message.attachments.map((attachment, index) => (
-                  <AttachmentChip key={`${attachment.filename}-${index}`} onSave={onSaveAttachment} attachment={{ messageId: message.id, attachmentIndex: index, filename: attachment.filename, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes }} />
+                  <AttachmentChip
+                    key={`${attachment.filename}-${index}`}
+                    filing={filingAttachment === `${message.id}-${index}`}
+                    onOpen={onOpenAttachment}
+                    attachment={{
+                      messageId: message.id,
+                      attachmentIndex: index,
+                      filename: attachment.filename,
+                      mimeType: attachment.mimeType,
+                      sizeBytes: attachment.sizeBytes,
+                      isInline: attachment.isInline,
+                      jobFileId: attachment.jobFileId,
+                      jobFile: attachment.jobFile,
+                    }}
+                  />
                 ))}
               </div>
             )}
@@ -700,10 +772,9 @@ function EditorButton({ active, onClick, children }: { active?: boolean; onClick
   return <button type="button" onClick={onClick} className={`min-h-8 rounded px-2 ${active ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-100"}`}>{children}</button>;
 }
 
-function SaveAttachmentModal({ attachment, onClose, onSaved }: { attachment: EmailAttachmentSummary; onClose: () => void; onSaved: (file: JobFile) => void }) {
+function SaveAttachmentModal({ attachment, productionId: initialProductionId, onClose, onSaved }: { attachment: EmailAttachmentSummary; productionId?: string; onClose: () => void; onSaved: (file: JobFile) => void }) {
   const [productions, setProductions] = useState<Production[]>([]);
-  const [productionId, setProductionId] = useState("");
-  const [folder, setFolder] = useState<JobFolder>("Briefs");
+  const [productionId, setProductionId] = useState(initialProductionId ?? "");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -712,7 +783,7 @@ function SaveAttachmentModal({ attachment, onClose, onSaved }: { attachment: Ema
     api.get<Production[]>("/api/productions?includeWrapped=true")
       .then((items) => {
         setProductions(items);
-        setProductionId(items[0]?.id ?? "");
+        setProductionId((current) => current || items[0]?.id || "");
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load productions"));
   }, []);
@@ -724,7 +795,6 @@ function SaveAttachmentModal({ attachment, onClose, onSaved }: { attachment: Ema
     try {
       const file = await api.post<JobFile>(`/api/email/messages/${attachment.messageId}/attachment/${attachment.attachmentIndex}/save-to-job`, {
         productionId,
-        folder,
         notes: notes.trim() || undefined,
       });
       onSaved(file);
@@ -741,7 +811,7 @@ function SaveAttachmentModal({ attachment, onClose, onSaved }: { attachment: Ema
         <div className="mb-3 flex items-start gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-gray-100"><Paperclip size={17} className={fileTone(attachment.mimeType)} /></div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-medium text-gray-900">Save attachment to job</h2>
+            <h2 className="text-sm font-medium text-gray-900">File mail attachment</h2>
             <p className="truncate text-xs text-gray-500">{attachment.filename} · {formatBytes(attachment.sizeBytes)}</p>
           </div>
           <button onClick={onClose} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500"><X size={17} /></button>
@@ -754,12 +824,9 @@ function SaveAttachmentModal({ attachment, onClose, onSaved }: { attachment: Ema
             ))}
           </select>
         </label>
-        <label className="mb-3 block text-xs text-gray-500">
-          Folder
-          <select value={folder} onChange={(event) => setFolder(event.target.value as JobFolder)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900">
-            {JOB_FOLDERS.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-        </label>
+        <div className="mb-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+          Folder: <span className="font-medium text-gray-800">Mail Attachments</span>
+        </div>
         <label className="mb-3 block text-xs text-gray-500">
           Notes
           <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="mt-1 min-h-20 w-full rounded-lg border border-gray-200 p-3 text-sm text-gray-900" />
@@ -767,7 +834,7 @@ function SaveAttachmentModal({ attachment, onClose, onSaved }: { attachment: Ema
         {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="min-h-11 px-3 text-sm text-gray-500">Cancel</button>
-          <button onClick={save} disabled={saving || !productionId} className="min-h-11 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-40">{saving ? "Saving..." : "Save to job"}</button>
+          <button onClick={save} disabled={saving || !productionId} className="min-h-11 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-40">{saving ? "Filing..." : "File attachment"}</button>
         </div>
       </div>
     </div>

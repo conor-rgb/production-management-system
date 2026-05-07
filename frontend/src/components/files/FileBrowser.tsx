@@ -292,6 +292,7 @@ export function PreviewPanel({ file, productionId, folders, onClose, onPatch }: 
   const [linkMessage, setLinkMessage] = useState("");
   const isImage = file.mimeType.startsWith("image/");
   const isPdf = file.mimeType === "application/pdf";
+  const isVideo = file.mimeType.startsWith("video/");
 
   useEffect(() => { setNotes(file.notes ?? ""); }, [file]);
   useEffect(() => {
@@ -339,6 +340,8 @@ export function PreviewPanel({ file, productionId, folders, onClose, onPatch }: 
           <img src={`/api/files/${file.id}/preview`} alt={file.originalFilename} className="w-full touch-pinch-zoom rounded-lg object-contain" />
         ) : isPdf ? (
           <iframe title={file.originalFilename} src={`/api/files/${file.id}/preview`} className="h-[70vh] w-full rounded-lg border border-gray-200" />
+        ) : isVideo ? (
+          <video controls src={`/api/files/${file.id}/preview`} className="w-full rounded-lg bg-black" />
         ) : (
           <div className="grid min-h-56 place-items-center rounded-lg border border-gray-200 text-center">
             <div>

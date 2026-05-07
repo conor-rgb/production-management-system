@@ -40,6 +40,10 @@ function fileSelect() {
     receiptAmount: true,
     receiptDate: true,
     notes: true,
+    sourceEmailThreadId: true,
+    sourceEmailMessageId: true,
+    sourceEmailAttachmentIndex: true,
+    sourceEmailFilename: true,
   } satisfies Prisma.JobFileSelect;
 }
 
@@ -57,7 +61,7 @@ function detectMimeType(filename: string): string {
 }
 
 function isPreviewable(mimeType: string): boolean {
-  return mimeType.startsWith("image/") || previewableTypes.has(mimeType);
+  return mimeType.startsWith("image/") || mimeType.startsWith("video/") || previewableTypes.has(mimeType);
 }
 
 function contentDispositionFilename(filename: string): string {

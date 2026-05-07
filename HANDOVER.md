@@ -2,6 +2,45 @@
 
 ## Built This Session
 
+## Email Attachment Filing — Mail Attachments Folder — 2026-05-07
+
+### Built
+- Added `Mail Attachments` as a first-class job folder.
+  - It is created alongside Briefs, Estimates, Budgets, Contracts, Crew Deals, Receipts, References, Selects, and Delivery whenever production folders are ensured.
+  - It appears in the production Files tab folder list.
+  - It appears in the global Files screen folder filter, giving a master view of all saved mail attachments across all productions.
+- Added email-source metadata to `JobFile`.
+  - `sourceEmailThreadId`
+  - `sourceEmailMessageId`
+  - `sourceEmailAttachmentIndex`
+  - `sourceEmailFilename`
+  - These fields link saved files back to the original email thread/message/attachment.
+- Updated email attachment filing.
+  - Clicking an unsaved email attachment now files the raw attachment into `Mail Attachments`.
+  - If the email thread is linked to a production, the production is used automatically.
+  - If the thread is not linked to a production, the user is prompted to choose a production.
+  - Duplicate filing is prevented by reusing an existing `JobFile` with the same source email message, attachment index, and production.
+  - Inline `cid:` email images are excluded from attachment chips and cannot be filed as job files.
+- Updated email attachment display.
+  - Filed attachments show as `Filed`.
+  - Clicking a filed attachment opens the saved file preview instead of downloading from IMAP again.
+- Expanded file preview support.
+  - Existing preview panel now supports videos with native browser controls.
+  - PDFs and images continue to preview inline.
+
+### Verification
+- Migration applied: `20260507100000_mail_attachment_file_links`.
+- Prisma client regenerated.
+- Backend build passes: `cd backend && npm run build`.
+- Frontend build passes: `cd frontend && npm run build`.
+- Frontend bundle copied to `/var/www/agent`.
+- API reloaded with `pm2 reload 0 --update-env`.
+- API health check passes at `http://localhost:3000/api/health`.
+
+### Notes
+- Existing synced messages need their IMAP mailbox/UID metadata from the previous attachment pass before raw attachment filing can work. If an older email says the attachment is unavailable until resynced, run Settings → Email → Sync.
+- Opportunity-only email threads still need a production choice before filing because the physical file system is production/job-folder based.
+
 ## Email Client Fixes — Sent Sync, Quotes, Reply Persistence — 2026-05-07
 
 ### Fixed
