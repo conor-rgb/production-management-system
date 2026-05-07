@@ -2,6 +2,44 @@
 
 ## Built This Session
 
+## Email Client Fixes — Sent Sync, Quotes, Reply Persistence — 2026-05-07
+
+### Fixed
+- Email sync now processes Sent mail after INBOX.
+  - Tries `[Gmail]/Sent Mail`, `Sent`, `Sent Items`, then `Sent Messages`.
+  - Uses the same parse/upsert logic for INBOX and Sent.
+  - Sent-folder messages are forced to `isFromMe: true`.
+  - Sent replies use the same `threadId` / `References` / `In-Reply-To` grouping path so they can appear in the same thread as received messages.
+  - Threads with both received and sent messages now qualify for both Inbox and Sent views.
+- Improved quoted-text hiding in the thread message renderer.
+  - Gmail quote blocks are removed.
+  - `<blockquote>` content is hidden.
+  - Outlook/corporate quote headers starting with `From:` and containing `Sent:` or `Date:` plus `To:` are detected and hidden.
+  - Plain-text quote splitting now handles Outlook, Apple Mail, original-message dividers, and underscore dividers.
+  - Hidden quotes show a compact `Show previous message` pill and expand inline.
+- Improved signature handling.
+  - `--` signature divider and following content are separated from the visible body.
+  - Expanded messages show signatures in muted italic text.
+  - Collapsed previews keep signatures out of the visible preview body.
+- Reworked reply persistence.
+  - Reply state now lives at the Email page level rather than inside the selected thread detail.
+  - Opening another thread no longer changes the active reply draft.
+  - When replying to a different thread than the one currently selected, an amber banner shows the original thread subject with `Switch to that thread` and `Close reply`.
+  - Discard now confirms inline when the draft has body content.
+  - Reply UI is tighter: recipient chips, compact toolbar, optional From selector, optional CC field, muted signature, attach icon, and dark Send button.
+
+### Verification
+- Backend build passes: `cd backend && npm run build`.
+- Frontend build passes: `cd frontend && npm run build`.
+- Frontend bundle copied to `/var/www/agent`.
+- API reloaded with `pm2 reload 0 --update-env`.
+- API health check passes at `http://localhost:3000/api/health`.
+- Manual sync from Settings was not triggered from the terminal because it requires an authenticated app session; use Settings → Email → sync icon to pull the new Sent folder data.
+
+### Remaining Issues
+- Attachment downloads still depend on the existing `501` attachment endpoint until raw IMAP attachment retrieval is implemented.
+- Sent-folder sync depends on the provider exposing one of the known Sent mailbox names; logs will show each attempted folder.
+
 ## Email Client Spark View Update — 2026-05-07
 
 ### Fixed And Improved

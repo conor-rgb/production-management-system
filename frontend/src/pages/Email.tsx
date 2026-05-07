@@ -36,6 +36,14 @@ type ComposerDraft = {
   linkedProductionId?: string;
   attachments?: { id: string; filename: string; sizeBytes: number }[];
 };
+type ReplyState = {
+  threadId: string;
+  threadSubject: string;
+  replyTo: string[];
+  recipientEmails: string[];
+  accountId?: string;
+  isOpen: boolean;
+};
 
 function timeLabel(value?: string) {
   if (!value) return "";
@@ -83,19 +91,92 @@ function fileTone(mimeType: string) {
   return "text-gray-500";
 }
 
-function stripQuotedText(text: string) {
-  const patterns = [/^On .+wrote:$/m, /^>{1}/m, /^-{3,}\s*Original Message/im, /^From:\s*.+\nSent:\s*/im];
-  const matches = patterns.map((pattern) => text.search(pattern)).filter((index) => index >= 0);
-  const first = matches.length ? Math.min(...matches) : -1;
-  return first >= 0 ? { visible: text.slice(0, first).trim(), quoted: text.slice(first).trim() } : { visible: text, quoted: "" };
+function splitPlainTextSignature(text: string) {
+  const match = text.search(/^--\s*$/m);
+  if (match === -1) return { body: text, signature: "" };
+  return { body: text.slice(0, match).trim(), signature: text.slice(match).trim() };
+}
+
+function splitPlainTextQuote(text: string): { visible: string; quoted: string; hasQuote: boolean } {
+  const patterns = [
+    /^On .+\n?.+wrote:$/m,
+    /^-{3,}\s*Original Message\s*-{3,}/im,
+    /^From:\s.+\nSent:\s/im,
+    /^From:\s.+\nDate:\s/im,
+    /^_{5,}$/m,
+  ];
+  let splitIndex = -1;
+  for (const pattern of patterns) {
+    const match = text.search(pattern);
+    if (match !== -1 && (splitIndex === -1 || match < splitIndex)) splitIndex = match;
+  }
+  if (splitIndex === -1) return { visible: text, quoted: "", hasQuote: false };
+  return { visible: text.slice(0, splitIndex).trim(), quoted: text.slice(splitIndex), hasQuote: true };
+}
+
+function hideQuotedContent(htmlString: string): { visible: string; quoted: string; hasQuote: boolean } {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(htmlString, "text/html");
+
+  const removeFromElement = (el: Element) => {
+    const quoted = el.parentElement?.innerHTML ?? el.outerHTML;
+    let sibling = el.nextSibling;
+    while (sibling) {
+      const next = sibling.nextSibling;
+      sibling.parentNode?.removeChild(sibling);
+      sibling = next;
+    }
+    el.remove();
+    return { visible: doc.body.innerHTML, quoted, hasQuote: true };
+  };
+
+  const gmailQuote = doc.querySelector(".gmail_quote, .gmail_extra");
+  if (gmailQuote) return removeFromElement(gmailQuote);
+
+  const blockquotes = doc.querySelectorAll("blockquote");
+  if (blockquotes.length > 0) {
+    const quoted = Array.from(blockquotes).map((bq) => bq.outerHTML).join("");
+    blockquotes.forEach((bq) => bq.remove());
+    return { visible: doc.body.innerHTML, quoted, hasQuote: true };
+  }
+
+  const allElements = doc.querySelectorAll("div, p, td");
+  for (const el of allElements) {
+    const text = el.textContent ?? "";
+    if (/^From:\s/.test(text.trim()) && (/Sent:\s/.test(text) || /Date:\s/.test(text)) && /To:\s/.test(text)) {
+      return removeFromElement(el);
+    }
+  }
+
+  return { visible: doc.body.innerHTML, quoted: "", hasQuote: false };
+}
+
+function splitHtmlSignature(htmlString: string): { body: string; signature: string } {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(htmlString, "text/html");
+  const allElements = doc.querySelectorAll("div, p, span");
+  for (const el of allElements) {
+    if ((el.textContent ?? "").trim() === "--") {
+      const signature = el.parentElement?.innerHTML ?? el.outerHTML;
+      let sibling = el.nextSibling;
+      while (sibling) {
+        const next = sibling.nextSibling;
+        sibling.parentNode?.removeChild(sibling);
+        sibling = next;
+      }
+      el.remove();
+      return { body: doc.body.innerHTML, signature };
+    }
+  }
+  return { body: htmlString, signature: "" };
 }
 
 function sanitizeEmailHtml(html: string, showImages: boolean) {
-  let cleaned = html
-    .replace(/<div[^>]*class=["'][^"']*gmail_quote[^"']*["'][\s\S]*?<\/div>/gi, "<button data-quoted='true'>...</button>")
-    .replace(/<blockquote[\s\S]*?<\/blockquote>/gi, "<button data-quoted='true'>...</button>");
-  cleaned = DOMPurify.sanitize(cleaned, showImages ? undefined : { FORBID_TAGS: ["img"] });
-  return cleaned;
+  return DOMPurify.sanitize(html, showImages ? undefined : { FORBID_TAGS: ["img"] });
+}
+
+function escapeHtml(text: string) {
+  return text.replace(/[<>&]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[char] ?? char));
 }
 
 function attachmentUrl(item: EmailAttachmentSummary) {
@@ -114,6 +195,7 @@ export default function Email() {
   const [search, setSearch] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeDraft, setComposeDraft] = useState<ComposerDraft | null>(null);
+  const [replyState, setReplyState] = useState<ReplyState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -185,6 +267,23 @@ export default function Email() {
     return groups;
   }, [threads]);
 
+  function openReply(targetThread: EmailThread) {
+    const accountEmail = targetThread.account?.emailAddress?.toLowerCase();
+    const recipientEmails = targetThread.participants.filter((email) => email.toLowerCase() !== accountEmail);
+    const replyTo = recipientEmails.map((email) => {
+      const index = targetThread.participants.findIndex((participant) => participant === email);
+      return targetThread.participantNames?.[index] ?? email;
+    });
+    setReplyState({
+      threadId: targetThread.id,
+      threadSubject: targetThread.subject,
+      replyTo,
+      recipientEmails,
+      accountId: targetThread.accountId,
+      isOpen: true,
+    });
+  }
+
   return (
     <div className="flex h-full bg-white">
       <aside className="hidden w-[200px] shrink-0 flex-col bg-[#1a1a1f] text-white md:flex">
@@ -252,9 +351,8 @@ export default function Email() {
         {thread ? (
           <ThreadDetail
             thread={thread}
-            accounts={accounts}
             onBack={() => setSelectedThreadId(null)}
-            onReplySent={() => { loadThread(thread.id).catch(console.error); loadThreads().catch(console.error); }}
+            onOpenReply={() => openReply(thread)}
             onFlag={async () => { await api.patch(`/api/email/threads/${thread.id}/flag`, {}); await loadThread(thread.id); await loadThreads(); }}
             onArchive={async () => { await api.patch(`/api/email/threads/${thread.id}/archive`, {}); setSelectedThreadId(null); await loadThreads(); }}
           />
@@ -271,6 +369,19 @@ export default function Email() {
       </button>
 
       {composeOpen && <ComposerModal accounts={accounts} templates={templates} defaultAccountId={activeAccount?.id} draft={composeDraft} onClose={() => { setComposeOpen(false); setComposeDraft(null); }} onSent={() => { setComposeOpen(false); setComposeDraft(null); loadThreads().catch(console.error); }} />}
+      <ReplyBar
+        activeThread={thread}
+        accounts={accounts}
+        replyState={replyState}
+        onOpenReply={thread ? () => openReply(thread) : undefined}
+        onClose={() => setReplyState(null)}
+        onSwitch={(threadId) => setSelectedThreadId(threadId)}
+        onSent={(threadId) => {
+          setReplyState(null);
+          loadThread(threadId).catch(console.error);
+          loadThreads().catch(console.error);
+        }}
+      />
     </div>
   );
 }
@@ -310,7 +421,7 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
   );
 }
 
-function ThreadDetail({ thread, accounts, onBack, onReplySent, onFlag, onArchive }: { thread: EmailThread; accounts: EmailAccount[]; onBack: () => void; onReplySent: () => void; onFlag: () => void; onArchive: () => void }) {
+function ThreadDetail({ thread, onBack, onOpenReply, onFlag, onArchive }: { thread: EmailThread; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onArchive: () => void }) {
   const [expandedAttachments, setExpandedAttachments] = useState(false);
   const attachments = thread.attachments ?? [];
   const visibleAttachments = expandedAttachments ? attachments : attachments.slice(0, 3);
@@ -348,7 +459,11 @@ function ThreadDetail({ thread, accounts, onBack, onReplySent, onFlag, onArchive
           />
         ))}
       </div>
-      <ReplyBar thread={thread} accounts={accounts} onSent={onReplySent} />
+      <div className="shrink-0 border-t border-gray-200 bg-white p-3">
+        <button onClick={onOpenReply} className="flex min-h-12 w-full items-center gap-2 rounded-lg border border-gray-200 px-3 text-left text-sm text-gray-500">
+          <Reply size={16} /> Reply to {[...thread.messages].reverse().find((message) => !message.isFromMe)?.resolvedFromName ?? "sender"}...
+        </button>
+      </div>
     </>
   );
 }
@@ -370,10 +485,20 @@ function MessageBlock({ message, latest, defaultExpanded, showNewDivider }: { me
   const name = message.resolvedFromName || message.fromName || message.fromAddress;
   const toLabel = message.isFromMe ? `to ${message.toAddresses[0] ?? "recipient"}` : "to me";
   const hasImages = /<img[\s>]/i.test(message.bodyHtml);
-  const quote = stripQuotedText(message.bodyText || "");
-  const htmlBody = message.bodyHtml
-    ? sanitizeEmailHtml(showQuoted ? message.bodyHtml : message.bodyHtml.replace(/<blockquote[\s\S]*?<\/blockquote>/gi, ""), showImages)
-    : DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${(showQuoted ? message.bodyText : quote.visible).replace(/[<>&]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[char] ?? char))}</pre>`);
+  const htmlQuote = message.bodyHtml ? hideQuotedContent(message.bodyHtml) : null;
+  const htmlSignature = message.bodyHtml ? splitHtmlSignature(htmlQuote?.visible ?? message.bodyHtml) : null;
+  const plainQuote = splitPlainTextQuote(message.bodyText || "");
+  const plainSignature = splitPlainTextSignature(plainQuote.visible);
+  const bodyHtml = message.bodyHtml
+    ? sanitizeEmailHtml(htmlSignature?.body ?? htmlQuote?.visible ?? message.bodyHtml, showImages)
+    : DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainSignature.body)}</pre>`);
+  const signatureHtml = message.bodyHtml
+    ? sanitizeEmailHtml(htmlSignature?.signature ?? "", showImages)
+    : plainSignature.signature ? DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainSignature.signature)}</pre>`) : "";
+  const quotedHtml = message.bodyHtml
+    ? sanitizeEmailHtml(htmlQuote?.quoted ?? "", showImages)
+    : plainQuote.quoted ? DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainQuote.quoted)}</pre>`) : "";
+  const hasQuote = Boolean((htmlQuote?.hasQuote && quotedHtml) || plainQuote.hasQuote);
 
   return (
     <>
@@ -406,9 +531,15 @@ function MessageBlock({ message, latest, defaultExpanded, showNewDivider }: { me
         {expanded && (
           <div className="px-12 pb-4">
             {hasImages && !showImages && <button onClick={() => setShowImages(true)} className="mb-3 min-h-9 rounded bg-gray-100 px-3 text-xs text-gray-700">Show images</button>}
-            <div className="prose prose-sm max-w-none text-[13px] leading-6 text-gray-800" dangerouslySetInnerHTML={{ __html: htmlBody }} />
-            {(quote.quoted || /<blockquote|gmail_quote/i.test(message.bodyHtml)) && !showQuoted && (
-              <button onClick={() => setShowQuoted(true)} className="mt-3 min-h-8 rounded bg-gray-100 px-3 text-xs text-gray-500">Show previous messages</button>
+            <div className="prose prose-sm max-w-none text-[13px] leading-6 text-gray-800" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+            {signatureHtml && (
+              <div className="prose prose-sm mt-3 max-w-none text-xs italic text-gray-400" dangerouslySetInnerHTML={{ __html: signatureHtml }} />
+            )}
+            {hasQuote && !showQuoted && (
+              <button onClick={() => setShowQuoted(true)} className="mt-3 min-h-7 rounded-full bg-[#f0f0ee] px-3 text-[11px] text-gray-500 hover:bg-gray-200">Show previous message</button>
+            )}
+            {hasQuote && showQuoted && (
+              <div className="mt-3 border-l-2 border-gray-200 pl-3 text-xs text-gray-500" dangerouslySetInnerHTML={{ __html: quotedHtml }} />
             )}
             {message.attachments.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
@@ -424,13 +555,14 @@ function MessageBlock({ message, latest, defaultExpanded, showNewDivider }: { me
   );
 }
 
-function ReplyBar({ thread, accounts, onSent }: { thread: EmailThread; accounts: EmailAccount[]; onSent: () => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const [fromAccountId, setFromAccountId] = useState(thread.accountId || accounts[0]?.id || "");
+function ReplyBar({ activeThread, accounts, replyState, onOpenReply, onClose, onSwitch, onSent }: { activeThread: EmailThread | null; accounts: EmailAccount[]; replyState: ReplyState | null; onOpenReply?: () => void; onClose: () => void; onSwitch: (threadId: string) => void; onSent: (threadId: string) => void }) {
+  const [fromAccountId, setFromAccountId] = useState(replyState?.accountId || accounts[0]?.id || "");
+  const [fromVisible, setFromVisible] = useState(false);
+  const [ccVisible, setCcVisible] = useState(false);
+  const [signatureVisible, setSignatureVisible] = useState(() => window.innerWidth >= 768);
   const [sending, setSending] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [error, setError] = useState("");
-  const lastNonMe = [...thread.messages].reverse().find((message) => !message.isFromMe) ?? thread.messages[thread.messages.length - 1];
-  const recipients = thread.participants.filter((email) => email !== thread.account?.emailAddress?.toLowerCase());
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -441,15 +573,18 @@ function ReplyBar({ thread, accounts, onSent }: { thread: EmailThread; accounts:
     content: "",
   });
 
+  useEffect(() => {
+    if (replyState?.accountId) setFromAccountId(replyState.accountId);
+  }, [replyState?.accountId]);
+
   async function sendReply() {
-    if (!editor) return;
+    if (!editor || !replyState) return;
     setSending(true);
     setError("");
     try {
-      await api.post(`/api/email/threads/${thread.id}/reply`, { fromAccountId, bodyHtml: editor.getHTML(), replyAll: false });
+      await api.post(`/api/email/threads/${replyState.threadId}/reply`, { fromAccountId, bodyHtml: editor.getHTML(), replyAll: false });
       editor.commands.clearContent();
-      setExpanded(false);
-      onSent();
+      onSent(replyState.threadId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send reply");
     } finally {
@@ -457,43 +592,88 @@ function ReplyBar({ thread, accounts, onSent }: { thread: EmailThread; accounts:
     }
   }
 
-  if (!expanded) {
+  function discard() {
+    const bodyIsEmpty = !editor || editor.getText().trim().length === 0;
+    if (!bodyIsEmpty && !confirmDiscard) {
+      setConfirmDiscard(true);
+      return;
+    }
+    editor?.commands.clearContent();
+    setConfirmDiscard(false);
+    onClose();
+  }
+
+  if (!replyState) {
+    const lastNonMe = activeThread ? [...activeThread.messages].reverse().find((message) => !message.isFromMe) : null;
     return (
-      <div className="shrink-0 border-t border-gray-200 bg-white p-3">
-        <button onClick={() => setExpanded(true)} className="flex min-h-12 w-full items-center gap-2 rounded-lg border border-gray-200 px-3 text-left text-sm text-gray-500">
+      <div className={`${activeThread ? "block" : "hidden"} fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white p-3 md:left-[520px]`}>
+        <button onClick={onOpenReply} className="flex min-h-12 w-full items-center gap-2 rounded-lg border border-gray-200 px-3 text-left text-sm text-gray-500">
           <Reply size={16} /> Reply to {lastNonMe?.resolvedFromName || lastNonMe?.fromName || lastNonMe?.fromAddress || "sender"}...
         </button>
       </div>
     );
   }
 
+  const replyingElsewhere = activeThread?.id !== replyState.threadId;
+
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 max-h-[90vh] overflow-auto border-t border-gray-200 bg-white p-3 shadow-2xl md:absolute md:max-h-[360px]">
-      {accounts.length > 1 && (
-        <select value={fromAccountId} onChange={(event) => setFromAccountId(event.target.value)} className="mb-2 min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm md:max-w-xs">
-          {accounts.map((account) => <option key={account.id} value={account.id}>{account.emailAddress}</option>)}
-        </select>
-      )}
-      <div className="mb-2 flex min-h-9 flex-wrap items-center gap-2 text-xs">
-        <span className="text-gray-400">To</span>
-        {recipients.map((recipient) => <span key={recipient} className="rounded-full bg-gray-100 px-2 py-1 text-gray-700">{recipient}</span>)}
-      </div>
-      <div className="rounded-lg border border-gray-200">
-        <div className="flex min-h-9 items-center gap-1 border-b border-gray-100 px-2 text-xs text-gray-600">
-          <EditorButton active={editor?.isActive("bold")} onClick={() => editor?.chain().focus().toggleBold().run()}>B</EditorButton>
-          <EditorButton active={editor?.isActive("italic")} onClick={() => editor?.chain().focus().toggleItalic().run()}><span className="italic">I</span></EditorButton>
-          <EditorButton active={editor?.isActive("underline")} onClick={() => editor?.chain().focus().toggleUnderline().run()}><span className="underline">U</span></EditorButton>
-          <EditorButton active={editor?.isActive("bulletList")} onClick={() => editor?.chain().focus().toggleBulletList().run()}>• List</EditorButton>
-          <EditorButton active={editor?.isActive("orderedList")} onClick={() => editor?.chain().focus().toggleOrderedList().run()}>1. List</EditorButton>
+    <div className="fixed inset-x-0 bottom-0 z-50 max-h-screen overflow-auto border-t border-gray-200 bg-white shadow-2xl md:left-[520px] md:max-h-[60vh]">
+      {replyingElsewhere && (
+        <div className="flex min-h-8 items-center gap-2 bg-[#FFF8E7] px-3 text-xs text-gray-700">
+          <span className="min-w-0 flex-1 truncate">↩ Replying to: {replyState.threadSubject}</span>
+          <button onClick={() => onSwitch(replyState.threadId)} className="min-h-8 text-gray-900 underline">Switch to that thread</button>
+          <button onClick={discard} className="min-h-8 text-gray-900 underline">Close reply</button>
         </div>
-        <EditorContent editor={editor} className="min-h-[120px] p-3 text-sm outline-none [&_.ProseMirror]:min-h-[120px] [&_.ProseMirror]:outline-none" />
-      </div>
-      <div className="mt-2 rounded bg-gray-50 p-2 text-xs text-gray-500">-- <br />Conor | unlimited.bond</div>
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-      <div className="mt-3 flex items-center gap-2">
-        <button onClick={() => setExpanded(false)} className="min-h-11 px-3 text-sm text-gray-500">Discard</button>
-        <button className="ml-auto grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500"><Paperclip size={16} /></button>
-        <button onClick={sendReply} disabled={sending || !fromAccountId} className="min-h-11 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-40">{sending ? "Sending..." : "Send"}</button>
+      )}
+      <div className="max-h-[90vh] overflow-auto p-3 md:max-h-[60vh]">
+        <div className="mb-2 flex min-h-9 flex-wrap items-center gap-2 text-xs">
+          <span className="text-gray-400">To:</span>
+          {replyState.replyTo.map((name, index) => (
+            <span key={`${name}-${index}`} title={replyState.recipientEmails[index]} className="rounded-full bg-gray-100 px-2 py-1 text-gray-700">{name} ×</span>
+          ))}
+          {accounts.length > 1 && (
+            <button onClick={() => setFromVisible((current) => !current)} className="ml-auto min-h-8 text-xs text-gray-500">From: {accounts.find((account) => account.id === fromAccountId)?.label ?? "account"}</button>
+          )}
+        </div>
+        {fromVisible && (
+          <select value={fromAccountId} onChange={(event) => setFromAccountId(event.target.value)} className="mb-2 min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm md:max-w-xs">
+            {accounts.map((account) => <option key={account.id} value={account.id}>{account.emailAddress}</option>)}
+          </select>
+        )}
+        {ccVisible && <input className="mb-2 min-h-9 w-full border-b border-gray-100 text-sm outline-none" placeholder="CC" />}
+        <div className="rounded-lg border border-gray-200">
+          <div className="flex h-8 items-center gap-1 border-b border-gray-100 px-2 text-xs text-gray-600">
+            <EditorButton active={editor?.isActive("bold")} onClick={() => editor?.chain().focus().toggleBold().run()}>B</EditorButton>
+            <EditorButton active={editor?.isActive("italic")} onClick={() => editor?.chain().focus().toggleItalic().run()}><span className="italic">I</span></EditorButton>
+            <EditorButton active={editor?.isActive("underline")} onClick={() => editor?.chain().focus().toggleUnderline().run()}><span className="underline">U</span></EditorButton>
+            <span className="mx-1 h-4 w-px bg-gray-200" />
+            <EditorButton active={editor?.isActive("link")} onClick={() => {
+              const href = window.prompt("Link URL");
+              if (href) editor?.chain().focus().setLink({ href }).run();
+            }}>Link</EditorButton>
+            <span className="mx-1 h-4 w-px bg-gray-200" />
+            <EditorButton active={editor?.isActive("bulletList")} onClick={() => editor?.chain().focus().toggleBulletList().run()}>• List</EditorButton>
+            <EditorButton active={editor?.isActive("orderedList")} onClick={() => editor?.chain().focus().toggleOrderedList().run()}>1. List</EditorButton>
+          </div>
+          <EditorContent editor={editor} className="min-h-[100px] p-3 text-sm outline-none [&_.ProseMirror]:min-h-[100px] [&_.ProseMirror]:outline-none" />
+          {signatureVisible && (
+            <div className="border-t border-gray-100 p-3 text-xs text-gray-400">
+              <div className="flex"><span>--</span><button onClick={() => setSignatureVisible(false)} className="ml-auto min-h-6 text-gray-400 underline">Hide</button></div>
+              Conor | unlimited.bond
+            </div>
+          )}
+        </div>
+        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        <div className="mt-2 flex h-10 items-center gap-2">
+          {confirmDiscard ? (
+            <span className="flex items-center gap-2 text-xs text-gray-600">Discard this reply? <button onClick={() => setConfirmDiscard(false)} className="min-h-8 underline">Keep editing</button><button onClick={discard} className="min-h-8 text-red-600 underline">Discard</button></span>
+          ) : (
+            <button onClick={discard} className="min-h-10 px-2 text-sm text-gray-500">Discard</button>
+          )}
+          <button onClick={() => setCcVisible((current) => !current)} className="ml-auto min-h-10 px-2 text-xs text-gray-500">CC</button>
+          <button className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-500"><Paperclip size={16} /></button>
+          <button onClick={sendReply} disabled={sending || !fromAccountId} className="flex min-h-10 items-center gap-1 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-40">{sending ? "Sending..." : "Send →"}</button>
+        </div>
       </div>
     </div>
   );

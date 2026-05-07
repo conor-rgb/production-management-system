@@ -95,6 +95,12 @@ type StoredAttachment = {
   contentId?: string | null;
 };
 
+type SyncMailboxResult = {
+  threadCount: number;
+  messageCount: number;
+  errorCount: number;
+};
+
 export function resolveDisplayName(emailAddress: string, fromName?: string | null, contactName?: string | null): string {
   if (contactName) return contactName;
 
@@ -391,15 +397,145 @@ function parseAttachments(value: Prisma.JsonValue): StoredAttachment[] {
   const attachments: StoredAttachment[] = [];
   for (const item of value) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-      const attachment = item as Record<string, Prisma.JsonValue>;
-      attachments.push({
-        filename: typeof attachment.filename === "string" ? attachment.filename : "attachment",
-        mimeType: typeof attachment.mimeType === "string" ? attachment.mimeType : "application/octet-stream",
-        sizeBytes: typeof attachment.sizeBytes === "number" ? attachment.sizeBytes : 0,
-        contentId: typeof attachment.contentId === "string" ? attachment.contentId : null,
-      });
+    const attachment = item as Record<string, Prisma.JsonValue>;
+    attachments.push({
+      filename: typeof attachment.filename === "string" ? attachment.filename : "attachment",
+      mimeType: typeof attachment.mimeType === "string" ? attachment.mimeType : "application/octet-stream",
+      sizeBytes: typeof attachment.sizeBytes === "number" ? attachment.sizeBytes : 0,
+      contentId: typeof attachment.contentId === "string" ? attachment.contentId : null,
+    });
   }
   return attachments;
+}
+
+async function syncMailbox(client: ImapFlow, account: EmailAccount, folderName: string, forceFromMe: boolean): Promise<SyncMailboxResult> {
+  const mailbox = await client.mailboxOpen(folderName);
+  console.log(`[SYNC] Opened ${folderName} — total messages: ${mailbox.exists}`);
+
+  const syncDays = parseInt(process.env.EMAIL_SYNC_DAYS ?? "7", 10);
+  const syncLimit = parseInt(process.env.EMAIL_SYNC_LIMIT ?? "200", 10);
+  const since = new Date();
+  since.setDate(since.getDate() - syncDays);
+
+  console.log(`[SYNC] Searching ${folderName} for messages since ${since.toDateString()} (${syncDays} days)`);
+
+  const searchResult = await client.search({ since }, { uid: true });
+  const allUids = searchResult || [];
+  const recentUids = allUids.slice(-syncLimit);
+
+  console.log(`[SYNC] Found ${allUids.length} messages in ${folderName} since ${syncDays} days ago, fetching most recent ${recentUids.length}`);
+
+  if (recentUids.length === 0) {
+    console.log(`[SYNC] No new messages to sync in ${folderName}`);
+    return { threadCount: 0, messageCount: 0, errorCount: 0 };
+  }
+
+  let messageCount = 0;
+  let threadCount = 0;
+  let errorCount = 0;
+
+  for await (const message of client.fetch(recentUids, {
+    envelope: true,
+    bodyStructure: true,
+    source: true,
+    flags: true,
+    threadId: true,
+  }, { uid: true })) {
+    try {
+      if (!message.source) continue;
+      const parsed = await simpleParser(message.source);
+      const from = firstAddress(parsed.from);
+      const toAddresses = addressList(parsed.to);
+      const ccAddresses = addressList(parsed.cc);
+      const bccAddresses = addressList(parsed.bcc);
+      const sentAt = parsed.date ?? message.envelope?.date ?? new Date();
+      const typedMessage = message as typeof message & FetchMessageWithThread;
+      const references = Array.isArray(parsed.references) ? parsed.references : parsed.references ? [parsed.references] : [];
+      const externalThreadId = String(
+        typedMessage.threadId
+        ?? references[0]
+        ?? parsed.inReplyTo
+        ?? parsed.messageId
+        ?? message.envelope?.messageId
+        ?? `${account.id}-${message.uid}`
+      );
+      const participants = Array.from(new Set([from.address, ...toAddresses, ...ccAddresses].filter(Boolean)));
+      const flags = new Set(Array.from(message.flags ?? []));
+
+      const existingThread = await prisma.emailThread.findFirst({
+        where: { accountId: account.id, externalThreadId },
+      });
+
+      let thread: { id: string };
+      if (!existingThread) {
+        thread = await prisma.emailThread.create({
+          data: {
+            accountId: account.id,
+            externalThreadId,
+            subject: parsed.subject ?? "(no subject)",
+            participants,
+            lastMessageAt: sentAt,
+            isRead: flags.has("\\Seen") || forceFromMe,
+            isFlagged: flags.has("\\Flagged"),
+            isArchived: false,
+          },
+        });
+        threadCount++;
+      } else {
+        thread = existingThread;
+        const updatedParticipants = Array.from(new Set([...existingThread.participants, ...participants]));
+        await prisma.emailThread.update({
+          where: { id: existingThread.id },
+          data: {
+            lastMessageAt: sentAt > existingThread.lastMessageAt ? sentAt : existingThread.lastMessageAt,
+            participants: updatedParticipants,
+          },
+        });
+      }
+
+      const externalMessageId = parsed.messageId ?? message.envelope?.messageId ?? `${account.id}-${message.uid}`;
+      const existingMessage = await prisma.emailMessage.findFirst({
+        where: { externalMessageId },
+      });
+
+      if (!existingMessage) {
+        const accountEmail = account.emailAddress.toLowerCase();
+        const fromAddress = from.address.toLowerCase();
+        const attachments = parsed.attachments.map((attachment) => ({
+          filename: attachment.filename ?? "attachment",
+          mimeType: attachment.contentType ?? "application/octet-stream",
+          sizeBytes: attachment.size ?? 0,
+          contentId: attachment.contentId ?? null,
+        }));
+
+        await prisma.emailMessage.create({
+          data: {
+            threadId: thread.id,
+            externalMessageId,
+            fromAddress: from.address || account.emailAddress,
+            fromName: from.name ?? "",
+            toAddresses,
+            ccAddresses,
+            bccAddresses,
+            subject: parsed.subject ?? "(no subject)",
+            bodyHtml: parsed.html || parsed.textAsHtml || "",
+            bodyText: parsed.text ?? "",
+            sentAt,
+            isFromMe: forceFromMe || fromAddress === accountEmail,
+            hasAttachments: attachments.length > 0,
+            attachments,
+          },
+        });
+        messageCount++;
+      }
+    } catch (msgErr) {
+      errorCount++;
+      console.error(`[SYNC] Error processing message in ${folderName}:`, msgErr instanceof Error ? msgErr.message : msgErr);
+    }
+  }
+
+  console.log(`[SYNC] ${folderName} sync complete: ${threadCount} new threads, ${messageCount} new messages, ${errorCount} errors`);
+  return { threadCount, messageCount, errorCount };
 }
 
 export async function syncAccount(accountId: string): Promise<void> {
@@ -449,131 +585,23 @@ export async function syncAccount(accountId: string): Promise<void> {
   }
 
   try {
-    const mailbox = await client.mailboxOpen("INBOX");
-    console.log(`[SYNC] Opened INBOX — total messages: ${mailbox.exists}`);
-
-    const syncDays = parseInt(process.env.EMAIL_SYNC_DAYS ?? "7", 10);
-    const syncLimit = parseInt(process.env.EMAIL_SYNC_LIMIT ?? "200", 10);
-    const since = new Date();
-    since.setDate(since.getDate() - syncDays);
-
-    console.log(`[SYNC] Searching for messages since ${since.toDateString()} (${syncDays} days)`);
-
-    const searchResult = await client.search({ since }, { uid: true });
-    const allUids = searchResult || [];
-    const recentUids = allUids.slice(-syncLimit);
-
-    console.log(`[SYNC] Found ${allUids.length} messages since ${syncDays} days ago, fetching most recent ${recentUids.length}`);
-
-    if (recentUids.length === 0) {
-      console.log("[SYNC] No new messages to sync");
-      await prisma.emailAccount.update({ where: { id: account.id }, data: { lastSyncedAt: new Date() } });
-      return;
-    }
-
-    let messageCount = 0;
-    let threadCount = 0;
-    let errorCount = 0;
-
-    for await (const message of client.fetch(recentUids, {
-      envelope: true,
-      bodyStructure: true,
-      source: true,
-      flags: true,
-      threadId: true,
-    }, { uid: true })) {
+    const inboxResult = await syncMailbox(client, account, "INBOX", false);
+    const sentFolders = ["[Gmail]/Sent Mail", "Sent", "Sent Items", "Sent Messages"];
+    let sentResult: SyncMailboxResult = { threadCount: 0, messageCount: 0, errorCount: 0 };
+    let sentSynced = false;
+    for (const folderName of sentFolders) {
       try {
-        if (!message.source) continue;
-        const parsed = await simpleParser(message.source);
-        const from = firstAddress(parsed.from);
-        const toAddresses = addressList(parsed.to);
-        const ccAddresses = addressList(parsed.cc);
-        const bccAddresses = addressList(parsed.bcc);
-        const sentAt = parsed.date ?? message.envelope?.date ?? new Date();
-        const typedMessage = message as typeof message & FetchMessageWithThread;
-        const references = Array.isArray(parsed.references) ? parsed.references : parsed.references ? [parsed.references] : [];
-        const externalThreadId = String(
-          typedMessage.threadId
-          ?? references[0]
-          ?? parsed.inReplyTo
-          ?? parsed.messageId
-          ?? message.envelope?.messageId
-          ?? `${account.id}-${message.uid}`
-        );
-        const participants = Array.from(new Set([from.address, ...toAddresses, ...ccAddresses].filter(Boolean)));
-        const flags = new Set(Array.from(message.flags ?? []));
-
-        const existingThread = await prisma.emailThread.findFirst({
-          where: { accountId, externalThreadId },
-        });
-
-        let thread: { id: string };
-        if (!existingThread) {
-          thread = await prisma.emailThread.create({
-            data: {
-              accountId,
-              externalThreadId,
-              subject: parsed.subject ?? "(no subject)",
-              participants,
-              lastMessageAt: sentAt,
-              isRead: flags.has("\\Seen"),
-              isFlagged: flags.has("\\Flagged"),
-              isArchived: false,
-            },
-          });
-          threadCount++;
-        } else {
-          thread = existingThread;
-          if (sentAt > existingThread.lastMessageAt) {
-            await prisma.emailThread.update({
-              where: { id: existingThread.id },
-              data: { lastMessageAt: sentAt },
-            });
-          }
-        }
-
-        const externalMessageId = parsed.messageId ?? message.envelope?.messageId ?? `${account.id}-${message.uid}`;
-        const existingMessage = await prisma.emailMessage.findFirst({
-          where: { externalMessageId },
-        });
-
-        if (!existingMessage) {
-          const accountEmail = account.emailAddress.toLowerCase();
-          const fromAddress = from.address.toLowerCase();
-          const attachments = parsed.attachments.map((attachment) => ({
-            filename: attachment.filename ?? "attachment",
-            mimeType: attachment.contentType ?? "application/octet-stream",
-            sizeBytes: attachment.size ?? 0,
-            contentId: attachment.contentId ?? null,
-          }));
-
-          await prisma.emailMessage.create({
-            data: {
-              threadId: thread.id,
-              externalMessageId,
-              fromAddress: from.address,
-              fromName: from.name ?? "",
-              toAddresses,
-              ccAddresses,
-              bccAddresses,
-              subject: parsed.subject ?? "(no subject)",
-              bodyHtml: parsed.html || parsed.textAsHtml || "",
-              bodyText: parsed.text ?? "",
-              sentAt,
-              isFromMe: fromAddress === accountEmail,
-              hasAttachments: attachments.length > 0,
-              attachments,
-            },
-          });
-          messageCount++;
-        }
-      } catch (msgErr) {
-        errorCount++;
-        console.error("[SYNC] Error processing message:", msgErr instanceof Error ? msgErr.message : msgErr);
+        sentResult = await syncMailbox(client, account, folderName, true);
+        console.log(`[SYNC] Opened sent folder: ${folderName}`);
+        sentSynced = true;
+        break;
+      } catch {
+        console.log(`[SYNC] Sent folder not found: ${folderName}, trying next...`);
       }
     }
+    if (!sentSynced) console.log("[SYNC] No sent folder could be opened");
 
-    console.log(`[SYNC] Sync complete for ${account.emailAddress}: ${threadCount} new threads, ${messageCount} new messages, ${errorCount} errors`);
+    console.log(`[SYNC] Sync complete for ${account.emailAddress}: ${inboxResult.threadCount + sentResult.threadCount} new threads, ${inboxResult.messageCount + sentResult.messageCount} new messages, ${inboxResult.errorCount + sentResult.errorCount} errors`);
 
     console.log("[SYNC] Running smart link for new threads...");
     const newThreads = await prisma.emailThread.findMany({
