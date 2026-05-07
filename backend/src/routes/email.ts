@@ -175,7 +175,7 @@ router.get("/oauth/google/start", (_req: Request, res: Response): void => {
   res.json({ url: getGoogleOAuthUrl() });
 });
 
-router.get("/oauth/google/callback", async (req: Request, res: Response): Promise<void> => {
+export async function googleOAuthCallbackHandler(req: Request, res: Response): Promise<void> {
   if (!googleOAuthConfigured()) {
     res.status(503).json({ error: "Google OAuth not configured" });
     return;
@@ -205,11 +205,38 @@ router.get("/oauth/google/callback", async (req: Request, res: Response): Promis
     });
     syncAccount(account.id).catch((err) => console.error("Google initial sync failed:", err));
     startIdleSync(account.id).catch((err) => console.error("Google IDLE sync failed:", err));
-    res.redirect("/settings?section=email&connected=true");
+    res.type("html").send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gmail connected</title>
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1a1a1f; background: #f8f8f6; }
+      main { width: min(420px, calc(100vw - 32px)); border: 1px solid #e5e5e5; border-radius: 12px; background: white; padding: 24px; text-align: center; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08); }
+      h1 { margin: 0 0 8px; font-size: 18px; }
+      p { margin: 0 0 16px; color: #666; font-size: 14px; line-height: 1.5; }
+      a { color: #1a1a1f; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Gmail connected successfully</h1>
+      <p>This tab should close automatically. Your email account list will refresh in Settings.</p>
+      <a href="/settings?section=email&connected=true">Return to settings</a>
+    </main>
+    <script>
+      window.opener?.postMessage('gmail-connected', '*');
+      window.setTimeout(function () { window.close(); }, 300);
+    </script>
+  </body>
+</html>`);
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Google OAuth failed" });
   }
-});
+}
+
+router.get("/oauth/google/callback", googleOAuthCallbackHandler);
 
 router.get("/threads", async (req: Request, res: Response): Promise<void> => {
   const result = await getThreads({

@@ -74,6 +74,16 @@ export default function SettingsPage() {
     api.get<StorageInfo>("/api/files/storage-info").then(setStorageInfo).catch(console.error);
   }, []);
 
+  useEffect(() => {
+    function handleOAuthMessage(event: MessageEvent) {
+      if (event.data === "gmail-connected") {
+        loadEmailSettings().catch(console.error);
+      }
+    }
+    window.addEventListener("message", handleOAuthMessage);
+    return () => window.removeEventListener("message", handleOAuthMessage);
+  }, []);
+
   async function handlePasswordChange(e: FormEvent) {
     e.preventDefault();
     setMsg("");
