@@ -56,7 +56,11 @@ async function testAccountConnection(accountId: string): Promise<void> {
   const account = await prisma.emailAccount.findUnique({ where: { id: accountId } });
   if (!account) throw new Error("Account not found");
   const client = await getImapClient(account);
-  await client.logout();
+  try {
+    await client.connect();
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
 }
 
 router.get("/accounts", async (_req: Request, res: Response): Promise<void> => {
@@ -124,8 +128,16 @@ router.delete("/accounts/:accountId", async (req: Request, res: Response): Promi
 });
 
 router.post("/accounts/:accountId/sync", async (req: Request, res: Response): Promise<void> => {
-  syncAccount(req.params.accountId).catch((err) => console.error("Manual email sync failed:", err));
+  const { accountId } = req.params;
   res.json({ status: "syncing" });
+  try {
+    console.log(`[EMAIL SYNC] Starting manual sync for account ${accountId}`);
+    await syncAccount(accountId);
+    console.log(`[EMAIL SYNC] Manual sync completed for account ${accountId}`);
+  } catch (err) {
+    console.error(`[EMAIL SYNC] Manual sync failed for account ${accountId}:`, err instanceof Error ? err.message : err);
+    if (err instanceof Error) console.error(err.stack);
+  }
 });
 
 router.post("/accounts/:accountId/test", async (req: Request, res: Response): Promise<void> => {
@@ -232,7 +244,16 @@ export async function googleOAuthCallbackHandler(req: Request, res: Response): P
   </body>
 </html>`);
   } catch (err) {
-    res.status(400).json({ error: err instanceof Error ? err.message : "Google OAuth failed" });
+    const message = err instanceof Error ? err.message : "Google OAuth failed";
+    res.status(400).type("html").send(`<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>OAuth failed</title></head>
+  <body>
+    <h2>OAuth failed</h2>
+    <pre>${JSON.stringify({ error: message }, null, 2)}</pre>
+    <a href="/settings?section=email">Return to settings</a>
+  </body>
+</html>`);
   }
 }
 
@@ -372,7 +393,12 @@ router.delete("/templates/:id", async (req: Request, res: Response): Promise<voi
 
 router.get("/signature", async (_req: Request, res: Response): Promise<void> => {
   const settings = await prisma.settings.findFirst();
-  res.json({ signature: settings?.defaultEmailSignature ?? "" });
+  const primaryAccount = await prisma.emailAccount.findFirst({
+    where: { isPrimary: true, isActive: true },
+  });
+  const fallbackEmail = primaryAccount?.emailAddress ?? "conor@unlimited.bond";
+  const rawSignature = settings?.defaultEmailSignature || `Conor | unlimited.bond | ${fallbackEmail}`;
+  res.json({ signature: rawSignature.replace("[emailAddress]", fallbackEmail) });
 });
 
 router.patch("/signature", async (req: Request, res: Response): Promise<void> => {

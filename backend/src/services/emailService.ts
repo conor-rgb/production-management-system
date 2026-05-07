@@ -20,6 +20,22 @@ type IdleState = {
   connected: boolean;
 };
 
+type GoogleTokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  error?: string;
+  error_description?: string;
+};
+
+type GoogleUserInfo = {
+  email?: string;
+};
+
+type FetchMessageWithThread = {
+  threadId?: string | number;
+};
+
 const idleConnections = new Map<string, IdleState>();
 
 export interface SendEmailOptions {
@@ -84,23 +100,33 @@ export async function exchangeGoogleCode(code: string): Promise<{
       grant_type: "authorization_code",
     }),
   });
-  if (!response.ok) throw new Error("Failed to exchange Google OAuth code");
-  const token = await response.json() as { access_token: string; refresh_token?: string; expires_in?: number };
-  const profile: { emailAddress?: string } = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/profile", {
+  console.log(`[OAUTH] Token exchange response status: ${response.status}`);
+  const token = await response.json() as GoogleTokenResponse;
+  console.log(`[OAUTH] Has access_token: ${Boolean(token.access_token)}`);
+  console.log(`[OAUTH] Has refresh_token: ${Boolean(token.refresh_token)}`);
+  console.log(`[OAUTH] Token expiry: ${token.expires_in ?? 0}s`);
+  if (!token.access_token) {
+    console.error("[OAUTH] Token exchange failed:", JSON.stringify(token));
+    throw new Error(`Token exchange failed: ${token.error_description ?? token.error ?? "unknown"}`);
+  }
+  const userInfo = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
     headers: { Authorization: `Bearer ${token.access_token}` },
-  }).then((res) => res.ok ? res.json() as Promise<{ emailAddress?: string }> : Promise.resolve({ emailAddress: undefined }));
+  }).then((res) => res.ok ? res.json() as Promise<GoogleUserInfo> : Promise.resolve({ email: undefined }));
+  console.log(`[OAUTH] User email: ${userInfo.email ?? "unknown"}`);
   return {
     accessToken: token.access_token,
     refreshToken: token.refresh_token,
     expiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : undefined,
-    emailAddress: profile.emailAddress,
+    emailAddress: userInfo.email,
   };
 }
 
 async function refreshGoogleToken(account: EmailAccount): Promise<EmailAccount> {
-  if (!googleOAuthConfigured()) throw new Error("Google OAuth not configured");
-  if (!account.encryptedRefreshToken) throw new Error("Google refresh token missing");
+  if (!account.encryptedRefreshToken) {
+    throw new Error(`No refresh token for ${account.emailAddress}`);
+  }
   const refreshToken = decrypt(account.encryptedRefreshToken);
+  console.log(`[TOKEN] Refreshing Google access token for ${account.emailAddress}`);
   const response = await fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -111,13 +137,18 @@ async function refreshGoogleToken(account: EmailAccount): Promise<EmailAccount> 
       grant_type: "refresh_token",
     }),
   });
-  if (!response.ok) throw new Error("Failed to refresh Google token");
-  const token = await response.json() as { access_token: string; expires_in?: number };
+  const token = await response.json() as GoogleTokenResponse;
+  if (!token.access_token) {
+    console.error("[TOKEN] Refresh failed:", token);
+    throw new Error(`Token refresh failed: ${token.error_description ?? token.error ?? "unknown"}`);
+  }
+  console.log(`[TOKEN] Token refreshed, expires in ${token.expires_in ?? 0}s`);
+  const tokenExpiry = new Date(Date.now() + ((token.expires_in ?? 3600) * 1000));
   return prisma.emailAccount.update({
     where: { id: account.id },
     data: {
       encryptedAccessToken: encrypt(token.access_token),
-      tokenExpiry: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
+      tokenExpiry,
     },
   });
 }
@@ -131,21 +162,49 @@ async function ensureAccessToken(account: EmailAccount): Promise<string> {
 }
 
 export async function getImapClient(account: EmailAccount): Promise<ImapFlow> {
-  const user = account.username || account.emailAddress;
-  const secure = (account.imapPort ?? 993) === 993;
-  const auth = account.provider === EmailProvider.GOOGLE
-    ? { user, accessToken: await ensureAccessToken(account) }
-    : { user, pass: account.encryptedPassword ? decrypt(account.encryptedPassword) : "" };
+  if (account.provider === EmailProvider.GOOGLE) {
+    if (!account.encryptedAccessToken) {
+      throw new Error(`No access token stored for ${account.emailAddress}`);
+    }
 
-  const client = new ImapFlow({
-    host: account.imapHost || "imap.gmail.com",
+    let accessToken: string;
+    try {
+      accessToken = decrypt(account.encryptedAccessToken);
+    } catch (err) {
+      throw new Error(`Failed to decrypt access token for ${account.emailAddress}: ${err instanceof Error ? err.message : "unknown"}`);
+    }
+
+    console.log(`[IMAP] Creating Google OAuth2 ImapFlow client for ${account.emailAddress}`);
+
+    return new ImapFlow({
+      host: "imap.gmail.com",
+      port: 993,
+      secure: true,
+      auth: {
+        user: account.emailAddress,
+        accessToken,
+      },
+      logger: false,
+    });
+  }
+
+  if (!account.encryptedPassword) {
+    throw new Error(`No password stored for ${account.emailAddress}`);
+  }
+
+  const password = decrypt(account.encryptedPassword);
+  console.log(`[IMAP] Creating IMAP client for ${account.emailAddress} at ${account.imapHost}:${account.imapPort}`);
+
+  return new ImapFlow({
+    host: account.imapHost ?? "imap.gmail.com",
     port: account.imapPort ?? 993,
-    secure,
-    auth,
+    secure: (account.imapPort ?? 993) === 993,
+    auth: {
+      user: account.username ?? account.emailAddress,
+      pass: password,
+    },
     logger: false,
   });
-  await client.connect();
-  return client;
 }
 
 export async function getSmtpTransporter(account: EmailAccount) {
@@ -213,80 +272,204 @@ function attachmentMetadata(mail: ParsedMail): Prisma.InputJsonValue {
 }
 
 export async function syncAccount(accountId: string): Promise<void> {
-  const account = await prisma.emailAccount.findUnique({ where: { id: accountId } });
-  if (!account || !account.isActive) return;
+  console.log(`[SYNC] Loading account ${accountId}`);
+
+  let account = await prisma.emailAccount.findUnique({ where: { id: accountId } });
+  if (!account) {
+    console.error(`[SYNC] Account ${accountId} not found in database`);
+    return;
+  }
+
+  console.log(`[SYNC] Account: ${account.emailAddress}, provider: ${account.provider}, hasAccessToken: ${Boolean(account.encryptedAccessToken)}, hasRefreshToken: ${Boolean(account.encryptedRefreshToken)}`);
+
+  if (account.provider === EmailProvider.GOOGLE) {
+    if (!account.encryptedAccessToken) {
+      console.error(`[SYNC] No access token for ${account.emailAddress} — re-authenticate`);
+      return;
+    }
+
+    if (account.tokenExpiry && account.tokenExpiry <= new Date()) {
+      console.log(`[SYNC] Access token expired for ${account.emailAddress}, refreshing...`);
+      try {
+        account = await refreshGoogleToken(account);
+        console.log("[SYNC] Token refreshed successfully");
+      } catch (err) {
+        console.error("[SYNC] Token refresh failed:", err instanceof Error ? err.message : err);
+        return;
+      }
+    }
+  }
+
   let client: ImapFlow | null = null;
+
   try {
+    console.log(`[SYNC] Creating IMAP client for ${account.emailAddress}`);
     client = await getImapClient(account);
-    await client.mailboxOpen("INBOX");
-    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-    const uids = await client.search({ since });
-    if (!uids || uids.length === 0) {
+    console.log("[SYNC] Connecting to IMAP...");
+    await client.connect();
+    console.log(`[SYNC] Connected successfully to IMAP for ${account.emailAddress}`);
+  } catch (err) {
+    console.error(`[SYNC] IMAP connection failed for ${account.emailAddress}:`, err instanceof Error ? err.message : err);
+    if (account.provider === EmailProvider.GOOGLE && err instanceof Error) {
+      console.error("[IMAP] Google auth hint: Enable IMAP in Gmail Settings → See all settings → Forwarding and POP/IMAP → Enable IMAP. For Google Workspace, the admin may need to enable IMAP access.");
+    }
+    if (err instanceof Error) console.error("[SYNC] Connection error stack:", err.stack);
+    return;
+  }
+
+  try {
+    const mailbox = await client.mailboxOpen("INBOX");
+    console.log(`[SYNC] Opened INBOX — total messages: ${mailbox.exists}`);
+
+    const syncDays = parseInt(process.env.EMAIL_SYNC_DAYS ?? "7", 10);
+    const syncLimit = parseInt(process.env.EMAIL_SYNC_LIMIT ?? "200", 10);
+    const since = new Date();
+    since.setDate(since.getDate() - syncDays);
+
+    console.log(`[SYNC] Searching for messages since ${since.toDateString()} (${syncDays} days)`);
+
+    const searchResult = await client.search({ since }, { uid: true });
+    const allUids = searchResult || [];
+    const recentUids = allUids.slice(-syncLimit);
+
+    console.log(`[SYNC] Found ${allUids.length} messages since ${syncDays} days ago, fetching most recent ${recentUids.length}`);
+
+    if (recentUids.length === 0) {
+      console.log("[SYNC] No new messages to sync");
       await prisma.emailAccount.update({ where: { id: account.id }, data: { lastSyncedAt: new Date() } });
       return;
     }
-    for await (const message of client.fetch(uids, { envelope: true, source: true, flags: true })) {
+
+    let messageCount = 0;
+    let threadCount = 0;
+    let errorCount = 0;
+
+    for await (const message of client.fetch(recentUids, {
+      envelope: true,
+      bodyStructure: true,
+      source: true,
+      flags: true,
+      threadId: true,
+    }, { uid: true })) {
       try {
         if (!message.source) continue;
         const parsed = await simpleParser(message.source);
-        const externalMessageId = parsed.messageId || `${account.id}-${message.uid}`;
-        const exists = await prisma.emailMessage.findUnique({ where: { externalMessageId } });
-        if (exists) continue;
         const from = firstAddress(parsed.from);
         const toAddresses = addressList(parsed.to);
         const ccAddresses = addressList(parsed.cc);
         const bccAddresses = addressList(parsed.bcc);
-        const participants = Array.from(new Set([from.address, ...toAddresses, ...ccAddresses].filter(Boolean)));
-        const externalThreadId = threadKey(parsed);
         const sentAt = parsed.date ?? message.envelope?.date ?? new Date();
-        const isRead = Array.from(message.flags ?? []).includes("\\Seen");
-        const isFlagged = Array.from(message.flags ?? []).includes("\\Flagged");
-        const thread = await prisma.emailThread.upsert({
-          where: { accountId_externalThreadId: { accountId: account.id, externalThreadId } },
-          create: {
-            accountId: account.id,
-            externalThreadId,
-            subject: parsed.subject || "(no subject)",
-            participants,
-            lastMessageAt: sentAt,
-            isRead,
-            isFlagged,
-          },
-          update: {
-            subject: parsed.subject || "(no subject)",
-            participants,
-            lastMessageAt: sentAt,
-            isRead,
-            isFlagged,
-          },
+        const typedMessage = message as typeof message & FetchMessageWithThread;
+        const references = Array.isArray(parsed.references) ? parsed.references : parsed.references ? [parsed.references] : [];
+        const externalThreadId = String(
+          typedMessage.threadId
+          ?? references[0]
+          ?? parsed.inReplyTo
+          ?? parsed.messageId
+          ?? message.envelope?.messageId
+          ?? `${account.id}-${message.uid}`
+        );
+        const participants = Array.from(new Set([from.address, ...toAddresses, ...ccAddresses].filter(Boolean)));
+        const flags = new Set(Array.from(message.flags ?? []));
+
+        const existingThread = await prisma.emailThread.findFirst({
+          where: { accountId, externalThreadId },
         });
-        await prisma.emailMessage.create({
-          data: {
-            threadId: thread.id,
-            externalMessageId,
-            fromAddress: from.address,
-            fromName: from.name,
-            toAddresses,
-            ccAddresses,
-            bccAddresses,
-            subject: parsed.subject || "(no subject)",
-            bodyHtml: parsed.html || "",
-            bodyText: parsed.text || "",
-            sentAt,
-            isFromMe: from.address === account.emailAddress.toLowerCase(),
-            hasAttachments: parsed.attachments.length > 0,
-            attachments: attachmentMetadata(parsed),
-          },
+
+        let thread: { id: string };
+        if (!existingThread) {
+          thread = await prisma.emailThread.create({
+            data: {
+              accountId,
+              externalThreadId,
+              subject: parsed.subject ?? "(no subject)",
+              participants,
+              lastMessageAt: sentAt,
+              isRead: flags.has("\\Seen"),
+              isFlagged: flags.has("\\Flagged"),
+              isArchived: false,
+            },
+          });
+          threadCount++;
+        } else {
+          thread = existingThread;
+          if (sentAt > existingThread.lastMessageAt) {
+            await prisma.emailThread.update({
+              where: { id: existingThread.id },
+              data: { lastMessageAt: sentAt },
+            });
+          }
+        }
+
+        const externalMessageId = parsed.messageId ?? message.envelope?.messageId ?? `${account.id}-${message.uid}`;
+        const existingMessage = await prisma.emailMessage.findFirst({
+          where: { externalMessageId },
         });
-        await smartLinkThread(thread.id);
-      } catch (err) {
-        console.error("Email parse skipped:", err instanceof Error ? err.message : err);
+
+        if (!existingMessage) {
+          const accountEmail = account.emailAddress.toLowerCase();
+          const fromAddress = from.address.toLowerCase();
+          const attachments = parsed.attachments.map((attachment) => ({
+            filename: attachment.filename ?? "attachment",
+            mimeType: attachment.contentType ?? "application/octet-stream",
+            sizeBytes: attachment.size ?? 0,
+            contentId: attachment.contentId ?? null,
+          }));
+
+          await prisma.emailMessage.create({
+            data: {
+              threadId: thread.id,
+              externalMessageId,
+              fromAddress: from.address,
+              fromName: from.name ?? "",
+              toAddresses,
+              ccAddresses,
+              bccAddresses,
+              subject: parsed.subject ?? "(no subject)",
+              bodyHtml: parsed.html || parsed.textAsHtml || "",
+              bodyText: parsed.text ?? "",
+              sentAt,
+              isFromMe: fromAddress === accountEmail,
+              hasAttachments: attachments.length > 0,
+              attachments,
+            },
+          });
+          messageCount++;
+        }
+      } catch (msgErr) {
+        errorCount++;
+        console.error("[SYNC] Error processing message:", msgErr instanceof Error ? msgErr.message : msgErr);
       }
     }
+
+    console.log(`[SYNC] Sync complete for ${account.emailAddress}: ${threadCount} new threads, ${messageCount} new messages, ${errorCount} errors`);
+
+    console.log("[SYNC] Running smart link for new threads...");
+    const newThreads = await prisma.emailThread.findMany({
+      where: { accountId, linkedContactId: null },
+      take: 50,
+      orderBy: { createdAt: "desc" },
+    });
+    for (const thread of newThreads) {
+      try {
+        await smartLinkThread(thread.id);
+      } catch (err) {
+        console.error(`[SYNC] Smart link failed for thread ${thread.id}:`, err instanceof Error ? err.message : err);
+      }
+    }
+
     await prisma.emailAccount.update({ where: { id: account.id }, data: { lastSyncedAt: new Date() } });
-    console.log(`Email sync completed for ${account.emailAddress}`);
+    console.log("[SYNC] Account lastSyncedAt updated");
+  } catch (err) {
+    console.error(`[SYNC] Sync error for ${account.emailAddress}:`, err instanceof Error ? err.message : err);
+    if (err instanceof Error) console.error(err.stack);
   } finally {
-    if (client) await client.logout().catch(() => undefined);
+    try {
+      await client.logout();
+      console.log("[SYNC] IMAP connection closed cleanly");
+    } catch {
+      // ignore logout errors
+    }
   }
 }
 
@@ -328,6 +511,7 @@ export async function startIdleSync(accountId: string): Promise<void> {
   async function connect() {
     try {
       const client = await getImapClient(account);
+      await client.connect();
       state.client = client;
       state.connected = true;
       await client.mailboxOpen("INBOX");
@@ -347,7 +531,10 @@ export async function startIdleSync(accountId: string): Promise<void> {
       await client.idle();
     } catch (err) {
       state.connected = false;
-      console.error(`Email IDLE failed for ${account.emailAddress}:`, err instanceof Error ? err.message : err);
+      console.error(`[IMAP] Email IDLE failed for ${account.emailAddress}:`, err instanceof Error ? err.message : err);
+      if (account.provider === EmailProvider.GOOGLE && err instanceof Error) {
+        console.error("[IMAP] Google auth hint: Enable IMAP in Gmail Settings → See all settings → Forwarding and POP/IMAP → Enable IMAP. For Google Workspace, the admin may need to enable IMAP access.");
+      }
       if (idleConnections.has(accountId)) {
         state.retry = setTimeout(connect, 5 * 60 * 1000);
       }

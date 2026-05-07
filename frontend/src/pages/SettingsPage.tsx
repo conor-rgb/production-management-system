@@ -63,7 +63,7 @@ export default function SettingsPage() {
     ]);
     setEmailAccounts(accounts);
     setEmailTemplates(templates);
-    setEmailSignature(signature.signature || "Conor | unlimited.bond | [emailAddress]");
+    setEmailSignature(signature.signature || "Conor | unlimited.bond | conor@unlimited.bond");
     setEmailHealth(Object.fromEntries(health.map((item) => [item.accountId, item.connected])));
   }
 

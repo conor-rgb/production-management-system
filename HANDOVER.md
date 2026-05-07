@@ -2,6 +2,75 @@
 
 ## Built This Session
 
+## Phase 6 Hardening Update — 2026-05-07
+
+### Fixed
+- Added configurable email sync controls in `/backend/.env`:
+  - `EMAIL_SYNC_DAYS=7`
+  - `EMAIL_SYNC_LIMIT=200`
+- Documented `EMAIL_SYNC_DAYS` and `EMAIL_SYNC_LIMIT` in `CLAUDE.md`.
+- Reworked `syncAccount(accountId)` logging with consistent prefixes:
+  - `[SYNC]`
+  - `[IMAP]`
+  - `[TOKEN]`
+  - `[OAUTH]`
+- Sync now logs:
+  - account loading
+  - provider/token presence
+  - IMAP client creation
+  - IMAP connection attempt
+  - mailbox open
+  - configured sync window
+  - UID search count
+  - fetched message count
+  - new thread/message/error counts
+  - smart-link pass
+  - `lastSyncedAt` update
+  - IMAP logout
+- Replaced hardcoded 90-day sync with `EMAIL_SYNC_DAYS`.
+- Added `EMAIL_SYNC_LIMIT` slicing so only the most recent configured messages are fetched.
+- Updated manual sync endpoint to return `{ status: "syncing" }` immediately, then run the sync with explicit `[EMAIL SYNC]` start/completion/failure logs.
+- Changed `getImapClient(account)` so it creates an ImapFlow client but does not connect. Callers now call `connect()` explicitly, which makes connection logs meaningful.
+- Added Google token refresh logging and clearer token refresh errors.
+- Added OAuth token exchange logging:
+  - response status
+  - access-token presence
+  - refresh-token presence
+  - token expiry
+  - user email
+- Added Google IMAP failure guidance when IMAP/OAuth connection fails:
+  - enable IMAP in Gmail Settings → Forwarding and POP/IMAP
+  - for Google Workspace, admin may need to enable IMAP access
+- Fixed email signature placeholder behavior:
+  - `/api/email/signature` replaces `[emailAddress]` with the primary active account email.
+  - stored settings signature was updated to `Conor | unlimited.bond | conor@unlimited.bond`.
+  - frontend fallback no longer shows `[emailAddress]` literally.
+
+### Verification From Logs
+- Backend build passes: `npm run build`.
+- Frontend build passes: `npm run build`.
+- Frontend bundle deployed to `/var/www/agent`.
+- API reloaded with `pm2 reload production-management-api --update-env`.
+- API health check passes.
+- Manual sync was triggered through the protected route with an authenticated curl session.
+- Logs showed:
+  - `[EMAIL SYNC] Starting manual sync for account d6b3f9b7-b3c5-4d3b-a59d-133ba566cd8f`
+  - `[SYNC] Loading account d6b3f9b7-b3c5-4d3b-a59d-133ba566cd8f`
+  - `[SYNC] Account: conor@unlimited.bond, provider: GOOGLE, hasAccessToken: true, hasRefreshToken: true`
+  - `[SYNC] Creating IMAP client for conor@unlimited.bond`
+  - `[IMAP] Creating Google OAuth2 ImapFlow client for conor@unlimited.bond`
+  - `[SYNC] Connecting to IMAP...`
+  - `[SYNC] IMAP connection failed for conor@unlimited.bond: Command failed`
+  - `[IMAP] Google auth hint: Enable IMAP in Gmail Settings → See all settings → Forwarding and POP/IMAP → Enable IMAP. For Google Workspace, the admin may need to enable IMAP access.`
+- Sync is **not confirmed working** yet because IMAP connection fails before mailbox open/search. No `[SYNC] Opened INBOX`, UID search, or message fetch logs appeared.
+
+### Current Email Sync Blocker
+- The Google account has encrypted access and refresh tokens in the database.
+- Token presence is confirmed.
+- The failure happens at IMAP connection time.
+- Next manual action: in Gmail, go to Settings → See all settings → Forwarding and POP/IMAP → Enable IMAP → Save. If this is Google Workspace, the Workspace admin may also need to allow IMAP access.
+- After enabling IMAP, trigger Sync again from Settings → Email and watch for `[SYNC] Opened INBOX` and `[SYNC] Found ... messages since ...` logs.
+
 ### Environment And Dependencies
 - Added Phase 6 email dependencies:
   - `imapflow`

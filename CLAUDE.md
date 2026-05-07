@@ -49,6 +49,8 @@ Full brief is in BRIEF.md — read it before doing anything.
   - `GOOGLE_CLIENT_ID` — Google Cloud OAuth2 client ID
   - `GOOGLE_CLIENT_SECRET` — Google Cloud OAuth2 client secret
   - `GOOGLE_REDIRECT_URI` — `https://agent.unlimited.bond/api/email/oauth/google/callback`
+  - `EMAIL_SYNC_DAYS` — number of recent days to search when syncing email, default `7`
+  - `EMAIL_SYNC_LIMIT` — maximum number of recent messages to fetch per sync, default `200`
 - Gmail OAuth endpoints must return `{ error: "Google OAuth not configured" }` when Google credentials are blank. IMAP/SMTP password accounts must still work without Google credentials.
 
 ## When context is running low
