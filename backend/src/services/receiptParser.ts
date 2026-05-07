@@ -24,24 +24,32 @@ type ReceiptJson = {
   rawText?: unknown;
 };
 
-const RECEIPT_ANALYSIS_PROMPT = `Analyse this receipt and extract the following information. Respond with JSON only, no other text.
+const RECEIPT_MODEL = "claude-haiku-4-5-20251001";
+
+const RECEIPT_ANALYSIS_PROMPT = `Analyse this document carefully. It may be a receipt, invoice, supplier bill, or expense document. Extract the following information and respond with JSON only, no other text, no markdown.
 
 {
-  "vendor": "name of the business or supplier",
-  "amount": total amount as a number in the receipt currency (e.g. 45.50),
-  "date": "date of the receipt in YYYY-MM-DD format",
-  "currency": "three letter currency code e.g. GBP, USD, EUR",
-  "description": "brief description of what was purchased",
-  "suggestedAicpSection": "the single letter AICP budget section code this expense most likely belongs to",
-  "suggestedAicpSectionName": "the name of that AICP section",
-  "confidence": "high, medium, or low based on image clarity and data completeness",
-  "rawText": "key text extracted from the receipt"
+  "vendor": "the name of the supplier, business, or company issuing this document — look for company name, 'From:', letterhead, or logo text",
+  "amount": the final total amount as a number (e.g. 45.50) — use the GRAND TOTAL, TOTAL DUE, AMOUNT DUE, or BALANCE DUE figure. For invoices this is the final amount to be paid. Never use subtotals or pre-tax amounts if a final total exists,
+  "date": "the invoice date, receipt date, or document date in YYYY-MM-DD format",
+  "currency": "three letter currency code e.g. GBP, USD, EUR — default to GBP if unclear",
+  "description": "brief description of what was purchased or the nature of the expense — look at line items or description fields",
+  "suggestedAicpSection": "single letter AICP section code this expense most likely belongs to based on the description",
+  "suggestedAicpSectionName": "name of that AICP section",
+  "confidence": "high if all key fields are clearly readable, medium if some fields needed inference, low if image is unclear or key fields are missing",
+  "rawText": "the most important text extracted — vendor name, total amount, date as they appear in the document"
 }
 
-AICP sections for reference:
-A=Pre-Production & Wrap Labor, B=Shooting Crew Labor, C=Pre-Production Expenses, D=Location & Travel, E=Makeup/Wardrobe/Animals, F=Studio & Stage, G=Art Department Labor, H=Art Department Expenses, I=Equipment, J=Film & Digital Media, K=Miscellaneous, L=Director/Creative Fees, M=Talent Labor, N=Talent Expenses, O=Post Production Labor, P=Editorial & Finishing
+AICP sections: A=Pre-Production & Wrap Labor, B=Shooting Crew Labor, C=Pre-Production Expenses, D=Location & Travel, E=Makeup/Wardrobe/Animals, F=Studio & Stage, G=Art Department Labor, H=Art Department Expenses, I=Equipment, J=Film & Digital Media, K=Miscellaneous, L=Director/Creative Fees, M=Talent Labor, N=Talent Expenses, O=Post Production Labor, P=Editorial & Finishing
 
-If you cannot read a value clearly, use null for that field. Amount should always be the total amount paid. For UK receipts assume GBP unless clearly stated otherwise.`;
+Important rules:
+- This may be a multi-page document — check ALL pages before deciding on the total amount
+- For invoices: the total is usually on the last page or in a summary box
+- For receipts: the total is usually at the bottom
+- If you can see a VAT breakdown: use the total INCLUSIVE of VAT (the amount actually paid)
+- If the document is from unlimited.bond or BOND UN LIMITED: this is likely a client invoice being reviewed, not a supplier receipt — still extract the total and date
+- If a field is genuinely not present or unreadable: use null
+- Amount must always be a plain number, never a string`;
 
 function cleanText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -98,7 +106,7 @@ export async function parseReceiptImage(imageBuffer: Buffer, mimeType: string): 
 
   const response = mimeType === "application/pdf"
     ? await client.messages.create({
-      model: "claude-opus-4-5",
+      model: RECEIPT_MODEL,
       max_tokens: 1024,
       messages: [{
         role: "user",
@@ -119,7 +127,7 @@ export async function parseReceiptImage(imageBuffer: Buffer, mimeType: string): 
       }],
     })
     : await client.messages.create({
-      model: "claude-opus-4-5",
+      model: RECEIPT_MODEL,
       max_tokens: 1024,
       messages: [{
         role: "user",
@@ -142,5 +150,6 @@ export async function parseReceiptImage(imageBuffer: Buffer, mimeType: string): 
 
   const textBlock = response.content.find((item) => item.type === "text");
   const text = textBlock?.type === "text" ? textBlock.text : "";
+  console.log("[RECEIPT] Raw Claude response:", text.substring(0, 500));
   return parseReceiptResponse(text);
 }

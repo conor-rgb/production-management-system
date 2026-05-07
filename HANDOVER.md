@@ -16,11 +16,22 @@
   - date: `2026-05-07`
   - suggested section: `D` / `Location & Travel`
 
+### Receipt Parser Invoice Prompt / Haiku Fix
+- Switched receipt parsing model from `claude-opus-4-5` to `claude-haiku-4-5-20251001` for both PDF and image paths.
+- Replaced the till-receipt-specific prompt with a broader document prompt covering receipts, invoices, supplier bills, and expense documents.
+- Prompt now tells Claude to use grand total / total due / amount due / balance due, inclusive of VAT where visible.
+- Added `[RECEIPT] Raw Claude response:` logging, truncated to 500 characters, before JSON parsing.
+- Direct compiled-parser smoke test passed against a generated unlimited.bond-style final invoice PDF:
+  - vendor: `BOND UN LIMITED`
+  - amount: `12000` pence
+  - date: `2026-05-07`
+  - confidence: `high`
+
 ### Built
 - Added backend receipt parsing infrastructure.
   - Installed `@anthropic-ai/sdk`.
   - Added `backend/src/services/receiptParser.ts`.
-  - Uses Claude model `claude-opus-4-5` for image and PDF receipt parsing.
+  - Uses Claude model `claude-haiku-4-5-20251001` for image and PDF receipt parsing.
   - Extracts vendor, amount in pence, date, currency, description, suggested AICP section, confidence, and raw text.
   - If `ANTHROPIC_API_KEY` is missing, parsing fails gracefully with `API key not configured`.
   - PDF receipt parsing uses Claude's document content block with native `application/pdf` support instead of the image endpoint.
@@ -67,6 +78,7 @@
 - Prisma client regenerated.
 - Backend build passes: `cd backend && npm run build`.
 - PDF parser smoke test passes against the compiled parser with a generated PDF invoice.
+- Invoice-style PDF parser smoke test passes against the compiled parser with a generated unlimited.bond final invoice PDF.
 - Frontend build passes: `cd frontend && npm run build`.
 - Frontend bundle copied to `/var/www/agent`.
 - API reloaded with `pm2 reload 0 --update-env`.
