@@ -11,6 +11,8 @@ import {
 import prisma from "../prisma";
 import { generateJobCode } from "../utils/jobCode";
 import { ensureProductionFoldersForRecord } from "../services/fileStorage";
+import { pushToGoogleCalendar, syncProductionDatesToCalendar } from "../services/calendarSyncService";
+import { getPrimaryAccount } from "../services/googleCalendarService";
 
 const router = Router();
 
@@ -127,6 +129,26 @@ async function replaceDatePeople(productionDateId: string, peopleIds: unknown) {
     data: peopleIds.map((contactId) => ({ productionDateId, contactId: String(contactId) })),
     skipDuplicates: true,
   });
+}
+
+async function syncDatesAndPush(productionDateId?: string): Promise<void> {
+  try {
+    await syncProductionDatesToCalendar();
+    if (!productionDateId) return;
+    const account = await getPrimaryAccount();
+    if (!account) return;
+    const event = await prisma.calendarEvent.findFirst({ where: { productionDateId } });
+    if (!event) return;
+    const googleId = await pushToGoogleCalendar(account, event);
+    if (googleId) {
+      await prisma.calendarEvent.update({
+        where: { id: event.id },
+        data: { googleCalendarEventId: googleId, googleCalendarId: process.env.GOOGLE_CALENDAR_ID ?? "primary", lastSyncedAt: new Date() },
+      });
+    }
+  } catch (err) {
+    console.error("[CALENDAR] Production date sync failed:", err instanceof Error ? err.message : err);
+  }
 }
 
 // GET /api/productions?includeWrapped=true&search=...
@@ -266,6 +288,7 @@ router.post("/:id/dates", async (req: Request, res: Response): Promise<void> => 
     where: { id: date.id },
     include: { people: { include: { contact: true } } },
   });
+  await syncDatesAndPush(date.id);
   res.status(201).json(saved);
 });
 
@@ -279,11 +302,13 @@ router.patch("/:id/dates/:dateId", async (req: Request, res: Response): Promise<
     where: { id: date.id },
     include: { people: { include: { contact: true } } },
   });
+  await syncDatesAndPush(date.id);
   res.json(saved);
 });
 
 router.delete("/:id/dates/:dateId", async (req: Request, res: Response): Promise<void> => {
   await prisma.productionDate.delete({ where: { id: req.params.dateId, productionId: req.params.id } });
+  await syncDatesAndPush();
   res.status(204).end();
 });
 

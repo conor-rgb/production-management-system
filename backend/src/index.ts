@@ -6,6 +6,8 @@ import prisma from "./prisma";
 import bcrypt from "bcryptjs";
 import { seedCatalogItems } from "./services/catalogSeed";
 import { startIdleSync } from "./services/emailService";
+import { syncFromGoogleCalendar, syncOpportunityFollowUpsToCalendar, syncProductionDatesToCalendar } from "./services/calendarSyncService";
+import { getPrimaryAccount } from "./services/googleCalendarService";
 
 async function seedAdmin() {
   const count = await prisma.settings.count();
@@ -92,6 +94,25 @@ async function initEmailSync() {
   }
 }
 
+async function initCalendarSync() {
+  try {
+    await syncProductionDatesToCalendar();
+    await syncOpportunityFollowUpsToCalendar();
+    const account = await getPrimaryAccount();
+    if (account) {
+      await syncFromGoogleCalendar(account);
+      console.log("[CALENDAR] Google Calendar sync complete");
+    }
+    setInterval(() => {
+      getPrimaryAccount()
+        .then((nextAccount) => nextAccount ? syncFromGoogleCalendar(nextAccount) : undefined)
+        .catch((err) => console.error("[CALENDAR] Interval sync failed:", err instanceof Error ? err.message : err));
+    }, 5 * 60 * 1000);
+  } catch (err) {
+    console.error("[CALENDAR] Init sync failed:", err instanceof Error ? err.message : err);
+  }
+}
+
 async function main() {
   await seedAdmin();
   await seedCrewRoles();
@@ -105,6 +126,7 @@ async function main() {
     console.log(`Server running on http://localhost:${port}`);
   });
   await initEmailSync();
+  await initCalendarSync();
 }
 
 main().catch((err) => {

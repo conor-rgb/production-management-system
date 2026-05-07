@@ -4,6 +4,7 @@ import { Stage, LostReason } from "@prisma/client";
 import { generateJobCode } from "../utils/jobCode";
 import { ensureProductionFoldersForRecord } from "../services/fileStorage";
 import { calculateRevisionTotals, cloneBudgetToProduction } from "../services/budgetService";
+import { syncOpportunityFollowUpsToCalendar } from "../services/calendarSyncService";
 
 const router = Router();
 
@@ -93,6 +94,9 @@ async function transitionOpportunityStage(
       lostNote: stage === Stage.LOST ? (lostNote ?? null) : null,
     },
     include: fullInclude,
+  });
+  await syncOpportunityFollowUpsToCalendar().catch((err) => {
+    console.error("[CALENDAR] Opportunity stage sync failed:", err instanceof Error ? err.message : err);
   });
 
   return { opportunity, production, budgetCloned };
@@ -216,6 +220,9 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
     },
     include: fullInclude,
   });
+  await syncOpportunityFollowUpsToCalendar().catch((err) => {
+    console.error("[CALENDAR] Opportunity follow-up sync failed:", err instanceof Error ? err.message : err);
+  });
   res.status(201).json(item);
 });
 
@@ -254,6 +261,9 @@ router.patch("/:id", async (req: Request, res: Response): Promise<void> => {
     },
     include: fullInclude,
   });
+  await syncOpportunityFollowUpsToCalendar().catch((err) => {
+    console.error("[CALENDAR] Opportunity follow-up sync failed:", err instanceof Error ? err.message : err);
+  });
   res.json(item);
 });
 
@@ -278,6 +288,9 @@ router.post("/:id/stage", async (req: Request, res: Response): Promise<void> => 
 // DELETE /api/opportunities/:id
 router.delete("/:id", async (req: Request, res: Response): Promise<void> => {
   await prisma.opportunity.delete({ where: { id: req.params.id } });
+  await syncOpportunityFollowUpsToCalendar().catch((err) => {
+    console.error("[CALENDAR] Opportunity delete sync failed:", err instanceof Error ? err.message : err);
+  });
   res.status(204).end();
 });
 

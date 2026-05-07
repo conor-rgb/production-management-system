@@ -13,6 +13,8 @@ const GOOGLE_SCOPES = [
   "https://mail.google.com/",
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/gmail.modify",
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/calendar.readonly",
   "email",
   "profile",
 ];
@@ -302,7 +304,7 @@ async function refreshGoogleToken(account: EmailAccount): Promise<EmailAccount> 
   });
 }
 
-async function ensureAccessToken(account: EmailAccount): Promise<string> {
+export async function ensureAccessToken(account: EmailAccount): Promise<string> {
   if (account.provider !== EmailProvider.GOOGLE) throw new Error("Account is not Google");
   const expired = account.tokenExpiry ? account.tokenExpiry.getTime() < Date.now() + 60_000 : false;
   const refreshed = expired ? await refreshGoogleToken(account) : account;
