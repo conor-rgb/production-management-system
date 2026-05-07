@@ -223,8 +223,18 @@ export interface EmailMessage {
   isFromMe: boolean;
   hasAttachments: boolean;
   attachments: { filename: string; mimeType: string; sizeBytes: number; contentId?: string }[];
+  resolvedFromName?: string;
+  avatarColor?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface EmailAttachmentSummary {
+  messageId: string;
+  attachmentIndex: number;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
 }
 
 export interface EmailThread {
@@ -247,6 +257,12 @@ export interface EmailThread {
   messages: EmailMessage[];
   latestPreview?: string;
   participantNames?: string[];
+  resolvedSenderName?: string;
+  avatarColor?: string;
+  messageCount?: number;
+  hasAttachments?: boolean;
+  attachments?: EmailAttachmentSummary[];
+  totalAttachmentCount?: number;
   createdAt: string;
   updatedAt: string;
 }

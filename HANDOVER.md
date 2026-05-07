@@ -2,6 +2,76 @@
 
 ## Built This Session
 
+## Email Client Spark View Update — 2026-05-07
+
+### Fixed And Improved
+- Fixed the Sent folder by adding a real `folder` query path to `getThreads`.
+  - Inbox now returns non-archived threads with at least one received message.
+  - Sent now returns threads with at least one sent message.
+  - Flagged returns flagged, non-archived threads.
+  - Archived returns archived threads.
+- `GET /api/email/threads` now accepts `folder=inbox|sent|flagged|archived`.
+- `getThread(threadId)` continues returning all messages ordered oldest to newest.
+- Added sender display-name resolution:
+  - Contact match first.
+  - Email header `fromName` second.
+  - Readable name derived from email address as fallback.
+  - Generic senders such as `noreply`, `info`, and `support` resolve from the domain name.
+- Added deterministic avatar colors from email address, with sent-from-me messages using `#1a1a1f`.
+- Thread list responses now include:
+  - `resolvedSenderName`
+  - `avatarColor`
+  - `messageCount`
+  - `hasAttachments`
+- Thread detail responses now include per-message:
+  - `resolvedFromName`
+  - `avatarColor`
+- Thread detail responses now include a top-level attachment summary:
+  - `attachments`
+  - `totalAttachmentCount`
+- Installed Tiptap packages for rich reply editing:
+  - `@tiptap/react`
+  - `@tiptap/pm`
+  - `@tiptap/starter-kit`
+  - `@tiptap/extension-link`
+  - `@tiptap/extension-placeholder`
+  - `@tiptap/extension-underline`
+
+### Frontend Email UI
+- Reworked the Email thread list to a Spark-style layout:
+  - 36px sender avatars with initials and API-provided colors.
+  - unread dot.
+  - sender name, subject, preview, time, attachment indicator.
+  - message-count badge on multi-message threads.
+  - desktop date separators: Today, Yesterday, Last Week, or date.
+  - mobile keeps the simpler full-screen list without date separator clutter.
+- Reworked the thread detail view:
+  - fixed Spark-style header with subject, participants, star/archive actions.
+  - attachment chips in the header on desktop, up to three with `+ N more`.
+  - attachment chips call `/api/email/messages/:messageId/attachment/:index`.
+  - messages render as collapsible blocks.
+  - latest message stays expanded.
+  - collapsed messages show a one-line preview.
+  - HTML is still sanitized with DOMPurify before rendering.
+  - external images are blocked until the user clicks `Show images`.
+  - simple quoted-message hiding is in place for common HTML and plain-text quote patterns.
+  - unread thread view includes a `New messages` divider.
+- Replaced the old modal reply flow with a pinned bottom reply bar using Tiptap.
+  - Collapsed state: `Reply to ...`
+  - Expanded state: account selector, recipient chips, formatting toolbar, signature, attach button, send/discard.
+
+### Verification
+- Backend build passes: `cd backend && npm run build`.
+- Frontend build passes: `cd frontend && npm run build`.
+- Frontend bundle copied to `/var/www/agent`.
+- API reloaded with `pm2 reload 0 --update-env`.
+- API health check passes at `http://localhost:3000/api/health`.
+- Browser/mobile screenshot testing was not run because Playwright is not installed in this project.
+
+### Remaining Issues
+- Attachment chips are wired to the existing attachment endpoint, but `GET /api/email/messages/:messageId/attachment/:index` still returns `501` until raw IMAP UID/mailbox storage is added.
+- Composer still uses the earlier textarea-based editor; this pass upgraded the thread reply bar to Tiptap as requested.
+
 ## OAuth Email Scope Fix — 2026-05-07
 
 ### Fixed

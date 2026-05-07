@@ -270,6 +270,7 @@ router.get("/oauth/google/callback", googleOAuthCallbackHandler);
 router.get("/threads", async (req: Request, res: Response): Promise<void> => {
   const result = await getThreads({
     accountId: typeof req.query.accountId === "string" ? req.query.accountId : undefined,
+    folder: req.query.folder === "sent" || req.query.folder === "flagged" || req.query.folder === "archived" || req.query.folder === "inbox" ? req.query.folder : undefined,
     isRead: req.query.unread !== undefined ? !boolQuery(req.query.unread) : undefined,
     isFlagged: boolQuery(req.query.flagged),
     isArchived: boolQuery(req.query.archived),

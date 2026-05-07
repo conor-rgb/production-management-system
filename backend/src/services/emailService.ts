@@ -68,6 +68,7 @@ export interface SendEmailOptions {
 
 export interface ThreadListOptions {
   accountId?: string;
+  folder?: "inbox" | "sent" | "flagged" | "archived";
   isRead?: boolean;
   isFlagged?: boolean;
   isArchived?: boolean;
@@ -77,6 +78,85 @@ export interface ThreadListOptions {
   linkedTo?: string;
   search?: string;
   page?: number;
+}
+
+type ThreadAttachmentSummary = {
+  messageId: string;
+  attachmentIndex: number;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
+type StoredAttachment = {
+  filename?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  contentId?: string | null;
+};
+
+export function resolveDisplayName(emailAddress: string, fromName?: string | null, contactName?: string | null): string {
+  if (contactName) return contactName;
+
+  if (fromName && fromName.trim() && fromName.toLowerCase() !== emailAddress.toLowerCase()) {
+    return fromName;
+  }
+
+  const [local = "", domain = ""] = emailAddress.split("@");
+  const genericPrefixes = [
+    "noreply",
+    "no-reply",
+    "info",
+    "hello",
+    "support",
+    "contact",
+    "admin",
+    "team",
+    "news",
+    "newsletter",
+    "notifications",
+    "notification",
+    "donotreply",
+    "mailer",
+    "updates",
+    "reply",
+    "bounce",
+    "postmaster",
+  ];
+
+  if (genericPrefixes.some((prefix) => local.toLowerCase().includes(prefix))) {
+    const domainParts = domain.split(".");
+    const mainDomain = domainParts.length >= 2 ? domainParts[domainParts.length - 2] : domainParts[0];
+    const fallback = mainDomain || "unknown";
+    return fallback.charAt(0).toUpperCase() + fallback.slice(1);
+  }
+
+  return local
+    .replace(/[._\-+]/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ") || emailAddress;
+}
+
+export function getAvatarColor(email: string): string {
+  const colors = [
+    "#5B8DEF",
+    "#E8A838",
+    "#E85D5D",
+    "#5DBE8A",
+    "#9B5DEF",
+    "#EF8C5D",
+    "#5DBEE8",
+    "#EF5DB8",
+    "#8DEF5B",
+    "#EF9B5D",
+  ];
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) {
+    hash = email.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length] ?? colors[0];
 }
 
 export function googleOAuthConfigured(): boolean {
@@ -299,6 +379,27 @@ function attachmentMetadata(mail: ParsedMail): Prisma.InputJsonValue {
     sizeBytes: attachment.size,
     contentId: attachment.contentId,
   }));
+}
+
+function contactDisplayName(contact?: { firstName: string; lastName: string | null } | null): string | null {
+  if (!contact) return null;
+  return `${contact.firstName}${contact.lastName ? ` ${contact.lastName}` : ""}`;
+}
+
+function parseAttachments(value: Prisma.JsonValue): StoredAttachment[] {
+  if (!Array.isArray(value)) return [];
+  const attachments: StoredAttachment[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const attachment = item as Record<string, Prisma.JsonValue>;
+      attachments.push({
+        filename: typeof attachment.filename === "string" ? attachment.filename : "attachment",
+        mimeType: typeof attachment.mimeType === "string" ? attachment.mimeType : "application/octet-stream",
+        sizeBytes: typeof attachment.sizeBytes === "number" ? attachment.sizeBytes : 0,
+        contentId: typeof attachment.contentId === "string" ? attachment.contentId : null,
+      });
+  }
+  return attachments;
 }
 
 export async function syncAccount(accountId: string): Promise<void> {
@@ -645,6 +746,47 @@ export async function sendEmail(options: SendEmailOptions) {
 
 export async function getThreads(options: ThreadListOptions) {
   const page = Math.max(1, options.page ?? 1);
+  const andFilters: Prisma.EmailThreadWhereInput[] = [];
+
+  if (options.linkedTo) {
+    andFilters.push({
+      OR: [
+        { linkedContactId: options.linkedTo },
+        { linkedOpportunityId: options.linkedTo },
+        { linkedProductionId: options.linkedTo },
+      ],
+    });
+  }
+
+  if (options.search) {
+    const search = options.search;
+    andFilters.push({
+      OR: [
+        { subject: { contains: search, mode: "insensitive" } },
+        { participants: { has: search.toLowerCase() } },
+        { messages: { some: { bodyText: { contains: search, mode: "insensitive" } } } },
+        { messages: { some: { fromName: { contains: search, mode: "insensitive" } } } },
+        { messages: { some: { fromAddress: { contains: search, mode: "insensitive" } } } },
+      ],
+    });
+  }
+
+  switch (options.folder ?? "inbox") {
+    case "sent":
+      andFilters.push({ messages: { some: { isFromMe: true } } });
+      break;
+    case "flagged":
+      andFilters.push({ isFlagged: true, isArchived: false });
+      break;
+    case "archived":
+      andFilters.push({ isArchived: true });
+      break;
+    case "inbox":
+    default:
+      andFilters.push({ isArchived: false, messages: { some: { isFromMe: false } } });
+      break;
+  }
+
   const where: Prisma.EmailThreadWhereInput = {
     accountId: options.accountId,
     isRead: options.isRead,
@@ -653,23 +795,8 @@ export async function getThreads(options: ThreadListOptions) {
     linkedContactId: options.linkedContactId,
     linkedOpportunityId: options.linkedOpportunityId,
     linkedProductionId: options.linkedProductionId,
+    AND: andFilters.length ? andFilters : undefined,
   };
-  if (options.linkedTo) {
-    where.OR = [
-      { linkedContactId: options.linkedTo },
-      { linkedOpportunityId: options.linkedTo },
-      { linkedProductionId: options.linkedTo },
-    ];
-  }
-  if (options.search) {
-    const search = options.search;
-    where.OR = [
-      ...(where.OR ?? []),
-      { subject: { contains: search, mode: "insensitive" } },
-      { participants: { has: search.toLowerCase() } },
-      { messages: { some: { bodyText: { contains: search, mode: "insensitive" } } } },
-    ];
-  }
   const [threads, total] = await Promise.all([
     prisma.emailThread.findMany({
       where,
@@ -681,23 +808,56 @@ export async function getThreads(options: ThreadListOptions) {
         linkedContact: { include: { company: true } },
         linkedOpportunity: true,
         linkedProduction: true,
-        messages: { orderBy: { sentAt: "desc" }, take: 1 },
+        messages: {
+          orderBy: { sentAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            fromAddress: true,
+            fromName: true,
+            bodyText: true,
+            sentAt: true,
+            isFromMe: true,
+            hasAttachments: true,
+          },
+        },
+        _count: { select: { messages: true } },
       },
     }),
     prisma.emailThread.count({ where }),
   ]);
-  const emails = Array.from(new Set(threads.flatMap((thread) => thread.participants)));
+  const threadIds = threads.map((thread) => thread.id);
+  const attachmentRows = threadIds.length
+    ? await prisma.emailMessage.findMany({
+      where: { threadId: { in: threadIds }, hasAttachments: true },
+      select: { threadId: true },
+    })
+    : [];
+  const threadsWithAttachments = new Set(attachmentRows.map((row) => row.threadId));
+  const emails = Array.from(new Set(threads.flatMap((thread) => [
+    ...thread.participants,
+    thread.messages[0]?.fromAddress,
+  ].filter((email): email is string => Boolean(email)))));
   const contacts = await prisma.contact.findMany({ where: { email: { in: emails, mode: "insensitive" } }, include: { company: true } });
   const contactByEmail = new Map(contacts.map((contact) => [contact.email?.toLowerCase(), contact]));
   return {
     threads: threads.map((thread) => {
       const latest = thread.messages[0];
+      const latestContact = latest ? contactByEmail.get(latest.fromAddress.toLowerCase()) : null;
+      const resolvedSenderName = latest
+        ? resolveDisplayName(latest.fromAddress, latest.fromName, contactDisplayName(latestContact))
+        : resolveDisplayName(thread.participants[0] ?? "", null, null);
+      const avatarColor = latest?.isFromMe ? "#1a1a1f" : getAvatarColor(latest?.fromAddress ?? thread.participants[0] ?? "");
       return {
         ...thread,
         latestPreview: latest?.bodyText.slice(0, 100) ?? "",
+        resolvedSenderName,
+        avatarColor,
+        messageCount: thread._count.messages,
+        hasAttachments: threadsWithAttachments.has(thread.id),
         participantNames: thread.participants.map((email) => {
           const contact = contactByEmail.get(email.toLowerCase());
-          return contact ? `${contact.firstName}${contact.lastName ? ` ${contact.lastName}` : ""}` : email;
+          return resolveDisplayName(email, null, contactDisplayName(contact));
         }),
       };
     }),
@@ -719,7 +879,36 @@ export async function getThread(threadId: string) {
     },
   });
   if (!thread) return null;
-  const emails = Array.from(new Set(thread.participants));
+  const emails = Array.from(new Set([
+    ...thread.participants,
+    ...thread.messages.flatMap((message) => [message.fromAddress, ...message.toAddresses, ...message.ccAddresses]),
+  ].filter(Boolean)));
   const contacts = await prisma.contact.findMany({ where: { email: { in: emails, mode: "insensitive" } }, include: { company: true } });
-  return { ...thread, participantContacts: contacts };
+  const contactByEmail = new Map(contacts.map((contact) => [contact.email?.toLowerCase(), contact]));
+  const attachments = thread.messages.flatMap((message) => parseAttachments(message.attachments).map((attachment, index) => ({
+    messageId: message.id,
+    attachmentIndex: index,
+    filename: attachment.filename ?? "attachment",
+    mimeType: attachment.mimeType ?? "application/octet-stream",
+    sizeBytes: attachment.sizeBytes ?? 0,
+  } satisfies ThreadAttachmentSummary)));
+  return {
+    ...thread,
+    messages: thread.messages.map((message) => {
+      const contact = contactByEmail.get(message.fromAddress.toLowerCase());
+      return {
+        ...message,
+        attachments: parseAttachments(message.attachments),
+        resolvedFromName: resolveDisplayName(message.fromAddress, message.fromName, contactDisplayName(contact)),
+        avatarColor: message.isFromMe ? "#1a1a1f" : getAvatarColor(message.fromAddress),
+      };
+    }),
+    participantNames: thread.participants.map((email) => {
+      const contact = contactByEmail.get(email.toLowerCase());
+      return resolveDisplayName(email, null, contactDisplayName(contact));
+    }),
+    attachments: attachments.slice(0, 10),
+    totalAttachmentCount: attachments.length,
+    participantContacts: contacts,
+  };
 }
