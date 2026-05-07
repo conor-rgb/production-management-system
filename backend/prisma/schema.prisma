@@ -134,6 +134,21 @@ enum EmailProvider {
   IMAP
 }
 
+enum CalendarEventType {
+  SHOOT_DAY
+  PPM
+  RECCE
+  FITTING
+  MEETING
+  POST_DELIVERY
+  FOLLOW_UP
+  GOOGLE_SYNC
+  STANDALONE
+  OTHER
+
+  @@map("pms_calendar_event_type")
+}
+
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 model Settings {
@@ -215,6 +230,7 @@ model Opportunity {
   activityNotes OpportunityNote[]
   tasks         OpportunityTask[]
   emailThreads  EmailThread[]
+  calendarEvents CalendarEvent[]
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
@@ -272,6 +288,7 @@ model Production {
   purchaseOrders         PurchaseOrder[]
   emailThreads           EmailThread[]
   receiptCaptures        ReceiptCapture[]
+  calendarEvents         CalendarEvent[]
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 
@@ -306,6 +323,39 @@ model ProductionDatePerson {
 
   @@unique([productionDateId, contactId])
   @@map("pms_production_date_people")
+}
+
+model CalendarEvent {
+  id                    String            @id @default(uuid())
+  title                 String
+  startDate             DateTime
+  endDate               DateTime
+  isAllDay              Boolean           @default(false)
+  location              String?
+  zoomLink              String?
+  notes                 String?
+  color                 String?
+  eventType             CalendarEventType @default(STANDALONE)
+  productionId          String?
+  productionDateId      String?
+  opportunityId         String?
+  contactIds            String[]          @default([])
+  googleCalendarEventId String?
+  googleCalendarId      String?
+  syncedFromGoogle      Boolean           @default(false)
+  lastSyncedAt          DateTime?
+  production            Production?       @relation(fields: [productionId], references: [id], onDelete: SetNull)
+  opportunity           Opportunity?      @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  @@index([startDate])
+  @@index([endDate])
+  @@index([productionId])
+  @@index([productionDateId])
+  @@index([opportunityId])
+  @@index([googleCalendarEventId])
+  @@map("pms_calendar_events")
 }
 
 // ─── Crew ─────────────────────────────────────────────────────────────────────
