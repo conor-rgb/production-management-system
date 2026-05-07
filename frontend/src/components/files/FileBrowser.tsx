@@ -371,9 +371,10 @@ export function PreviewPanel({ file, productionId, folders, onClose, onPatch }: 
           <select
             value={file.linkedBudgetLineId ?? ""}
             onChange={(e) => linkBudgetLine(e.target.value).catch(console.error)}
+            disabled={!productionId}
             className="min-h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-500"
           >
-            <option value="">{budgetLines.length ? "No linked budget line" : "No budget lines yet"}</option>
+            <option value="">{productionId ? (budgetLines.length ? "No linked budget line" : "No budget lines yet") : "Link to a production to assign budget lines"}</option>
             {budgetLines.map(({ sectionCode, line }) => (
               <option key={line.id} value={line.id}>
                 {sectionCode} — {line.lineCode} — {line.description}
@@ -388,6 +389,7 @@ export function PreviewPanel({ file, productionId, folders, onClose, onPatch }: 
           <select
             value={file.folder}
             onChange={(e) => onPatch({ folder: e.target.value as JobFolder })}
+            disabled={!productionId}
             className="min-h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm"
           >
             {folders.map((folder) => <option key={folder} value={folder}>{folder}</option>)}

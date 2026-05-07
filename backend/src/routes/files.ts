@@ -12,7 +12,7 @@ import {
   ensureProductionFolders,
   isJobFolder,
   JOB_FOLDERS,
-  resolveProductionFilePath,
+  resolveJobFilePath,
 } from "../services/fileStorage";
 
 const router = Router();
@@ -212,7 +212,7 @@ router.get("/:fileId/download", async (req: Request, res: Response): Promise<voi
   const file = await fileWithProduction(req.params.fileId);
   if (!file) { res.status(404).json({ error: "File not found" }); return; }
 
-  const filePath = await resolveProductionFilePath(file.productionId, file.folder, file.storedFilename);
+  const filePath = await resolveJobFilePath(file);
   if (!fsSync.existsSync(filePath)) { res.status(404).json({ error: "File missing on disk" }); return; }
 
   res.setHeader("Content-Type", file.mimeType);
@@ -230,7 +230,7 @@ router.get("/:fileId/preview", async (req: Request, res: Response): Promise<void
     return;
   }
 
-  const filePath = await resolveProductionFilePath(file.productionId, file.folder, file.storedFilename);
+  const filePath = await resolveJobFilePath(file);
   if (!fsSync.existsSync(filePath)) { res.status(404).json({ error: "File missing on disk" }); return; }
 
   res.setHeader("Content-Type", file.mimeType);
@@ -257,8 +257,12 @@ router.patch("/:fileId", async (req: Request, res: Response): Promise<void> => {
   }
 
   if (nextFolder !== file.folder) {
-    const currentPath = await resolveProductionFilePath(file.productionId, file.folder, file.storedFilename);
-    const nextPath = await resolveProductionFilePath(file.productionId, nextFolder, file.storedFilename);
+    if (!file.productionId) {
+      res.status(400).json({ error: "Unlinked mail attachments cannot be moved to another folder yet" });
+      return;
+    }
+    const currentPath = await resolveJobFilePath(file);
+    const nextPath = await resolveJobFilePath({ ...file, folder: nextFolder });
     await fs.rename(currentPath, nextPath);
   }
 
@@ -279,7 +283,7 @@ router.delete("/:fileId", async (req: Request, res: Response): Promise<void> => 
   const file = await fileWithProduction(req.params.fileId);
   if (!file) { res.status(404).json({ error: "File not found" }); return; }
 
-  const filePath = await resolveProductionFilePath(file.productionId, file.folder, file.storedFilename);
+  const filePath = await resolveJobFilePath(file);
   await fs.unlink(filePath).catch((err: NodeJS.ErrnoException) => {
     if (err.code !== "ENOENT") throw err;
   });

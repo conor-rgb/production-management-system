@@ -514,8 +514,8 @@ model CatalogGroupItem {
 
 model JobFile {
   id                         String            @id @default(cuid())
-  productionId               String
-  production                 Production        @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  productionId               String?
+  production                 Production?       @relation(fields: [productionId], references: [id], onDelete: SetNull)
   folder                     String
   originalFilename           String
   storedFilename             String

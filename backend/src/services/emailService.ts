@@ -4,7 +4,7 @@ import nodemailer from "nodemailer";
 import { simpleParser, type AddressObject, type ParsedMail } from "mailparser";
 import prisma from "../prisma";
 import { decrypt, encrypt } from "./encryptionService";
-import { autoFileDocument, isJobFolder, type JobFolder } from "./fileStorage";
+import { autoFileDocument, autoFileMailAttachment, isJobFolder, type JobFolder } from "./fileStorage";
 
 const PAGE_SIZE = 50;
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -91,7 +91,7 @@ type ThreadAttachmentSummary = {
   jobFileId?: string;
   jobFile?: {
     id: string;
-    productionId: string;
+    productionId: string | null;
     folder: string;
     originalFilename: string;
     storedFilename: string;
@@ -818,8 +818,7 @@ export async function saveEmailAttachmentToJob(options: {
   if (!attachmentSummary) throw new Error("Attachment not found");
   if (attachmentSummary.isInline) throw new Error("Inline email images are not saved as job files");
 
-  const productionId = options.productionId ?? message.thread.linkedProductionId ?? undefined;
-  if (!productionId) throw new Error("Choose a production before saving this attachment");
+  const productionId = options.productionId ?? message.thread.linkedProductionId ?? null;
 
   const existing = await prisma.jobFile.findFirst({
     where: {
@@ -833,19 +832,28 @@ export async function saveEmailAttachmentToJob(options: {
   const folder: JobFolder = "Mail Attachments";
   if (!isJobFolder(folder)) throw new Error("Mail Attachments folder is not configured");
   const attachment = await getEmailAttachment(options.messageId, options.attachmentIndex);
+  const sourceOptions = {
+    notes: options.notes,
+    sourceEmailThreadId: message.threadId,
+    sourceEmailMessageId: options.messageId,
+    sourceEmailAttachmentIndex: options.attachmentIndex,
+    sourceEmailFilename: attachment.filename,
+  };
+  if (!productionId) {
+    return autoFileMailAttachment(
+      attachment.content,
+      attachment.filename,
+      attachment.mimeType,
+      sourceOptions
+    );
+  }
   return autoFileDocument(
     productionId,
     folder,
     attachment.content,
     attachment.filename,
     attachment.mimeType,
-    {
-      notes: options.notes,
-      sourceEmailThreadId: message.threadId,
-      sourceEmailMessageId: options.messageId,
-      sourceEmailAttachmentIndex: options.attachmentIndex,
-      sourceEmailFilename: attachment.filename,
-    }
+    sourceOptions
   );
 }
 

@@ -2,6 +2,33 @@
 
 ## Built This Session
 
+## Unlinked Mail Attachments — 2026-05-07
+
+### Fixed
+- Email attachments no longer require a production link before filing.
+- `JobFile.productionId` is now nullable.
+  - Production files still behave as before when linked to a job.
+  - Unlinked files are allowed only in the `Mail Attachments` folder.
+- Added global disk storage for unlinked mail attachments:
+  - `/backend/storage/mail-attachments/`
+- Clicking an email attachment from an unlinked email thread now saves the raw file globally and opens the file preview.
+- The master Files screen shows unlinked saved mail attachments under the `Mail Attachments` folder.
+  - Rows display `Unlinked mail attachment` instead of a job code/client.
+- Production Files tabs remain scoped to that production only.
+- Preview/edit behavior was adjusted for unlinked files.
+  - PDF/image/video previews work.
+  - Notes can be edited.
+  - Budget-line linking and moving folders are disabled until the file is linked to a production in a future files workflow.
+
+### Verification
+- Migration applied: `20260507110500_unlinked_mail_attachments`.
+- Prisma client regenerated.
+- Backend build passes: `cd backend && npm run build`.
+- Frontend build passes: `cd frontend && npm run build`.
+- Frontend bundle copied to `/var/www/agent`.
+- API reloaded with `pm2 reload 0 --update-env`.
+- API health check passes at `http://localhost:3000/api/health`.
+
 ## Email Thread Performance — 2026-05-07
 
 ### Fixed

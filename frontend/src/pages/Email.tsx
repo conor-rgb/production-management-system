@@ -321,12 +321,7 @@ export default function Email() {
       setPreviewFile(file);
       if (selectedThreadId) await loadThread(selectedThreadId);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Choose a production before saving this attachment";
-      if (message.toLowerCase().includes("choose a production")) {
-        setSaveAttachment({ attachment, productionId });
-      } else {
-        setError(message);
-      }
+      setError(err instanceof Error ? err.message : "Failed to file attachment");
     } finally {
       setFilingAttachment("");
     }
@@ -449,7 +444,7 @@ export default function Email() {
       {previewFile && (
         <PreviewPanel
           file={previewFile}
-          productionId={previewFile.productionId}
+          productionId={previewFile.productionId ?? undefined}
           folders={JOB_FOLDERS}
           onClose={() => setPreviewFile(null)}
           onPatch={async (patch) => {

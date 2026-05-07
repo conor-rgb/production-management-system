@@ -107,7 +107,9 @@ export default function Files() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-gray-900">{file.originalFilename}</span>
                     <span className="block truncate text-xs text-gray-500">
-                      {file.production?.jobCode ?? "No code"} · {file.production?.clientName ?? file.production?.title ?? "No job"} · {file.folder}
+                      {file.production
+                        ? `${file.production.jobCode ?? "No code"} · ${file.production.clientName ?? file.production.title}`
+                        : "Unlinked mail attachment"} · {file.folder}
                     </span>
                   </span>
                   <span className="hidden text-right text-xs text-gray-500 sm:block">
@@ -136,7 +138,7 @@ export default function Files() {
       {selectedFile && (
         <PreviewPanel
           file={selectedFile}
-          productionId={selectedFile.productionId}
+          productionId={selectedFile.productionId ?? undefined}
           folders={JOB_FOLDERS}
           onClose={() => setSelectedFile(null)}
           onPatch={patchSelected}

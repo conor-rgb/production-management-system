@@ -337,7 +337,7 @@ export interface Production {
 
 export interface JobFile {
   id: string;
-  productionId: string;
+  productionId?: string | null;
   folder: JobFolder;
   originalFilename: string;
   storedFilename: string;

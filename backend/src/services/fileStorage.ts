@@ -5,6 +5,7 @@ import mime from "mime-types";
 import prisma from "../prisma";
 
 export const JOB_STORAGE_ROOT = path.resolve(__dirname, "../../storage/jobs");
+export const GLOBAL_MAIL_ATTACHMENTS_ROOT = path.resolve(__dirname, "../../storage/mail-attachments");
 
 export const JOB_FOLDERS = [
   "Briefs",
@@ -94,6 +95,19 @@ export async function resolveProductionFilePath(productionId: string, folder: st
   return path.join(basePath, folder, storedFilename);
 }
 
+export async function ensureGlobalMailAttachmentsFolder(): Promise<string> {
+  await fs.mkdir(GLOBAL_MAIL_ATTACHMENTS_ROOT, { recursive: true });
+  return GLOBAL_MAIL_ATTACHMENTS_ROOT;
+}
+
+export async function resolveJobFilePath(file: { productionId: string | null; folder: string; storedFilename: string }): Promise<string> {
+  if (!isJobFolder(file.folder)) throw new Error("Invalid folder");
+  if (file.productionId) return resolveProductionFilePath(file.productionId, file.folder, file.storedFilename);
+  if (file.folder !== "Mail Attachments") throw new Error("Unlinked files can only live in Mail Attachments");
+  const basePath = await ensureGlobalMailAttachmentsFolder();
+  return path.join(basePath, file.storedFilename);
+}
+
 export async function autoFileDocument(
   productionId: string,
   folder: JobFolder,
@@ -163,4 +177,45 @@ export async function autoFileReceipt(
     ...options,
     isReceipt: true,
   });
+}
+
+export async function autoFileMailAttachment(
+  buffer: Buffer,
+  filename: string,
+  mimeType: string,
+  options?: {
+    notes?: string;
+    sourceEmailThreadId?: string;
+    sourceEmailMessageId?: string;
+    sourceEmailAttachmentIndex?: number;
+    sourceEmailFilename?: string;
+  }
+) {
+  const basePath = await ensureGlobalMailAttachmentsFolder();
+  const storedFilename = `${randomUUID()}${fileExtension(filename, mimeType)}`;
+  const destination = path.join(basePath, storedFilename);
+
+  await fs.writeFile(destination, buffer);
+
+  try {
+    return await prisma.jobFile.create({
+      data: {
+        productionId: null,
+        folder: "Mail Attachments",
+        originalFilename: filename,
+        storedFilename,
+        mimeType,
+        sizeBytes: buffer.byteLength,
+        notes: options?.notes,
+        isReceipt: false,
+        sourceEmailThreadId: options?.sourceEmailThreadId,
+        sourceEmailMessageId: options?.sourceEmailMessageId,
+        sourceEmailAttachmentIndex: options?.sourceEmailAttachmentIndex,
+        sourceEmailFilename: options?.sourceEmailFilename,
+      },
+    });
+  } catch (err) {
+    await fs.unlink(destination).catch(() => undefined);
+    throw err;
+  }
 }
