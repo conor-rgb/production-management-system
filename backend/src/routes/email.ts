@@ -402,15 +402,14 @@ router.post("/messages/:messageId/attachment/:index/save-to-job", async (req: Re
       res.status(400).json({ error: "Invalid attachment index" });
       return;
     }
-    const body = req.body as { productionId?: string; notes?: string };
-    if (body.productionId !== undefined && !body.productionId) {
-      res.status(400).json({ error: "productionId must not be empty" });
-      return;
-    }
+    const body = req.body as { productionId?: string | null; notes?: string };
+    const productionId = typeof body.productionId === "string" && body.productionId.trim()
+      ? body.productionId.trim()
+      : undefined;
     const file = await saveEmailAttachmentToJob({
       messageId: req.params.messageId,
       attachmentIndex: index,
-      productionId: body.productionId,
+      productionId,
       notes: body.notes,
     });
     res.status(201).json(file);
