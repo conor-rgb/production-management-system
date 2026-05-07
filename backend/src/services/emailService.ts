@@ -4,6 +4,7 @@ import nodemailer from "nodemailer";
 import { simpleParser, type AddressObject, type ParsedMail } from "mailparser";
 import prisma from "../prisma";
 import { decrypt, encrypt } from "./encryptionService";
+import { autoFileDocument, isJobFolder, type JobFolder } from "./fileStorage";
 
 const PAGE_SIZE = 50;
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -93,6 +94,13 @@ type StoredAttachment = {
   mimeType?: string;
   sizeBytes?: number;
   contentId?: string | null;
+};
+
+type EmailAttachmentContent = {
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  content: Buffer;
 };
 
 type SyncMailboxResult = {
@@ -497,16 +505,16 @@ async function syncMailbox(client: ImapFlow, account: EmailAccount, folderName: 
       const existingMessage = await prisma.emailMessage.findFirst({
         where: { externalMessageId },
       });
+      const attachments = parsed.attachments.map((attachment) => ({
+        filename: attachment.filename ?? "attachment",
+        mimeType: attachment.contentType ?? "application/octet-stream",
+        sizeBytes: attachment.size ?? 0,
+        contentId: attachment.contentId ?? null,
+      }));
 
       if (!existingMessage) {
         const accountEmail = account.emailAddress.toLowerCase();
         const fromAddress = from.address.toLowerCase();
-        const attachments = parsed.attachments.map((attachment) => ({
-          filename: attachment.filename ?? "attachment",
-          mimeType: attachment.contentType ?? "application/octet-stream",
-          sizeBytes: attachment.size ?? 0,
-          contentId: attachment.contentId ?? null,
-        }));
 
         await prisma.emailMessage.create({
           data: {
@@ -524,9 +532,21 @@ async function syncMailbox(client: ImapFlow, account: EmailAccount, folderName: 
             isFromMe: forceFromMe || fromAddress === accountEmail,
             hasAttachments: attachments.length > 0,
             attachments,
+            imapMailbox: folderName,
+            imapUid: message.uid,
           },
         });
         messageCount++;
+      } else if (!existingMessage.imapMailbox || !existingMessage.imapUid) {
+        await prisma.emailMessage.update({
+          where: { id: existingMessage.id },
+          data: {
+            imapMailbox: folderName,
+            imapUid: message.uid,
+            attachments,
+            hasAttachments: attachments.length > 0,
+          },
+        });
       }
     } catch (msgErr) {
       errorCount++;
@@ -713,6 +733,56 @@ export function stopIdleSync(accountId: string): void {
 
 export function getIdleStatus() {
   return idleConnections;
+}
+
+export async function getEmailAttachment(messageId: string, attachmentIndex: number): Promise<EmailAttachmentContent> {
+  const message = await prisma.emailMessage.findUnique({
+    where: { id: messageId },
+    include: { thread: { include: { account: true } } },
+  });
+  if (!message) throw new Error("Email message not found");
+  if (!message.thread.account) throw new Error("Email account not found for message");
+  if (!message.imapMailbox || !message.imapUid) {
+    throw new Error("Attachment is not available until this message is resynced");
+  }
+
+  const client = await getImapClient(message.thread.account);
+  try {
+    await client.connect();
+    await client.mailboxOpen(message.imapMailbox);
+    const fetched = await client.fetchOne(message.imapUid, { source: true }, { uid: true });
+    if (!fetched || !fetched.source) throw new Error("Email source not found on IMAP server");
+    const parsed = await simpleParser(fetched.source);
+    const attachment = parsed.attachments[attachmentIndex];
+    if (!attachment) throw new Error("Attachment not found");
+    return {
+      filename: attachment.filename ?? `attachment-${attachmentIndex + 1}`,
+      mimeType: attachment.contentType ?? "application/octet-stream",
+      sizeBytes: attachment.size ?? attachment.content.byteLength,
+      content: attachment.content,
+    };
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+export async function saveEmailAttachmentToJob(options: {
+  messageId: string;
+  attachmentIndex: number;
+  productionId: string;
+  folder: string;
+  notes?: string;
+}) {
+  if (!isJobFolder(options.folder)) throw new Error("Invalid job folder");
+  const attachment = await getEmailAttachment(options.messageId, options.attachmentIndex);
+  return autoFileDocument(
+    options.productionId,
+    options.folder as JobFolder,
+    attachment.content,
+    attachment.filename,
+    attachment.mimeType,
+    { notes: options.notes }
+  );
 }
 
 export async function sendEmail(options: SendEmailOptions) {

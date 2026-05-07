@@ -636,9 +636,12 @@ model EmailMessage {
   isFromMe          Boolean     @default(false)
   hasAttachments    Boolean     @default(false)
   attachments       Json        @default("[]")
+  imapMailbox       String?
+  imapUid           Int?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
+  @@index([imapMailbox, imapUid])
   @@map("pms_email_messages")
 }
 

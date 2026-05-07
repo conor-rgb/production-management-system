@@ -6,10 +6,12 @@ import {
   exchangeGoogleCode,
   getGoogleOAuthUrl,
   getIdleStatus,
+  getEmailAttachment,
   getImapClient,
   getThread,
   getThreads,
   googleOAuthConfigured,
+  saveEmailAttachmentToJob,
   sendEmail,
   startIdleSync,
   stopIdleSync,
@@ -41,6 +43,10 @@ function intValue(value: unknown): number | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function contentDispositionFilename(filename: string): string {
+  return filename.replace(/"/g, "'");
 }
 
 function redactAccount<T extends { encryptedPassword?: string | null; encryptedAccessToken?: string | null; encryptedRefreshToken?: string | null }>(account: T) {
@@ -368,8 +374,46 @@ router.post("/threads/:threadId/reply", async (req: Request, res: Response): Pro
   res.status(201).json(message);
 });
 
-router.get("/messages/:messageId/attachment/:index", async (_req: Request, res: Response): Promise<void> => {
-  res.status(501).json({ error: "Attachment streaming from IMAP is not available until raw message storage is added" });
+router.get("/messages/:messageId/attachment/:index", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const index = intValue(req.params.index);
+    if (index === undefined || index < 0) {
+      res.status(400).json({ error: "Invalid attachment index" });
+      return;
+    }
+    const attachment = await getEmailAttachment(req.params.messageId, index);
+    res.setHeader("Content-Type", attachment.mimeType);
+    res.setHeader("Content-Length", String(attachment.content.byteLength));
+    res.setHeader("Content-Disposition", `attachment; filename="${contentDispositionFilename(attachment.filename)}"`);
+    res.send(attachment.content);
+  } catch (err) {
+    res.status(404).json({ error: err instanceof Error ? err.message : "Attachment not found" });
+  }
+});
+
+router.post("/messages/:messageId/attachment/:index/save-to-job", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const index = intValue(req.params.index);
+    if (index === undefined || index < 0) {
+      res.status(400).json({ error: "Invalid attachment index" });
+      return;
+    }
+    const body = req.body as { productionId?: string; folder?: string; notes?: string };
+    if (!body.productionId || !body.folder) {
+      res.status(400).json({ error: "productionId and folder are required" });
+      return;
+    }
+    const file = await saveEmailAttachmentToJob({
+      messageId: req.params.messageId,
+      attachmentIndex: index,
+      productionId: body.productionId,
+      folder: body.folder,
+      notes: body.notes,
+    });
+    res.status(201).json(file);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to save attachment" });
+  }
 });
 
 router.get("/templates", async (_req: Request, res: Response): Promise<void> => {
