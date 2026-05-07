@@ -2,7 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export interface ParsedReceipt {
   vendor: string | null;
-  amount: number | null;
+  amountGross: number | null;
+  amountNet: number | null;
+  vatAmount: number | null;
+  vatRate: number | null;
   date: string | null;
   currency: string;
   description: string | null;
@@ -14,7 +17,10 @@ export interface ParsedReceipt {
 
 type ReceiptJson = {
   vendor?: unknown;
-  amount?: unknown;
+  amountGross?: unknown;
+  amountNet?: unknown;
+  vatAmount?: unknown;
+  vatRate?: unknown;
   date?: unknown;
   currency?: unknown;
   description?: unknown;
@@ -30,7 +36,10 @@ const RECEIPT_ANALYSIS_PROMPT = `Analyse this document carefully. It may be a re
 
 {
   "vendor": "the name of the supplier, business, or company issuing this document — look for company name, 'From:', letterhead, or logo text",
-  "amount": the final total amount as a number (e.g. 45.50) — use the GRAND TOTAL, TOTAL DUE, AMOUNT DUE, or BALANCE DUE figure. For invoices this is the final amount to be paid. Never use subtotals or pre-tax amounts if a final total exists,
+  "amountGross": the total amount INCLUDING VAT as a number (what was actually paid),
+  "amountNet": the total amount EXCLUDING VAT as a number (the net cost before VAT),
+  "vatAmount": the VAT amount as a number,
+  "vatRate": the VAT rate as a percentage number e.g. 20,
   "date": "the invoice date, receipt date, or document date in YYYY-MM-DD format",
   "currency": "three letter currency code e.g. GBP, USD, EUR — default to GBP if unclear",
   "description": "brief description of what was purchased or the nature of the expense — look at line items or description fields",
@@ -48,6 +57,11 @@ Important rules:
 - For receipts: the total is usually at the bottom
 - If you can see a VAT breakdown: use the total INCLUSIVE of VAT (the amount actually paid)
 - If the document is from unlimited.bond or BOND UN LIMITED: this is likely a client invoice being reviewed, not a supplier receipt — still extract the total and date
+- Always try to extract both net and gross amounts separately
+- The net amount (ex-VAT) is the PRIMARY amount for budget purposes
+- If only one total is shown with no VAT breakdown: use it as amountGross and set amountNet and vatAmount to null
+- UK standard VAT rate is 20% — if VAT is mentioned but no breakdown shown, you may calculate: net = gross / 1.20
+- Some suppliers are not VAT registered — in that case amountGross = amountNet and vatAmount = 0
 - If a field is genuinely not present or unreadable: use null
 - Amount must always be a plain number, never a string`;
 
@@ -65,10 +79,19 @@ function amountToPence(value: unknown): number | null {
   return Number.isFinite(amount) ? Math.round(amount * 100) : null;
 }
 
+function percentageValue(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const percentage = typeof value === "number" ? value : Number(String(value).replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(percentage) ? percentage : null;
+}
+
 function fallback(rawText: string | null = null): ParsedReceipt {
   return {
     vendor: null,
-    amount: null,
+    amountGross: null,
+    amountNet: null,
+    vatAmount: null,
+    vatRate: null,
     date: null,
     currency: "GBP",
     description: null,
@@ -84,7 +107,10 @@ function parseReceiptResponse(text: string): ParsedReceipt {
     const parsed = JSON.parse(text.replace(/```json\n?|\n?```/g, "").trim()) as ReceiptJson;
     return {
       vendor: cleanText(parsed.vendor),
-      amount: amountToPence(parsed.amount),
+      amountGross: amountToPence(parsed.amountGross),
+      amountNet: amountToPence(parsed.amountNet),
+      vatAmount: amountToPence(parsed.vatAmount),
+      vatRate: percentageValue(parsed.vatRate),
       date: cleanText(parsed.date),
       currency: cleanText(parsed.currency) ?? "GBP",
       description: cleanText(parsed.description),

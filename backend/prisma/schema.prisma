@@ -568,6 +568,10 @@ model ReceiptCapture {
   storedPath            String
   parsedVendor          String?
   parsedAmount          Int?
+  parsedAmountGross     Int?
+  parsedAmountNet       Int?
+  parsedVatAmount       Int?
+  parsedVatRate         Float?
   parsedDate            DateTime?            @db.Date
   parsedCurrency        String               @default("GBP")
   parsedDescription     String?

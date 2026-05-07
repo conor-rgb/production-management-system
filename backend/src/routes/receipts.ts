@@ -37,6 +37,10 @@ function dateValue(value: unknown): Date | null | undefined {
   return new Date(String(value));
 }
 
+function primaryReceiptAmount(capture: { parsedAmountNet?: number | null; parsedAmountGross?: number | null; parsedAmount?: number | null }): number | null {
+  return capture.parsedAmountNet ?? capture.parsedAmount ?? capture.parsedAmountGross ?? null;
+}
+
 function contentDispositionFilename(filename: string): string {
   return filename.replace(/"/g, "'");
 }
@@ -61,12 +65,17 @@ async function parseCapture(captureId: string) {
   try {
     const imageBuffer = await fs.readFile(capture.storedPath);
     const parsed = await parseReceiptImage(imageBuffer, capture.mimeType);
+    const primaryAmount = parsed.amountNet ?? parsed.amountGross;
     const updated = await prisma.receiptCapture.update({
       where: { id: captureId },
       data: {
         status: ReceiptCaptureStatus.PARSED,
         parsedVendor: parsed.vendor,
-        parsedAmount: parsed.amount,
+        parsedAmount: primaryAmount,
+        parsedAmountGross: parsed.amountGross,
+        parsedAmountNet: parsed.amountNet,
+        parsedVatAmount: parsed.vatAmount,
+        parsedVatRate: parsed.vatRate,
         parsedDate: parsed.date ? new Date(parsed.date) : null,
         parsedCurrency: parsed.currency,
         parsedDescription: parsed.description,
@@ -77,7 +86,7 @@ async function parseCapture(captureId: string) {
         parsedAt: new Date(),
       },
     });
-    console.log(`[RECEIPT] Parsed capture ${capture.id}: ${parsed.vendor ?? "Unknown"} £${((parsed.amount ?? 0) / 100).toFixed(2)}`);
+    console.log(`[RECEIPT] Parsed capture ${capture.id}: ${parsed.vendor ?? "Unknown"} net £${((primaryAmount ?? 0) / 100).toFixed(2)}`);
     return updated;
   } catch (err) {
     console.error(`[RECEIPT] Parse failed for ${capture.id}:`, err instanceof Error ? err.message : err);
@@ -187,11 +196,24 @@ router.get("/:captureId/file", async (req: Request, res: Response): Promise<void
 
 router.patch("/:captureId", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as Record<string, unknown>;
+  const parsedAmountGross = intPence(body.parsedAmountGross);
+  const parsedAmountNet = intPence(body.parsedAmountNet);
+  const parsedVatAmount = intPence(body.parsedVatAmount);
+  const parsedVatRate = body.parsedVatRate === undefined
+    ? undefined
+    : body.parsedVatRate === null || body.parsedVatRate === ""
+      ? null
+      : Number(body.parsedVatRate);
+  const parsedAmount = intPence(body.parsedAmount) ?? parsedAmountNet ?? parsedAmountGross;
   const updated = await prisma.receiptCapture.update({
     where: { id: req.params.captureId },
     data: {
       parsedVendor: body.parsedVendor as string | null | undefined,
-      parsedAmount: intPence(body.parsedAmount),
+      parsedAmount,
+      parsedAmountGross,
+      parsedAmountNet,
+      parsedVatAmount,
+      parsedVatRate: Number.isFinite(parsedVatRate) || parsedVatRate === null || parsedVatRate === undefined ? parsedVatRate : undefined,
       parsedDate: dateValue(body.parsedDate),
       parsedDescription: body.parsedDescription as string | null | undefined,
       parsedAicpSection: body.parsedAicpSection as string | null | undefined,
@@ -219,6 +241,7 @@ router.patch("/:captureId/assign", async (req: Request, res: Response): Promise<
   const basePath = await ensureProductionFolders(body.productionId);
   const destination = path.join(basePath, "Receipts", capture.storedFilename);
   await fs.rename(capture.storedPath, destination);
+  const receiptAmount = primaryReceiptAmount(capture);
 
   try {
     const jobFile = await prisma.jobFile.create({
@@ -232,7 +255,7 @@ router.patch("/:captureId/assign", async (req: Request, res: Response): Promise<
         linkedBudgetLineId: body.lineItemId,
         isReceipt: true,
         receiptVendor: capture.parsedVendor,
-        receiptAmount: capture.parsedAmount,
+        receiptAmount,
         receiptDate: capture.parsedDate,
         notes: capture.parsedDescription,
       },
@@ -241,7 +264,7 @@ router.patch("/:captureId/assign", async (req: Request, res: Response): Promise<
       data: {
         lineItemId: body.lineItemId,
         supplierName: capture.parsedVendor || "Unknown vendor",
-        amount: (capture.parsedAmount ?? 0) / 100,
+        amount: (receiptAmount ?? 0) / 100,
         dateReceived: capture.parsedDate,
         status: InvoiceStatus.PAID,
         jobFileId: jobFile.id,

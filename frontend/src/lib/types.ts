@@ -374,6 +374,10 @@ export interface ReceiptCapture {
   storedPath: string;
   parsedVendor?: string | null;
   parsedAmount?: number | null;
+  parsedAmountGross?: number | null;
+  parsedAmountNet?: number | null;
+  parsedVatAmount?: number | null;
+  parsedVatRate?: number | null;
   parsedDate?: string | null;
   parsedCurrency: string;
   parsedDescription?: string | null;

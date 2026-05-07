@@ -27,6 +27,32 @@
   - date: `2026-05-07`
   - confidence: `high`
 
+### Receipt Net / Gross / VAT Fix
+- Receipt parsing now extracts:
+  - `amountGross` — total including VAT, in pence.
+  - `amountNet` — ex-VAT amount, in pence, primary for budget spend.
+  - `vatAmount` — VAT value, in pence.
+  - `vatRate` — VAT percentage.
+- `ReceiptCapture` stores these as:
+  - `parsedAmountGross`
+  - `parsedAmountNet`
+  - `parsedVatAmount`
+  - `parsedVatRate`
+- Existing `parsedAmount` remains for compatibility and is populated from `parsedAmountNet`, falling back to `parsedAmountGross`.
+- Assignment to budget line invoices now uses net ex-VAT amount first, then gross fallback.
+- JobFile `receiptAmount` continues to store the primary budget amount, now net ex-VAT where available.
+- Dashboard receipt review panel shows:
+  - editable `Amount (ex-VAT)` when VAT is present
+  - read-only VAT amount/rate
+  - read-only total including VAT
+  - a single Amount field when no VAT breakdown exists.
+- Migration applied: `20260507143000_receipt_net_gross_vat`.
+- Direct compiled-parser smoke test passed against a generated VAT invoice PDF:
+  - gross: `12000` pence
+  - net: `10000` pence
+  - VAT: `2000` pence
+  - VAT rate: `20`
+
 ### Built
 - Added backend receipt parsing infrastructure.
   - Installed `@anthropic-ai/sdk`.
@@ -76,9 +102,11 @@
 ### Verification
 - Migration applied: `20260507120000_phase7_receipt_capture`.
 - Prisma client regenerated.
+- Migration applied: `20260507143000_receipt_net_gross_vat`.
 - Backend build passes: `cd backend && npm run build`.
 - PDF parser smoke test passes against the compiled parser with a generated PDF invoice.
 - Invoice-style PDF parser smoke test passes against the compiled parser with a generated unlimited.bond final invoice PDF.
+- VAT breakdown PDF parser smoke test passes against the compiled parser.
 - Frontend build passes: `cd frontend && npm run build`.
 - Frontend bundle copied to `/var/www/agent`.
 - API reloaded with `pm2 reload 0 --update-env`.

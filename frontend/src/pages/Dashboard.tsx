@@ -78,7 +78,20 @@ const AICP_SECTIONS = [
 ] as const;
 
 function receiptAmount(capture: ReceiptCapture) {
-  return capture.parsedAmount !== null && capture.parsedAmount !== undefined ? `£${(capture.parsedAmount / 100).toFixed(2)}` : "Amount unknown";
+  const amount = primaryReceiptAmount(capture);
+  return amount !== null ? `£${(amount / 100).toFixed(2)}` : "Amount unknown";
+}
+
+function primaryReceiptAmount(capture: ReceiptCapture): number | null {
+  return capture.parsedAmountNet ?? capture.parsedAmount ?? capture.parsedAmountGross ?? null;
+}
+
+function penceToPoundsInput(value: number | null | undefined): string {
+  return value !== null && value !== undefined ? (value / 100).toFixed(2) : "";
+}
+
+function formatPence(value: number | null | undefined): string {
+  return value !== null && value !== undefined ? formatCurrency(value / 100) : "—";
 }
 
 function toBase64(file: File): Promise<string> {
@@ -480,7 +493,7 @@ function ReceiptReviewPanel({ capture, pendingReceipts, onClose, onChange, onAss
 }) {
   const navigate = useNavigate();
   const [vendor, setVendor] = useState(capture.parsedVendor ?? "");
-  const [amount, setAmount] = useState(capture.parsedAmount !== null && capture.parsedAmount !== undefined ? (capture.parsedAmount / 100).toFixed(2) : "");
+  const [amount, setAmount] = useState(penceToPoundsInput(primaryReceiptAmount(capture)));
   const [date, setDate] = useState(capture.parsedDate ? capture.parsedDate.slice(0, 10) : "");
   const [section, setSection] = useState(capture.parsedAicpSection ?? "");
   const [productions, setProductions] = useState<Production[]>([]);
@@ -513,7 +526,7 @@ function ReceiptReviewPanel({ capture, pendingReceipts, onClose, onChange, onAss
 
   useEffect(() => {
     setVendor(capture.parsedVendor ?? "");
-    setAmount(capture.parsedAmount !== null && capture.parsedAmount !== undefined ? (capture.parsedAmount / 100).toFixed(2) : "");
+    setAmount(penceToPoundsInput(primaryReceiptAmount(capture)));
     setDate(capture.parsedDate ? capture.parsedDate.slice(0, 10) : "");
     setSection(capture.parsedAicpSection ?? "");
     setSelectedProductionId(capture.productionId ?? "");
@@ -552,9 +565,15 @@ function ReceiptReviewPanel({ capture, pendingReceipts, onClose, onChange, onAss
   }, [capture.id, capture.status, onChange]);
 
   async function saveParsedFields() {
+    const amountPence = amount ? Math.round(Number(amount) * 100) : null;
+    const hasVatBreakdown = capture.parsedVatAmount !== null && capture.parsedVatAmount !== undefined;
     return api.patch<ReceiptCapture>(`/api/receipts/${capture.id}`, {
       parsedVendor: vendor.trim() || null,
-      parsedAmount: amount ? Math.round(Number(amount) * 100) : null,
+      parsedAmount: amountPence,
+      parsedAmountNet: hasVatBreakdown ? amountPence : capture.parsedAmountNet ?? null,
+      parsedAmountGross: hasVatBreakdown ? capture.parsedAmountGross ?? null : amountPence,
+      parsedVatAmount: capture.parsedVatAmount ?? null,
+      parsedVatRate: capture.parsedVatRate ?? null,
       parsedDate: date || null,
       parsedAicpSection: section || null,
     });
@@ -599,6 +618,7 @@ function ReceiptReviewPanel({ capture, pendingReceipts, onClose, onChange, onAss
   const confidenceClass = confidence === "high" ? "bg-emerald-500" : confidence === "medium" ? "bg-amber-500" : "bg-red-500";
   const selectedProduction = productions.find((production) => production.id === selectedProductionId);
   const selectedLine = lineOptions.find((entry) => entry.line.id === lineItemId);
+  const hasVatBreakdown = capture.parsedVatAmount !== null && capture.parsedVatAmount !== undefined;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/20 md:items-stretch md:justify-end">
@@ -651,12 +671,24 @@ function ReceiptReviewPanel({ capture, pendingReceipts, onClose, onChange, onAss
               <label className="block text-xs text-gray-500">Vendor
                 <input value={vendor} onChange={(event) => setVendor(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900" />
               </label>
-              <label className="block text-xs text-gray-500">Amount
+              <label className="block text-xs text-gray-500">{hasVatBreakdown ? "Amount (ex-VAT)" : "Amount"}
                 <div className="mt-1 flex min-h-11 items-center rounded-lg border border-gray-200 px-3">
                   <span className="text-sm text-gray-500">£</span>
                   <input value={amount} type="number" step="0.01" onChange={(event) => setAmount(event.target.value)} className="min-h-10 flex-1 border-0 px-2 text-sm outline-none" />
                 </div>
               </label>
+              {hasVatBreakdown && (
+                <div className="rounded-lg bg-gray-50 p-3 text-xs text-gray-500">
+                  <div className="flex justify-between gap-3">
+                    <span>VAT{capture.parsedVatRate !== null && capture.parsedVatRate !== undefined ? ` (${capture.parsedVatRate}%)` : ""}</span>
+                    <span>{formatPence(capture.parsedVatAmount)}</span>
+                  </div>
+                  <div className="mt-1 flex justify-between gap-3">
+                    <span>Total inc. VAT</span>
+                    <span>{formatPence(capture.parsedAmountGross)}</span>
+                  </div>
+                </div>
+              )}
               <label className="block text-xs text-gray-500">Date
                 <input value={date} type="date" onChange={(event) => setDate(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900" />
               </label>
