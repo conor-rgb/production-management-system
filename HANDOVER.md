@@ -2,6 +2,109 @@
 
 ## Built This Session
 
+## Phase 7.6 — Integrated Calendar — 2026-05-07
+
+### Built
+- Added unified calendar backend storage.
+  - New `CalendarEventType` enum mapped to `pms_calendar_event_type`.
+  - New `CalendarEvent` model mapped to `pms_calendar_events`.
+  - Calendar events can stand alone or link to productions, production dates, opportunities, and contact IDs.
+  - Google Calendar metadata is stored per event: event ID, calendar ID, sync direction, and last sync time.
+  - Added relations from Production and Opportunity to CalendarEvent.
+- Added migration `20260507150000_phase76_calendar_events`.
+  - Removed the generated unrelated `DROP TABLE pms_sessions` before applying.
+  - Migration deployed successfully.
+- Added backend calendar sync services.
+  - `syncProductionDatesToCalendar()` creates/updates calendar events from existing ProductionDate records and removes stale production-date-backed events.
+  - `syncOpportunityFollowUpsToCalendar()` creates/updates active opportunity follow-up calendar events and removes Won/Lost/null follow-up events.
+  - `syncFromGoogleCalendar(account)` pulls Google Calendar events into local CalendarEvent records.
+  - `pushToGoogleCalendar(account, event)` pushes local events to Google Calendar.
+  - `deleteGoogleCalendarEvent(account, event)` removes synced Google events.
+  - Helper functions: event type labels/icons and deterministic production colors by job code.
+- Added `getPrimaryAccount()` in `googleCalendarService`.
+- Added Calendar API under `/api/calendar`.
+  - `GET /api/calendar/events`
+  - `GET /api/calendar/events/today`
+  - `GET /api/calendar/events/upcoming`
+  - `GET /api/calendar/events/:eventId/linked`
+  - `POST /api/calendar/events`
+  - `PATCH /api/calendar/events/:eventId`
+  - `DELETE /api/calendar/events/:eventId`
+  - `POST /api/calendar/sync`
+- Added app startup calendar sync.
+  - Startup sync runs production dates, opportunity follow-ups, and Google Calendar pull.
+  - Google Calendar pull repeats every 5 minutes.
+  - All failures are logged with `[CALENDAR]` and do not block app startup.
+- Hooked source record changes into calendar sync.
+  - Production date create/update/delete re-syncs CalendarEvent records.
+  - Production date create/update attempts a fire-and-forget Google push when a primary Google account exists.
+  - Opportunity create/update/stage changes re-sync follow-up events.
+  - Won/Lost opportunities remove follow-up calendar events through the sync cleanup path.
+- Expanded Google OAuth scopes to include:
+  - `https://www.googleapis.com/auth/calendar.events`
+  - `https://www.googleapis.com/auth/calendar.readonly`
+  - Existing connected Google accounts need reconnecting before Google Calendar sync has these scopes.
+- Added frontend calendar dependencies:
+  - `react-big-calendar`
+  - `date-fns`
+  - `@types/react-big-calendar`
+- Added shared frontend calendar component at `frontend/src/components/calendar/CalendarView.tsx`.
+  - Custom Fantastical-style month dot grid.
+  - React Big Calendar week/day time-grid views.
+  - Agenda/list view grouped by date.
+  - Event detail panel.
+  - Add/edit event panel with production, opportunity, and contact search.
+  - Production-scoped filtering for production record Dates tab.
+- Added full-screen Calendar page at `/calendar`.
+  - Desktop navigation item between Productions and Budgets.
+  - Mobile appears under More.
+- Replaced Dashboard Today's Agenda with a mini calendar widget.
+  - Compact month grid with event dots.
+  - Upcoming event list below.
+  - View Calendar link.
+- Added Calendar toggle to Production Dates tab.
+  - List view remains existing production date list.
+  - Calendar view shows the same shared calendar filtered to that production.
+- Added Settings → Calendar section.
+  - `Sync all` button calls `POST /api/calendar/sync`.
+- Added `GOOGLE_CALENDAR_ID` to `CLAUDE.md` environment docs. It is optional and defaults to `primary`.
+
+### Decisions
+- CalendarEvent is the unified source for frontend display.
+- ProductionDate remains the operational production date model; sync mirrors it into CalendarEvent.
+- Creating a production-linked standard calendar event also creates a ProductionDate so production records stay complete.
+- Month view uses a custom dot grid rather than React Big Calendar month event blocks because the requested UI needs dots only.
+- React Big Calendar is used for week/day views where timed event blocks are useful.
+- Google Calendar sync is best-effort. Local event creation/update/delete succeeds even if Google push/pull fails.
+
+### Verification
+- Prisma migration applied: `20260507150000_phase76_calendar_events`.
+- Prisma client regenerated.
+- Backend build passes: `cd backend && npm run build`.
+- Frontend build passes: `cd frontend && npm run build`.
+- Frontend bundle copied to `/var/www/agent`.
+- API reloaded with `pm2 reload 0 --update-env`.
+- API health check passes at `http://localhost:3000/api/health`.
+- Startup logs show:
+  - `[CALENDAR] Synced 0 production dates to calendar events`
+  - `[CALENDAR] Synced 0 opportunity follow-ups to calendar events`
+  - `[CALENDAR] Google Calendar sync complete`
+
+### Known Issues / Technical Debt
+- Google Calendar pull currently logs `403 insufficient authentication scopes` for the existing Google account. This is expected because the account was connected before Calendar scopes were added. Reconnect Gmail in Settings → Email, then run Settings → Calendar → Sync all.
+- Google Calendar push/delete is implemented, but end-to-end Google write testing needs reconnecting with the new scopes first.
+- Contact links are stored as `contactIds` and exposed in `/linked`, but the first event detail panel does not yet render contact chips.
+- Production date people are not yet mirrored from CalendarEvent contact IDs into ProductionDatePerson when creating events from the calendar.
+- Browser screenshot testing at 390px was not run. Builds passed and mobile layouts use full-screen/bottom-sheet patterns.
+
+### Exact Next Step For Phase 8
+Start FreeAgent + Automations:
+1. Reconnect Gmail once to grant Calendar scopes, then run Settings → Calendar → Sync all.
+2. Add FreeAgent OAuth connection management in Settings.
+3. Pull invoice status into Production records and Dashboard outstanding invoices.
+4. Implement Wrapped production invoice prompt to create a FreeAgent invoice draft from budget totals.
+5. Add weekly digest cron job including calendar events, follow-ups, over-accrual alerts, and invoice status.
+
 ## Phase 7 — Receipt Capture — 2026-05-07
 
 ### PDF Receipt Parsing Fix

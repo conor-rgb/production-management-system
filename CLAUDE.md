@@ -104,6 +104,7 @@ EMAIL_ENCRYPTION_KEY            # Exactly 32 characters — AES-256 for token en
 GOOGLE_CLIENT_ID                # Google Cloud OAuth2 client ID
 GOOGLE_CLIENT_SECRET            # Google Cloud OAuth2 client secret
 GOOGLE_REDIRECT_URI             # https://agent.unlimited.bond/api/email/oauth/google/callback
+GOOGLE_CALENDAR_ID              # Optional Google Calendar ID, defaults to primary
 EMAIL_SYNC_DAYS                 # Days of email to sync (default: 7)
 EMAIL_SYNC_LIMIT                # Max messages per sync (default: 200)
 ANTHROPIC_API_KEY               # Claude API for receipt parsing
