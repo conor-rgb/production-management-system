@@ -4,14 +4,26 @@
 
 ## Phase 7 — Receipt Capture — 2026-05-07
 
+### PDF Receipt Parsing Fix
+- Fixed PDF receipt parsing in `backend/src/services/receiptParser.ts`.
+- PDFs now go to Anthropic as a `document` content block with `media_type: application/pdf`.
+- Images still go through the existing `image` content block.
+- The parser now shares one receipt prompt and one JSON response parser across PDF and image inputs.
+- Backend TypeScript build passes after the change.
+- Direct parser smoke test passed using a generated PDF invoice:
+  - vendor: `Acme Taxi Ltd`
+  - amount: `2450` pence
+  - date: `2026-05-07`
+  - suggested section: `D` / `Location & Travel`
+
 ### Built
 - Added backend receipt parsing infrastructure.
   - Installed `@anthropic-ai/sdk`.
   - Added `backend/src/services/receiptParser.ts`.
-  - Uses Claude model `claude-opus-4-5` for image receipt parsing.
+  - Uses Claude model `claude-opus-4-5` for image and PDF receipt parsing.
   - Extracts vendor, amount in pence, date, currency, description, suggested AICP section, confidence, and raw text.
   - If `ANTHROPIC_API_KEY` is missing, parsing fails gracefully with `API key not configured`.
-  - PDF receipt capture is accepted and can be assigned manually, but AI parsing currently fails gracefully because the Anthropic image path cannot parse PDFs as images.
+  - PDF receipt parsing uses Claude's document content block with native `application/pdf` support instead of the image endpoint.
 - Added receipt capture schema.
   - New `ReceiptCaptureStatus` enum.
   - New `ReceiptCapture` model mapped to `pms_receipt_captures`.
@@ -54,13 +66,14 @@
 - Migration applied: `20260507120000_phase7_receipt_capture`.
 - Prisma client regenerated.
 - Backend build passes: `cd backend && npm run build`.
+- PDF parser smoke test passes against the compiled parser with a generated PDF invoice.
 - Frontend build passes: `cd frontend && npm run build`.
 - Frontend bundle copied to `/var/www/agent`.
 - API reloaded with `pm2 reload 0 --update-env`.
 - API health check passes at `http://localhost:3000/api/health`.
 
 ### Known Gaps / Technical Debt
-- AI parsing currently supports receipt images only. PDF receipts are accepted into the queue and can be manually assigned, but AI parse returns a failed state.
+- PDF receipt parsing now uses Claude's native document API path. A browser upload of a real PDF invoice should be used as the final live smoke test after deployment.
 - Receipt review panel currently lives on Dashboard. Opening a receipt file from Production Files shows receipt metadata in the file preview but does not open the full Dashboard review panel.
 - Budget invoice rows were not rebuilt in this pass; receipt-created invoices are created and visible through existing invoice data, but a dedicated camera icon/modal inside the budget invoice stack still needs a UI pass.
 - Offline queue uses localStorage and warns on files over 5MB; this is pragmatic for v1 but IndexedDB would be more robust for repeated large receipt captures.
