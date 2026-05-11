@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import DOMPurify from "dompurify";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import TiptapLink from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
-import { Bold, Italic, Link2, List, ListOrdered, Paperclip, Send, Underline as UnderlineIcon, X } from "lucide-react";
+import { Bell, Maximize2, Minimize2, Paperclip, Send, Type, X } from "lucide-react";
 import { api } from "../../lib/api";
+import type { EmailAccount } from "../../lib/types";
 import { useDrafts, type Draft } from "../../store/draftStore";
 
 type ContactSuggestion = {
@@ -20,76 +22,51 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
-function draftTitle(draft: Draft) {
-  return draft.subject.trim() || (draft.replyToThreadId ? "Reply" : "New message");
+function titleForDraft(draft: Draft) {
+  const base = draft.subject.trim() || (draft.replyToThreadId ? "Reply" : "New message");
+  if (draft.replyToThreadId && !base.toLowerCase().startsWith("re:")) return `Re: ${base}`;
+  return base;
 }
 
-function linkedRecordLabel(draft: Draft) {
-  if (draft.linkedOpportunity) return `${draft.linkedOpportunity.title || draft.linkedOpportunity.clientName || "Opportunity"} [Opportunity]`;
-  if (draft.linkedProduction) {
-    const title = [draft.linkedProduction.jobCode, draft.linkedProduction.clientName || draft.linkedProduction.title].filter(Boolean).join(" ");
-    return `${title || "Production"} [Production]`;
-  }
-  return "";
+function iconButtonClass(disabled = false) {
+  return `grid min-h-7 min-w-7 place-items-center rounded ${disabled ? "cursor-not-allowed text-gray-300" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`;
 }
 
-function EditorButton({ active, onClick, children, title }: { active?: boolean; onClick: () => void; children: React.ReactNode; title: string }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      className={`grid min-h-7 min-w-7 place-items-center rounded text-[11px] ${active ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-100"}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function RecipientInput({ label, values, onChange }: { label: string; values: string[]; onChange: (values: string[]) => void }) {
-  const [query, setQuery] = useState("");
+function RecipientInput({ value, onChange, placeholder }: { value: string[]; onChange: (value: string[]) => void; placeholder: string }) {
+  const [inputValue, setInputValue] = useState("");
   const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    if (query.trim().length < 2) {
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    if (inputValue.trim().length < 2) {
       setSuggestions([]);
-      return;
+      return undefined;
     }
-    const timer = window.setTimeout(() => {
-      api.get<ContactSuggestion[]>(`/api/contacts?search=${encodeURIComponent(query.trim())}&limit=8`)
+    timerRef.current = window.setTimeout(() => {
+      api.get<ContactSuggestion[]>(`/api/contacts?search=${encodeURIComponent(inputValue.trim())}&limit=6`)
         .then((items) => {
-          if (!cancelled) {
-            setSuggestions(items.filter((item) => item.email));
-            setActiveIndex(0);
-          }
+          setSuggestions(items.filter((item) => item.email));
+          setActiveIndex(0);
         })
-        .catch(() => {
-          if (!cancelled) setSuggestions([]);
-        });
-    }, 180);
+        .catch(() => setSuggestions([]));
+    }, 250);
     return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
+      if (timerRef.current) window.clearTimeout(timerRef.current);
     };
-  }, [query]);
+  }, [inputValue]);
 
-  function addAddress(raw: string) {
+  function addRecipient(raw: string) {
     const email = raw.trim().replace(/,$/, "").toLowerCase();
-    if (!email || !isValidEmail(email)) return;
-    if (!values.includes(email)) onChange([...values, email]);
-    setQuery("");
+    if (!isValidEmail(email)) return;
+    if (!value.includes(email)) onChange([...value, email]);
+    setInputValue("");
     setSuggestions([]);
   }
 
-  function addSuggestion(contact: ContactSuggestion) {
-    if (contact.email) addAddress(contact.email);
-  }
-
-  function removeAddress(email: string) {
-    onChange(values.filter((value) => value !== email));
+  function removeRecipient(email: string) {
+    onChange(value.filter((item) => item !== email));
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -107,86 +84,113 @@ function RecipientInput({ label, values, onChange }: { label: string; values: st
       setSuggestions([]);
       return;
     }
-    if (event.key === "Enter" || event.key === ",") {
+    if ((event.key === "Enter" || event.key === ",") && inputValue.trim()) {
       event.preventDefault();
       const suggestion = suggestions[activeIndex];
-      if (suggestion) addSuggestion(suggestion);
-      else addAddress(query);
+      addRecipient(suggestion?.email ?? inputValue);
+      return;
+    }
+    if (event.key === "Backspace" && !inputValue && value.length) {
+      removeRecipient(value[value.length - 1]);
     }
   }
 
   return (
-    <div className="relative flex min-h-9 items-start gap-2 border-b border-gray-100 px-3 py-1.5 text-xs">
-      <span className="mt-1 w-8 shrink-0 text-gray-400">{label}:</span>
-      <div className="flex min-w-0 flex-1 flex-wrap gap-1">
-        {values.map((email) => (
-          <span key={email} title={email} className="inline-flex max-w-[180px] items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-[11px] text-gray-700">
-            <span className="truncate">{email}</span>
-            <button type="button" onClick={() => removeAddress(email)} className="text-gray-400 hover:text-gray-900">×</button>
-          </span>
-        ))}
+    <div className="flex flex-1 flex-wrap items-center gap-1 py-1">
+      {value.map((email) => (
+        <span key={email} className="inline-flex max-w-[190px] items-center gap-1 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-xs text-gray-900" title={email}>
+          <span className="truncate">{email}</span>
+          <button type="button" onClick={() => removeRecipient(email)} className="text-gray-400 hover:text-gray-900">×</button>
+        </span>
+      ))}
+      <div className="relative min-w-[100px] flex-1">
         <input
-          ref={inputRef}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          value={inputValue}
+          onChange={(event) => setInputValue(event.target.value)}
           onKeyDown={handleKeyDown}
-          onBlur={() => {
-            if (query.trim() && isValidEmail(query)) addAddress(query);
-          }}
-          placeholder={values.length ? "" : "name@example.com"}
-          className="min-h-7 min-w-[120px] flex-1 border-0 bg-transparent text-xs outline-none"
+          placeholder={value.length === 0 ? placeholder : ""}
+          className="min-h-7 w-full border-0 bg-transparent text-[13px] text-gray-900 outline-none placeholder:text-gray-400"
         />
+        {suggestions.length > 0 && (
+          <div className="absolute left-0 top-full z-[700] mt-1 min-w-60 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg">
+            {suggestions.map((contact, index) => {
+              const name = `${contact.firstName}${contact.lastName ? ` ${contact.lastName}` : ""}`.trim();
+              return (
+                <button
+                  key={contact.id}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => addRecipient(contact.email ?? "")}
+                  className={`flex min-h-10 w-full items-center gap-2 px-3 text-left ${index === activeIndex ? "bg-gray-100" : "hover:bg-gray-50"}`}
+                >
+                  <span className="text-xs font-medium text-gray-900">{name || contact.email}</span>
+                  <span className="truncate text-[11px] text-gray-400">{contact.email}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
-      {suggestions.length > 0 && (
-        <div className="absolute left-12 top-full z-[1200] mt-1 w-72 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg">
-          {suggestions.map((contact, index) => {
-            const name = `${contact.firstName}${contact.lastName ? ` ${contact.lastName}` : ""}`;
-            return (
-              <button
-                key={contact.id}
-                type="button"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => addSuggestion(contact)}
-                className={`flex min-h-11 w-full items-center gap-2 px-3 text-left ${index === activeIndex ? "bg-gray-100" : "hover:bg-gray-50"}`}
-              >
-                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gray-900 text-[10px] font-medium text-white">
-                  {(name || contact.email || "?").slice(0, 2).toUpperCase()}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-medium text-gray-900">{name || contact.email}</span>
-                  <span className="block truncate text-[11px] text-gray-500">{contact.email}{contact.company?.name ? ` · ${contact.company.name}` : ""}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
 
-function DraftComposerWindow({ draft }: { draft: Draft }) {
-  const { updateDraft, minimizeDraft, closeDraft, sendDraft, isSending } = useDrafts();
-  const [ccVisible, setCcVisible] = useState(draft.cc.length > 0);
-  const [bccVisible, setBccVisible] = useState(draft.bcc.length > 0);
-  const [signatureVisible, setSignatureVisible] = useState(true);
-  const [signature, setSignature] = useState("Conor | unlimited.bond");
+function FormatButton({ active, onClick, label, className = "" }: { active?: boolean; onClick: () => void; label: string; className?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`grid min-h-7 min-w-7 place-items-center rounded text-xs ${active ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-100"} ${className}`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function MinimizedTab({ draft, isExpanded, onToggle, onClose }: { draft: Draft; isExpanded: boolean; onToggle: () => void; onClose: (event: MouseEvent<HTMLElement>) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`flex h-9 min-w-36 max-w-[220px] items-center gap-1.5 rounded-t-md border border-b-0 px-3 text-left text-xs shadow-sm ${isExpanded ? "border-[#1a1a1f] bg-[#1a1a1f] font-medium text-white" : "border-gray-200 bg-white text-gray-900"}`}
+    >
+      <span className="min-w-0 flex-1 truncate">{draft.replyToThreadId ? "↩ " : ""}{titleForDraft(draft)}</span>
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={onClose}
+        className={isExpanded ? "text-white/60 hover:text-white" : "text-gray-400 hover:text-gray-900"}
+      >
+        ×
+      </span>
+    </button>
+  );
+}
+
+function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: string }) {
+  const { updateDraft, minimizeDraft, closeDraft, sendDraft, isSending, quotedHtmlByDraftId } = useDrafts();
+  const [showCc, setShowCc] = useState(draft.cc.length > 0);
+  const [showBcc, setShowBcc] = useState(draft.bcc.length > 0);
+  const [showFormatting, setShowFormatting] = useState(false);
+  const [showQuoted, setShowQuoted] = useState(false);
+  const [showSignature, setShowSignature] = useState(true);
+  const [signature, setSignature] = useState("");
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const quotedHtml = quotedHtmlByDraftId[draft.id] ?? "";
   const sending = Boolean(isSending[draft.id]);
-  const isReply = Boolean(draft.replyToThreadId);
 
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Underline,
       TiptapLink.configure({ openOnClick: false }),
-      Placeholder.configure({ placeholder: "Write a message..." }),
+      Underline,
+      Placeholder.configure({ placeholder: "Enter text" }),
     ],
     content: draft.bodyHtml || "",
     onUpdate: ({ editor: activeEditor }) => updateDraft(draft.id, { bodyHtml: activeEditor.getHTML() }),
     editorProps: {
       attributes: {
-        class: "min-h-[130px] flex-1 outline-none text-sm leading-6",
+        class: "min-h-[120px] outline-none text-[13px] leading-6 text-gray-900",
       },
     },
   });
@@ -201,12 +205,8 @@ function DraftComposerWindow({ draft }: { draft: Draft }) {
     if (editor && draft.bodyHtml !== editor.getHTML()) editor.commands.setContent(draft.bodyHtml || "");
   }, [draft.bodyHtml, editor]);
 
-  const isDirty = useMemo(() => {
-    const plain = editor?.getText().trim() ?? "";
-    return plain.length > 0 || draft.to.length > 0 || draft.cc.length > 0 || draft.bcc.length > 0 || draft.subject.trim().length > 0;
-  }, [draft, editor]);
-
-  function requestClose() {
+  function handleClose() {
+    const isDirty = (editor?.getText().trim().length ?? 0) > 0 || draft.to.length > 0 || draft.subject.trim().length > 0;
     if (isDirty && !confirmDiscard) {
       setConfirmDiscard(true);
       return;
@@ -215,80 +215,114 @@ function DraftComposerWindow({ draft }: { draft: Draft }) {
   }
 
   return (
-    <section className="flex max-h-[480px] w-[480px] flex-col overflow-hidden rounded-t-lg bg-white shadow-[0_-4px_24px_rgba(0,0,0,0.12)] pointer-events-auto max-md:fixed max-md:inset-0 max-md:z-[1100] max-md:h-screen max-md:max-h-none max-md:w-full max-md:rounded-none">
-      <header className="flex h-10 shrink-0 items-center gap-2 bg-[#1a1a1f] px-3 text-white max-md:h-12">
-        <button type="button" onClick={() => minimizeDraft(draft.id)} className="hidden min-h-9 text-xs text-white/80 max-md:block">←</button>
-        <h2 className="min-w-0 flex-1 truncate text-xs font-medium">{draftTitle(draft)}</h2>
-        <button type="button" onClick={() => minimizeDraft(draft.id)} className="grid min-h-8 min-w-8 place-items-center rounded hover:bg-white/10 max-md:hidden">−</button>
-        <button type="button" onClick={requestClose} className="grid min-h-8 min-w-8 place-items-center rounded hover:bg-white/10"><X size={15} /></button>
+    <section className="mb-0 flex max-h-[560px] w-[480px] flex-col overflow-hidden rounded-t-lg bg-white shadow-[0_-4px_32px_rgba(0,0,0,0.12),0_0_0_0.5px_rgba(0,0,0,0.12)] pointer-events-auto max-md:w-[calc(100vw-24px)]">
+      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-gray-200 px-3">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-gray-900">{titleForDraft(draft)}</span>
+        <button type="button" onClick={() => minimizeDraft(draft.id)} className={iconButtonClass()} title="Minimize"><Minimize2 size={14} /></button>
+        <button type="button" disabled className={iconButtonClass(true)} title="Full screen"><Maximize2 size={14} /></button>
+        <button type="button" onClick={handleClose} className="grid min-h-7 min-w-7 place-items-center rounded text-red-500 hover:bg-red-50" title="Close"><X size={14} /></button>
       </header>
 
-      {isReply && (
-        <div className="flex h-7 shrink-0 items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 text-[11px] text-gray-500">
-          <span className="min-w-0 flex-1 truncate">↩ Replying to thread: {draft.subject}</span>
-          <button type="button" onClick={() => { window.location.href = `/email?thread=${draft.replyToThreadId}`; }} className="min-h-7 text-gray-900 underline">View thread →</button>
+      {confirmDiscard && (
+        <div className="flex min-h-8 items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 text-[11px] text-amber-900">
+          <span className="flex-1">Discard this draft?</span>
+          <button type="button" onClick={() => setConfirmDiscard(false)} className="min-h-7 underline">Keep editing</button>
+          <button type="button" onClick={() => closeDraft(draft.id)} className="min-h-7 text-red-600 underline">Discard</button>
         </div>
       )}
 
-      <div className="shrink-0">
-        <RecipientInput label="To" values={draft.to} onChange={(to) => updateDraft(draft.id, { to })} />
-        <div className="flex min-h-8 items-center gap-3 border-b border-gray-100 px-3 text-[11px] text-blue-600">
-          <button type="button" onClick={() => setCcVisible((current) => !current)} className="min-h-7">{ccVisible ? "Hide CC" : "Add CC"}</button>
-          <button type="button" onClick={() => setBccVisible((current) => !current)} className="min-h-7">{bccVisible ? "Hide BCC" : "Add BCC"}</button>
+      <div className="border-b border-gray-200 px-3 pt-2">
+        <div className="flex min-h-8 items-start gap-1.5">
+          <span className="w-6 shrink-0 pt-1.5 text-xs text-gray-400">To</span>
+          <RecipientInput value={draft.to} onChange={(to) => updateDraft(draft.id, { to })} placeholder="Recipients" />
         </div>
-        {ccVisible && <RecipientInput label="Cc" values={draft.cc} onChange={(cc) => updateDraft(draft.id, { cc })} />}
-        {bccVisible && <RecipientInput label="Bcc" values={draft.bcc} onChange={(bcc) => updateDraft(draft.id, { bcc })} />}
-        <label className="flex min-h-9 items-center gap-2 border-b border-gray-100 px-3 text-xs">
-          <span className="w-14 shrink-0 text-gray-400">Subject:</span>
-          {isReply ? (
-            <span className="min-w-0 flex-1 truncate text-gray-700">{draft.subject}</span>
-          ) : (
-            <input value={draft.subject} onChange={(event) => updateDraft(draft.id, { subject: event.target.value })} className="min-h-8 flex-1 border-0 bg-transparent text-xs outline-none" />
+        {showCc && (
+          <div className="flex min-h-8 items-start gap-1.5">
+            <span className="w-6 shrink-0 pt-1.5 text-xs text-gray-400">Cc</span>
+            <RecipientInput value={draft.cc} onChange={(cc) => updateDraft(draft.id, { cc })} placeholder="CC recipients" />
+          </div>
+        )}
+        {showBcc && (
+          <div className="flex min-h-8 items-start gap-1.5">
+            <span className="w-6 shrink-0 pt-1.5 text-xs text-gray-400">Bcc</span>
+            <RecipientInput value={draft.bcc} onChange={(bcc) => updateDraft(draft.id, { bcc })} placeholder="BCC recipients" />
+          </div>
+        )}
+        <div className="flex gap-3 pb-2">
+          {!showCc && <button type="button" onClick={() => setShowCc(true)} className="min-h-6 text-[11px] text-gray-400 hover:text-gray-900">+ Cc</button>}
+          {!showBcc && <button type="button" onClick={() => setShowBcc(true)} className="min-h-6 text-[11px] text-gray-400 hover:text-gray-900">+ Bcc</button>}
+        </div>
+      </div>
+
+      {!draft.replyToThreadId && (
+        <input
+          value={draft.subject}
+          onChange={(event) => updateDraft(draft.id, { subject: event.target.value })}
+          placeholder="Subject"
+          className="h-9 shrink-0 border-b border-gray-200 bg-transparent px-3 text-[13px] text-gray-900 outline-none placeholder:text-gray-400"
+        />
+      )}
+
+      <div className="min-h-[120px] flex-1 overflow-auto px-3 py-3">
+        <EditorContent editor={editor} />
+      </div>
+
+      {draft.replyToThreadId && quotedHtml && (
+        <div className="px-3 py-1">
+          <button
+            type="button"
+            onClick={() => setShowQuoted((current) => !current)}
+            className="min-h-6 rounded border border-gray-200 px-2 text-xs tracking-[2px] text-gray-400 hover:bg-gray-50"
+          >
+            ···
+          </button>
+          {showQuoted && (
+            <div
+              className="mt-2 max-h-40 overflow-auto border-t border-gray-200 pt-2 text-xs text-gray-600"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(quotedHtml) }}
+            />
           )}
-        </label>
-        {linkedRecordLabel(draft) && (
-          <div className="flex min-h-8 items-center border-b border-gray-100 px-3 text-[11px]">
-            <span className="rounded bg-gray-900 px-2 py-1 text-white">→ {linkedRecordLabel(draft)}</span>
-          </div>
+        </div>
+      )}
+
+      <div className="border-t border-gray-200 px-3 pb-2">
+        <div className="flex items-center justify-between py-1.5">
+          <span className="text-[11px] text-gray-400">--</span>
+          <button type="button" onClick={() => setShowSignature((current) => !current)} className="min-h-6 text-[10px] text-gray-400 hover:text-gray-900">
+            {showSignature ? "Hide" : "Show"} signature
+          </button>
+        </div>
+        {showSignature && (
+          <div className="text-xs leading-5 text-gray-600" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(signature) }} />
         )}
       </div>
 
-      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-gray-100 px-2">
-        <EditorButton title="Bold" active={editor?.isActive("bold")} onClick={() => editor?.chain().focus().toggleBold().run()}><Bold size={14} /></EditorButton>
-        <EditorButton title="Italic" active={editor?.isActive("italic")} onClick={() => editor?.chain().focus().toggleItalic().run()}><Italic size={14} /></EditorButton>
-        <EditorButton title="Underline" active={editor?.isActive("underline")} onClick={() => editor?.chain().focus().toggleUnderline().run()}><UnderlineIcon size={14} /></EditorButton>
-        <span className="mx-1 h-4 w-px bg-gray-200" />
-        <EditorButton title="Bullet list" active={editor?.isActive("bulletList")} onClick={() => editor?.chain().focus().toggleBulletList().run()}><List size={14} /></EditorButton>
-        <EditorButton title="Numbered list" active={editor?.isActive("orderedList")} onClick={() => editor?.chain().focus().toggleOrderedList().run()}><ListOrdered size={14} /></EditorButton>
-        <span className="mx-1 h-4 w-px bg-gray-200" />
-        <EditorButton title="Link" active={editor?.isActive("link")} onClick={() => {
-          const href = window.prompt("Link URL");
-          if (href) editor?.chain().focus().setLink({ href }).run();
-        }}><Link2 size={14} /></EditorButton>
-      </div>
+      {showFormatting && (
+        <div className="flex gap-1 border-t border-gray-200 bg-gray-50 px-3 py-1.5">
+          <FormatButton label="B" active={editor?.isActive("bold")} onClick={() => editor?.chain().focus().toggleBold().run()} className="font-bold" />
+          <FormatButton label="I" active={editor?.isActive("italic")} onClick={() => editor?.chain().focus().toggleItalic().run()} className="italic" />
+          <FormatButton label="U" active={editor?.isActive("underline")} onClick={() => editor?.chain().focus().toggleUnderline().run()} className="underline" />
+          <span className="mx-1 h-5 w-px bg-gray-200" />
+          <FormatButton label="•" active={editor?.isActive("bulletList")} onClick={() => editor?.chain().focus().toggleBulletList().run()} />
+          <FormatButton label="1." active={editor?.isActive("orderedList")} onClick={() => editor?.chain().focus().toggleOrderedList().run()} />
+          <FormatButton label="🔗" active={editor?.isActive("link")} onClick={() => {
+            const href = window.prompt("Link URL");
+            if (href) editor?.chain().focus().setLink({ href }).run();
+          }} />
+        </div>
+      )}
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto px-3 py-2">
-        <EditorContent editor={editor} className="flex min-h-[130px] flex-1 text-sm [&_.ProseMirror]:min-h-[130px] [&_.ProseMirror]:w-full [&_.ProseMirror]:outline-none" />
-        {signatureVisible && (
-          <div className="mt-2 border-t border-gray-100 pt-2 text-xs text-gray-400">
-            <div className="flex"><span>--</span><button type="button" onClick={() => setSignatureVisible(false)} className="ml-auto min-h-6 underline">Hide</button></div>
-            {signature}
-          </div>
-        )}
-      </div>
-
-      <footer className="flex h-11 shrink-0 items-center gap-2 border-t border-gray-100 px-3">
-        {confirmDiscard ? (
-          <span className="flex flex-1 items-center gap-2 text-[11px] text-gray-600">Discard this draft? <button type="button" onClick={() => setConfirmDiscard(false)} className="min-h-8 underline">Keep</button><button type="button" onClick={requestClose} className="min-h-8 text-red-600 underline">Discard</button></span>
-        ) : (
-          <button type="button" onClick={requestClose} className="min-h-9 px-2 text-xs text-gray-500">Discard</button>
-        )}
-        <button type="button" disabled title="Attachments coming next" className="ml-auto grid min-h-9 min-w-9 place-items-center rounded text-gray-300"><Paperclip size={15} /></button>
+      <footer className="flex h-11 shrink-0 items-center gap-1 border-t border-gray-200 px-3">
+        <button type="button" disabled className={iconButtonClass(true)} title="Attach"><Paperclip size={16} /></button>
+        <button type="button" disabled className={iconButtonClass(true)} title="Reminder"><Bell size={16} /></button>
+        <button type="button" onClick={() => setShowFormatting((current) => !current)} className={iconButtonClass()} title="Formatting"><Type size={16} /></button>
+        <div className="flex-1" />
+        <span className="mr-2 max-w-[150px] truncate text-[10px] text-gray-400">{accountEmail}</span>
         <button
           type="button"
           onClick={() => sendDraft(draft.id).catch(() => undefined)}
           disabled={sending || draft.to.length === 0}
-          className="flex min-h-9 items-center gap-1 rounded bg-gray-900 px-3 text-xs font-medium text-white disabled:opacity-40"
+          className={`flex min-h-8 items-center gap-1.5 rounded-md px-4 text-[13px] font-medium ${sending || draft.to.length === 0 ? "cursor-not-allowed bg-gray-100 text-gray-400" : "bg-[#1a1a1f] text-white"}`}
         >
           {sending ? "Sending..." : <><Send size={13} /> Send →</>}
         </button>
@@ -298,71 +332,45 @@ function DraftComposerWindow({ draft }: { draft: Draft }) {
 }
 
 export function ComposerTray() {
-  const { drafts, openDraft, maximizeDraft, closeDraft, error, clearError } = useDrafts();
-  const expanded = drafts.filter((draft) => !draft.isMinimized);
-  const minimized = drafts.filter((draft) => draft.isMinimized);
+  const { drafts, expandedDraftId, toggleExpand, closeDraft, error, clearError } = useDrafts();
+  const [accountEmail, setAccountEmail] = useState("");
+  const expandedDraft = drafts.find((draft) => draft.id === expandedDraftId) ?? null;
+
+  useEffect(() => {
+    api.get<EmailAccount[]>("/api/email/accounts")
+      .then((accounts) => setAccountEmail(accounts.find((account) => account.isPrimary)?.emailAddress ?? accounts[0]?.emailAddress ?? ""))
+      .catch(() => setAccountEmail(""));
+  }, []);
 
   return (
     <>
       {error && (
-        <div className="fixed bottom-4 right-4 z-[1300] flex min-h-10 items-center gap-3 rounded-lg bg-red-600 px-3 text-xs text-white shadow-lg">
+        <div className="fixed bottom-14 right-4 z-[800] flex min-h-10 items-center gap-3 rounded-lg bg-red-600 px-3 text-xs text-white shadow-lg">
           <span>{error}</span>
           <button type="button" onClick={clearError} className="min-h-7 underline">Dismiss</button>
         </div>
       )}
-      <div className="fixed bottom-0 right-6 z-[1000] flex max-w-[calc(100vw-48px)] flex-col items-end gap-2 pointer-events-none max-md:right-3 max-md:max-w-[calc(100vw-24px)]">
-        <div className="flex items-end gap-3 pointer-events-none max-md:block">
-          {expanded.map((draft) => <DraftComposerWindow key={draft.id} draft={draft} />)}
-        </div>
-        {minimized.length > 0 && (
-          <div className="flex flex-wrap justify-end gap-2 pointer-events-auto max-md:hidden">
-            {minimized.map((draft) => (
-              <button
-                key={draft.id}
-                type="button"
-                onClick={() => maximizeDraft(draft.id)}
-                className="flex h-9 w-[220px] items-center gap-2 rounded-t-lg bg-[#1a1a1f] px-3 text-left text-xs font-medium text-white"
-              >
-                <span className="min-w-0 flex-1 truncate">{draftTitle(draft)}</span>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    closeDraft(draft.id);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.stopPropagation();
-                      closeDraft(draft.id);
-                    }
-                  }}
-                  className="text-white/70 hover:text-white"
-                >
-                  ×
-                </span>
-              </button>
-            ))}
+      <div className="fixed bottom-10 right-0 z-[500] flex flex-col items-end pointer-events-none">
+        {expandedDraft && (
+          <div className="pr-4 max-md:pr-3">
+            <ComposerWindow draft={expandedDraft} accountEmail={accountEmail} />
           </div>
         )}
-        {minimized.length > 0 && expanded.length === 0 && (
-          <button
-            type="button"
-            onClick={() => maximizeDraft(minimized[0].id)}
-            className="mb-16 hidden min-h-10 rounded-full bg-[#1a1a1f] px-4 text-xs font-medium text-white shadow-lg pointer-events-auto max-md:block"
-          >
-            {minimized.length} draft{minimized.length === 1 ? "" : "s"} ▲
-          </button>
-        )}
-        {drafts.length === 0 && (
-          <button
-            type="button"
-            onClick={() => openDraft().catch(() => undefined)}
-            className="flex h-9 w-[220px] items-center gap-2 rounded-t-lg bg-[#1a1a1f] px-3 text-left text-xs font-medium text-white shadow-lg pointer-events-auto max-md:mb-16 max-md:w-40"
-          >
-            <span className="text-sm">✏</span>
-            <span className="min-w-0 flex-1 truncate">Compose</span>
-          </button>
+        {drafts.length > 0 && (
+          <div className="flex items-end gap-1 pr-4 pointer-events-auto max-md:pr-3">
+            {drafts.map((draft) => (
+              <MinimizedTab
+                key={draft.id}
+                draft={draft}
+                isExpanded={expandedDraftId === draft.id}
+                onToggle={() => toggleExpand(draft.id)}
+                onClose={(event) => {
+                  event.stopPropagation();
+                  closeDraft(draft.id);
+                }}
+              />
+            ))}
+          </div>
         )}
       </div>
     </>

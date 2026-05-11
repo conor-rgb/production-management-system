@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
-import type { EmailAccount } from "../lib/types";
+import type { EmailAccount, EmailMessage } from "../lib/types";
 import { ComposerTray } from "../components/email/ComposerTray";
 
 export interface Draft {
@@ -33,15 +33,19 @@ export interface ReplyThreadInput {
   references?: string | null;
   linkedOpportunityId?: string | null;
   linkedProductionId?: string | null;
+  messages?: EmailMessage[];
 }
 
 interface DraftStore {
   drafts: Draft[];
+  expandedDraftId: string | null;
+  quotedHtmlByDraftId: Record<string, string>;
   openDraft: (options?: Partial<Draft>) => Promise<Draft>;
   openReply: (thread: ReplyThreadInput) => Promise<Draft>;
   updateDraft: (id: string, changes: Partial<Draft>) => void;
   minimizeDraft: (id: string) => void;
   maximizeDraft: (id: string) => void;
+  toggleExpand: (id: string) => void;
   closeDraft: (id: string) => void;
   sendDraft: (id: string) => Promise<void>;
   isSending: Record<string, boolean>;
@@ -51,6 +55,24 @@ interface DraftStore {
 
 const DraftContext = createContext<DraftStore | null>(null);
 const MAX_DRAFTS = 3;
+
+function escapeHtml(value: string) {
+  return value.replace(/[<>&"]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "\"": "&quot;" }[char] ?? char));
+}
+
+function buildQuotedHtml(messages: EmailMessage[] = []) {
+  return messages
+    .slice()
+    .reverse()
+    .map((message) => {
+      const date = new Date(message.sentAt);
+      const label = date.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+      const from = escapeHtml(message.fromName || message.fromAddress || "sender");
+      const body = message.bodyHtml || escapeHtml(message.bodyText || "");
+      return `<div style="border-left:3px solid #e5e5e5;padding-left:12px;margin:10px 0;color:#666;"><div style="font-size:11px;color:#888;margin-bottom:4px;">On ${label}, ${from} wrote:</div><div>${body}</div></div>`;
+    })
+    .join("");
+}
 
 function payloadFromDraftOptions(options: Partial<Draft>): Partial<Draft> {
   return {
@@ -72,6 +94,8 @@ function payloadFromDraftOptions(options: Partial<Draft>): Partial<Draft> {
 
 export function DraftProvider({ children }: { children: ReactNode }) {
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [expandedDraftId, setExpandedDraftId] = useState<string | null>(null);
+  const [quotedHtmlByDraftId, setQuotedHtmlByDraftId] = useState<Record<string, string>>({});
   const [isSending, setIsSending] = useState<Record<string, boolean>>({});
   const [error, setError] = useState("");
   const saveTimers = useRef<Record<string, number>>({});
@@ -79,7 +103,10 @@ export function DraftProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (window.location.pathname === "/login") return undefined;
     api.get<Draft[]>("/api/email/drafts")
-      .then(setDrafts)
+      .then((items) => {
+        setDrafts(items);
+        setExpandedDraftId(items.find((draft) => !draft.isMinimized)?.id ?? null);
+      })
       .catch((err: unknown) => {
         if (err instanceof Error && err.message === "Unauthorised") return;
         setError(err instanceof Error ? err.message : "Failed to load drafts");
@@ -101,6 +128,7 @@ export function DraftProvider({ children }: { children: ReactNode }) {
 
   const maximizeDraft = useCallback((id: string) => {
     setDrafts((prev) => prev.map((draft) => draft.id === id ? { ...draft, isMinimized: false } : draft));
+    setExpandedDraftId(id);
     api.patch<Draft>(`/api/email/drafts/${id}`, { isMinimized: false }).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : "Failed to restore draft");
     });
@@ -108,8 +136,17 @@ export function DraftProvider({ children }: { children: ReactNode }) {
 
   const minimizeDraft = useCallback((id: string) => {
     setDrafts((prev) => prev.map((draft) => draft.id === id ? { ...draft, isMinimized: true } : draft));
+    setExpandedDraftId((current) => current === id ? null : current);
     api.patch<Draft>(`/api/email/drafts/${id}`, { isMinimized: true }).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : "Failed to minimize draft");
+    });
+  }, []);
+
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedDraftId((current) => current === id ? null : id);
+    setDrafts((prev) => prev.map((draft) => draft.id === id ? { ...draft, isMinimized: false } : draft));
+    api.patch<Draft>(`/api/email/drafts/${id}`, { isMinimized: false }).catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : "Failed to restore draft");
     });
   }, []);
 
@@ -122,6 +159,7 @@ export function DraftProvider({ children }: { children: ReactNode }) {
     try {
       const draft = await api.post<Draft>("/api/email/drafts", payloadFromDraftOptions({ ...options, isMinimized: false }));
       setDrafts((prev) => [draft, ...prev]);
+      setExpandedDraftId(draft.id);
       return draft;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create draft");
@@ -147,7 +185,7 @@ export function DraftProvider({ children }: { children: ReactNode }) {
     }
 
     const to = Array.from(new Set(thread.participants.map((email) => email.toLowerCase()).filter((email) => email && email !== accountEmail)));
-    return openDraft({
+    const draft = await openDraft({
       to,
       subject: thread.subject.startsWith("Re:") ? thread.subject : `Re: ${thread.subject}`,
       replyToThreadId: thread.id,
@@ -157,6 +195,10 @@ export function DraftProvider({ children }: { children: ReactNode }) {
       linkedOpportunityId: thread.linkedOpportunityId,
       linkedProductionId: thread.linkedProductionId,
     });
+    if (thread.messages?.length) {
+      setQuotedHtmlByDraftId((prev) => ({ ...prev, [draft.id]: buildQuotedHtml(thread.messages) }));
+    }
+    return draft;
   }, [drafts, maximizeDraft, openDraft]);
 
   const closeDraft = useCallback((id: string) => {
@@ -165,6 +207,12 @@ export function DraftProvider({ children }: { children: ReactNode }) {
       delete saveTimers.current[id];
     }
     setDrafts((prev) => prev.filter((draft) => draft.id !== id));
+    setExpandedDraftId((current) => current === id ? null : current);
+    setQuotedHtmlByDraftId((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     api.delete(`/api/email/drafts/${id}`).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : "Failed to discard draft");
     });
@@ -177,8 +225,21 @@ export function DraftProvider({ children }: { children: ReactNode }) {
     }
     setIsSending((prev) => ({ ...prev, [id]: true }));
     try {
+      const draft = drafts.find((item) => item.id === id);
+      const quotedHtml = quotedHtmlByDraftId[id];
+      if (draft && quotedHtml) {
+        await api.patch<Draft>(`/api/email/drafts/${id}`, {
+          bodyHtml: `${draft.bodyHtml}<br><div class="email-quoted-history">${quotedHtml}</div>`,
+        });
+      }
       await api.post(`/api/email/drafts/${id}/send`, {});
       setDrafts((prev) => prev.filter((draft) => draft.id !== id));
+      setExpandedDraftId((current) => current === id ? null : current);
+      setQuotedHtmlByDraftId((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send draft");
       throw err;
@@ -189,17 +250,20 @@ export function DraftProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<DraftStore>(() => ({
     drafts,
+    expandedDraftId,
+    quotedHtmlByDraftId,
     openDraft,
     openReply,
     updateDraft,
     minimizeDraft,
     maximizeDraft,
+    toggleExpand,
     closeDraft,
     sendDraft,
     isSending,
     error,
     clearError: () => setError(""),
-  }), [drafts, openDraft, openReply, updateDraft, minimizeDraft, maximizeDraft, closeDraft, sendDraft, isSending, error]);
+  }), [drafts, expandedDraftId, quotedHtmlByDraftId, openDraft, openReply, updateDraft, minimizeDraft, maximizeDraft, toggleExpand, closeDraft, sendDraft, isSending, error]);
 
   return (
     <DraftContext.Provider value={value}>

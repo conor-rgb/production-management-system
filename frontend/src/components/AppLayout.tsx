@@ -11,7 +11,6 @@ import {
   Settings,
   LogOut,
   MoreHorizontal,
-  PenLine,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useEffect, useState } from "react";
@@ -70,7 +69,6 @@ function SidebarItem({
 
 export default function AppLayout() {
   const { logout } = useAuth();
-  const { drafts, openDraft } = useDrafts();
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
   const [emailUnread, setEmailUnread] = useState(0);
@@ -104,13 +102,6 @@ export default function AppLayout() {
         ))}
         <div className="flex-1" />
         <button
-          onClick={() => openDraft().catch(() => undefined)}
-          title="Compose"
-          className="flex items-center justify-center w-full h-12 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
-        >
-          <PenLine size={20} />
-        </button>
-        <button
           onClick={handleLogout}
           title="Sign out"
           className="flex items-center justify-center w-full h-12 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
@@ -120,9 +111,12 @@ export default function AppLayout() {
       </nav>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto pb-16 md:pb-0">
-        <Outlet />
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="min-h-0 flex-1 overflow-auto pb-16 md:pb-0">
+          <Outlet />
+        </main>
+        <AppBottomBar />
+      </div>
 
       {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-gray-900 flex items-center border-t border-gray-800 z-50">
@@ -185,13 +179,54 @@ export default function AppLayout() {
           )}
         </div>
       </nav>
+    </div>
+  );
+}
 
+function AppBottomBar() {
+  const { openDraft } = useDrafts();
+  const navigate = useNavigate();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    let mounted = true;
+    async function fetchCount() {
+      try {
+        const data = await api.get<{ count: number }>("/api/email/unread-count");
+        if (mounted) setUnreadCount(data.count ?? 0);
+      } catch {
+        if (mounted) setUnreadCount(0);
+      }
+    }
+    fetchCount();
+    const timer = window.setInterval(fetchCount, 60_000);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  return (
+    <div className="flex h-10 shrink-0 items-center justify-between border-t border-gray-200 bg-white px-4">
       <button
-        onClick={() => openDraft().catch(() => undefined)}
-        className={`md:hidden fixed bottom-20 right-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-gray-900 text-white shadow-lg ${drafts.length > 0 ? "hidden" : ""}`}
-        title="Compose"
+        type="button"
+        onClick={() => navigate("/email")}
+        className="flex min-h-8 items-center gap-1.5 rounded-md px-2 text-xs text-gray-600 hover:bg-gray-100"
       >
-        <PenLine size={22} />
+        <span className="text-sm">✉</span>
+        Inbox
+        {unreadCount > 0 && (
+          <span className="rounded-full bg-blue-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={() => openDraft().catch(() => undefined)}
+        className="flex min-h-8 items-center gap-1.5 rounded-md bg-[#1a1a1f] px-3.5 text-xs font-medium text-white"
+      >
+        ✏ Compose
       </button>
     </div>
   );

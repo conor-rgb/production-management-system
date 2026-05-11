@@ -342,6 +342,7 @@ export default function Email() {
       references: latest?.externalMessageId,
       linkedOpportunityId: targetThread.linkedOpportunityId,
       linkedProductionId: targetThread.linkedProductionId,
+      messages: targetThread.messages,
     }).catch(console.error);
   }
 
@@ -635,8 +636,8 @@ function ThreadDetail({ thread, filingAttachment, loadingOlder, onOpenAttachment
           />
         ))}
       </div>
-      <div className="shrink-0 border-t border-gray-200 bg-white p-3">
-        <button onClick={onOpenReply} className="flex min-h-12 w-full items-center gap-2 rounded-lg border border-gray-200 px-3 text-left text-sm text-gray-500">
+      <div className="shrink-0 border-t border-gray-200 bg-white px-5 py-3">
+        <button onClick={onOpenReply} className="flex min-h-10 w-full items-center gap-2 text-left text-[13px] text-gray-400 hover:text-gray-700">
           <Reply size={16} /> Reply to {[...thread.messages].reverse().find((message) => !message.isFromMe)?.resolvedFromName ?? "sender"}...
         </button>
       </div>
