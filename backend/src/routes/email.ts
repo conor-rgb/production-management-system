@@ -150,7 +150,9 @@ function draftDataFromBody(body: DraftBody): Prisma.EmailDraftUncheckedUpdateInp
 }
 
 async function getPrimaryEmailAccount() {
-  return prisma.emailAccount.findFirst({ where: { isPrimary: true, isActive: true } });
+  const primary = await prisma.emailAccount.findFirst({ where: { isPrimary: true, isActive: true } });
+  if (primary) return primary;
+  return prisma.emailAccount.findFirst({ where: { isActive: true }, orderBy: { createdAt: "asc" } });
 }
 
 function redactAccount<T extends { encryptedPassword?: string | null; encryptedAccessToken?: string | null; encryptedRefreshToken?: string | null }>(account: T) {
