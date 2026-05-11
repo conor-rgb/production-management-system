@@ -92,7 +92,13 @@ function stateCounts(revision: BudgetRevision) {
   const counts: Record<DotState, number> = { YELLOW: 0, PURPLE: 0, BLUE: 0, LIGHT_GREEN: 0, DARK_GREEN: 0, GRAY: 0 };
   for (const section of revision.sections) {
     for (const line of section.lineItems) {
-      if (!line.parentId) counts[getDotState(line)] += 1;
+      if (line.parentId) continue;
+      const state = getDotState(line);
+      if (state === "YELLOW" || state === "GRAY" || state === "LIGHT_GREEN" || state === "DARK_GREEN") {
+        counts[state] += 1;
+      }
+      counts.PURPLE += line.subCosts.filter((subCost) => subCost.lineType === "PO").length;
+      counts.BLUE += line.subCosts.filter((subCost) => subCost.lineType === "BILL" && !subCost.isPaid).length;
     }
   }
   return counts;
