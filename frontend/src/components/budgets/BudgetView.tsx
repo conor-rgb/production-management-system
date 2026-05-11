@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Download, MoreHorizontal, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { api } from "../../lib/api";
 import type {
@@ -23,6 +23,7 @@ type LineMutationResponse = { line: BudgetLineItem; revision: BudgetRevision | n
 type SubCostMutationResponse = { subCost: SubCost; revision: BudgetRevision | null };
 type EditableKind = "text" | "number" | "money" | "percent";
 type AddingCostLine = { lineId: string; lineType: SubCostLineType };
+type ParentContextMenu = { lineId: string; x: number; y: number } | null;
 
 const UNITS = ["Days", "Pcs", "Cars", "Drives", "Weeks", "Hours", "Flat Fee"];
 const STATUS_LABELS: Record<string, string> = {
@@ -370,7 +371,27 @@ function BudgetTable(props: {
 }) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [toggledCostLines, setToggledCostLines] = useState<Set<string>>(new Set());
+  const [parentMenu, setParentMenu] = useState<ParentContextMenu>(null);
   const internal = props.mode === "internal";
+  const menuLine = parentMenu
+    ? props.revision.sections.flatMap((section) => section.lineItems).find((line) => line.id === parentMenu.lineId)
+    : null;
+
+  useEffect(() => {
+    if (!parentMenu) return;
+    function close() {
+      setParentMenu(null);
+    }
+    function keyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") close();
+    }
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", keyDown);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", keyDown);
+    };
+  }, [parentMenu]);
 
   return (
     <div className="budget-table w-full min-w-[900px] overflow-x-auto">
@@ -409,11 +430,23 @@ function BudgetTable(props: {
               if (next.has(lineId)) next.delete(lineId); else next.add(lineId);
               setToggledCostLines(next);
             }}
+            onOpenParentMenu={(line, x, y) => setParentMenu({ lineId: line.id, x, y })}
             internal={internal}
             {...props}
           />
         );
       })}
+      {internal && parentMenu && menuLine && !menuLine.isClosed && (
+        <div
+          className="fixed z-[80] flex items-center gap-1 rounded-md border border-[#e8e8e4] bg-white p-1 shadow-[0_4px_12px_rgba(0,0,0,0.12)]"
+          style={{ left: parentMenu.x, top: parentMenu.y }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <CostLineAddButton lineType="PO" onClick={() => { props.onSetAddingCostLine({ lineId: menuLine.id, lineType: "PO" }); setParentMenu(null); }} />
+          <CostLineAddButton lineType="BILL" onClick={() => { props.onSetAddingCostLine({ lineId: menuLine.id, lineType: "BILL" }); setParentMenu(null); }} />
+          <CostLineAddButton lineType="RECEIPT" onClick={() => { props.onSetAddingCostLine({ lineId: menuLine.id, lineType: "RECEIPT" }); setParentMenu(null); }} />
+        </div>
+      )}
       </div>
     </div>
   );
@@ -429,6 +462,7 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
   toggledCostLines: Set<string>;
   onToggleSection: () => void;
   onToggleCostLines: (lineId: string) => void;
+  onOpenParentMenu: (line: BudgetLineItem, x: number, y: number) => void;
   internal: boolean;
 } & Omit<Parameters<typeof BudgetTable>[0], "mode">) {
   const sectionTotal = props.revision.totals.sectionTotals.find((item) => item.sectionId === section.id);
@@ -508,6 +542,7 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
   internal: boolean;
   toggledCostLines: boolean;
   onToggleCostLines: () => void;
+  onOpenParentMenu: (line: BudgetLineItem, x: number, y: number) => void;
 } & Omit<Parameters<typeof BudgetTable>[0], "revision" | "mode">) {
   const state = getDotState(line);
   const hasSubCosts = line.subCosts.length > 0;
@@ -521,7 +556,15 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
 
   return (
     <div className="group/line">
-      <div className="group relative grid min-h-[34px] items-center border-b border-[#ebebea] text-xs hover:bg-[#f5f5f3]" style={rowStyle}>
+      <div
+        className="group relative grid min-h-[34px] items-center border-b border-[#ebebea] text-xs hover:bg-[#f5f5f3]"
+        style={rowStyle}
+        onContextMenu={(event) => {
+          if (!internal || closed) return;
+          event.preventDefault();
+          props.onOpenParentMenu(line, event.clientX, event.clientY);
+        }}
+      >
         {internal && <StatusDot state={state} />}
         <div className="flex items-center gap-1 px-2 text-[11px] text-[#888]">
           {internal && (
@@ -552,9 +595,6 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
         {internal && <StatusButton active={line.isClosed} onClick={() => props.onSaveLine(line, { isClosed: !line.isClosed }).catch(console.error)} title="Close this line when fully settled" />}
         {internal && (
           <div className="absolute inset-y-0 right-0 flex items-center justify-end gap-1 bg-[#f5f5f3]/95 px-2 opacity-0 group-hover:opacity-100">
-            {!closed && <CostLineAddButton lineType="PO" onClick={() => props.onSetAddingCostLine({ lineId: line.id, lineType: "PO" })} />}
-            {!closed && <CostLineAddButton lineType="BILL" onClick={() => props.onSetAddingCostLine({ lineId: line.id, lineType: "BILL" })} />}
-            {!closed && <CostLineAddButton lineType="RECEIPT" onClick={() => props.onSetAddingCostLine({ lineId: line.id, lineType: "RECEIPT" })} />}
             <button onClick={() => props.onDuplicate(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#888] hover:bg-gray-100" title="Duplicate"><Copy size={13} /></button>
             <button onClick={() => props.onDelete(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#888] hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 size={13} /></button>
           </div>
@@ -564,11 +604,6 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
       {internal && costLinesExpanded && line.subCosts.map((subCost) => (
         <SubCostRow key={subCost.id} subCost={subCost} closed={closed} onRevision={props.onRevision} onError={props.onError} />
       ))}
-      {internal && state === "YELLOW" && !closed && props.addingCostLine?.lineId !== line.id && (
-        <div className="hidden group-hover/line:block">
-          <EmptyCostLinesRow lineId={line.id} onAdd={(lineType) => props.onSetAddingCostLine({ lineId: line.id, lineType })} />
-        </div>
-      )}
       {internal && props.addingCostLine?.lineId === line.id && (
         <SubCostDraftRow lineId={line.id} initialLineType={props.addingCostLine.lineType} onCancel={() => props.onSetAddingCostLine(null)} onRevision={(next) => { props.onRevision(next); props.onSetAddingCostLine(null); }} onError={props.onError} />
       )}
@@ -665,7 +700,7 @@ function EditableCell({ value, onSave, className = "", kind = "text", readOnly =
     }
   }
 
-  function keyDown(event: KeyboardEvent<HTMLInputElement>) {
+  function keyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === "Escape") {
       setDraft(value === null || value === undefined ? "" : String(value));
       setEditing(false);
@@ -861,22 +896,6 @@ function CostLineTypePill({ lineType, onChange }: { lineType: SubCostLineType; o
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function EmptyCostLinesRow({ lineId, onAdd }: { lineId: string; onAdd: (lineType: SubCostLineType) => void }) {
-  return (
-    <div className="grid min-h-[30px] border-b border-[#ebebea] bg-[#fafaf8] text-[11px] text-[#888]" style={gridStyle("internal")}>
-      <div />
-      <div />
-      <div className="col-span-4 flex items-center gap-2 px-2">
-        <span>No cost lines yet —</span>
-        <CostLineAddButton lineType="PO" onClick={() => onAdd("PO")} />
-        <CostLineAddButton lineType="BILL" onClick={() => onAdd("BILL")} />
-        <CostLineAddButton lineType="RECEIPT" onClick={() => onAdd("RECEIPT")} />
-        <span className="sr-only">{lineId}</span>
-      </div>
     </div>
   );
 }

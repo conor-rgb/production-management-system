@@ -1,8 +1,55 @@
-# Budget Table Alignment Handover — 2026-05-11
+# Budget Table Interaction Handover — 2026-05-11
 
 ## Built This Session
 
-Targeted budget table alignment and spacing fix only. No schema changes and no backend code changes were made.
+Targeted budget table interaction fix only. No schema changes and no backend code changes were made.
+
+## Latest Interaction Change
+
+Parent row cost-line creation no longer has any hover behavior.
+
+Changed in `frontend/src/components/budgets/BudgetView.tsx`:
+- Removed hover-visible `+ PO`, `+ BILL`, `+ RECEIPT` buttons from parent rows.
+- Removed the hover-only “No cost lines yet” prompt row.
+- Added a right-click context menu on parent rows.
+- Right-click menu appears at the cursor and contains only:
+  - `+ PO`
+  - `+ BILL`
+  - `+ RECEIPT`
+- Selecting one of those actions opens the existing inline add-cost-line row beneath that parent.
+- Closed rows do not open the right-click cost-line menu.
+- Hovering a parent row no longer opens or reveals cost rows.
+
+Cost rows now show only when:
+- the row is already auto-expanded because it has outstanding PO/Bill state, or
+- the chevron is clicked, or
+- an add-cost-line row is explicitly opened from the right-click menu.
+
+## Verification
+
+Completed:
+- `cd frontend && npm run build`
+- `cp -r frontend/dist/* /var/www/agent/`
+- `pm2 reload 0 --update-env`
+- `curl http://localhost:3000/api/health`
+
+Health check returned:
+
+`{"status":"ok","time":"2026-05-11T12:31:40.509Z"}`
+
+## Exact Next Step
+
+Open a production budget and smoke test:
+
+1. Hover over a parent row with no cost lines and confirm no prompt row appears.
+2. Hover over a parent row and confirm `+ PO`, `+ BILL`, and `+ RECEIPT` do not appear.
+3. Right-click a parent row and confirm the three add buttons appear beside the cursor.
+4. Click `+ PO` and confirm the inline PO form opens under that parent row.
+5. Right-click a closed parent row and confirm no add menu opens.
+
+---
+
+# Previous Budget Table Alignment Handover — 2026-05-11
 
 ## Frontend Layout Changes
 
