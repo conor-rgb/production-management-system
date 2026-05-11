@@ -11,7 +11,6 @@ import dashboardRoutes from "./routes/dashboard";
 import opportunitiesRoutes from "./routes/opportunities";
 import productionsRoutes from "./routes/productions";
 import budgetsRoutes from "./routes/budgets";
-import catalogRoutes from "./routes/catalog";
 import contactsRoutes from "./routes/contacts";
 import companiesRoutes from "./routes/companies";
 import filesRoutes from "./routes/files";
@@ -70,7 +69,6 @@ export function createServer() {
   app.use("/api/opportunities", requireAuth, opportunitiesRoutes);
   app.use("/api/productions", requireAuth, productionsRoutes);
   app.use("/api/budgets", requireAuth, budgetsRoutes);
-  app.use("/api/catalog", requireAuth, catalogRoutes);
   app.use("/api/contacts", requireAuth, contactsRoutes);
   app.use("/api/companies", requireAuth, companiesRoutes);
   app.use("/api/files", requireAuth, filesRoutes);

@@ -1,12 +1,12 @@
-import { BudgetRevisionStatus, InvoiceStatus, Prisma } from "@prisma/client";
+import { AdvanceCalcType, Prisma, SubCostStatus } from "@prisma/client";
 import prisma from "../prisma";
-import { AICP_SECTIONS, sectionName } from "./aicp";
 
 export const revisionInclude = {
   budget: {
     include: {
-      production: true,
-      opportunity: true,
+      production: { select: { id: true, title: true, jobCode: true, clientName: true, brand: true, value: true } },
+      opportunity: { select: { id: true, title: true, clientName: true, brand: true, value: true } },
+      advanceInvoices: { orderBy: { createdAt: "asc" as const } },
     },
   },
   sections: {
@@ -15,501 +15,643 @@ export const revisionInclude = {
       lineItems: {
         orderBy: { order: "asc" as const },
         include: {
-          invoices: { orderBy: { createdAt: "asc" as const }, include: { jobFile: true } },
-          purchaseOrders: { orderBy: { dateRaised: "asc" as const }, include: { invoiceFile: true } },
-          catalogItem: true,
+          subCosts: { orderBy: { createdAt: "asc" as const } },
+          children: { orderBy: { order: "asc" as const }, include: { subCosts: true } },
         },
       },
     },
   },
-};
+} satisfies Prisma.BudgetRevisionInclude;
 
 export type FullRevision = Prisma.BudgetRevisionGetPayload<{ include: typeof revisionInclude }>;
-type FullLineItem = FullRevision["sections"][number]["lineItems"][number];
+type FullSection = FullRevision["sections"][number];
+type FullLineItem = FullSection["lineItems"][number];
+type FullBudget = Prisma.BudgetGetPayload<{
+  include: {
+    currentRevision: { include: typeof revisionInclude };
+    revisions: true;
+    advanceInvoices: true;
+    production: true;
+    opportunity: true;
+  };
+}>;
 
-export interface LineItemInput {
-  internalUnitCost?: number;
-  clientUnitCost?: number;
-  quantity?: number;
-  daysUnits?: number;
-  agencyMarkup?: number;
-  actualCost?: number;
+export interface SectionTemplateSection {
+  code: string;
+  name: string;
+  order: number;
+  defaultLineItems: string[];
 }
 
-export function recalculateLineItem<T extends LineItemInput>(data: T) {
-  const internalUnitCost = Number(data.internalUnitCost ?? 0);
-  const clientUnitCost = Number(data.clientUnitCost ?? 0);
-  const quantity = Number(data.quantity ?? 1);
-  const daysUnits = Number(data.daysUnits ?? 1);
-  const agencyMarkup = Number(data.agencyMarkup ?? 0);
-  const actualCost = Number(data.actualCost ?? 0);
-  const internalSubtotal = internalUnitCost * quantity * daysUnits;
-  const clientSubtotal = (clientUnitCost * quantity * daysUnits) + agencyMarkup;
-  const variance = actualCost - clientSubtotal;
-  const marginAmount = clientSubtotal - internalSubtotal;
-  const marginPercent = clientSubtotal > 0 ? (marginAmount / clientSubtotal) * 100 : 0;
-
-  return { internalSubtotal, clientSubtotal, variance, marginAmount, marginPercent };
+export interface SectionTotals {
+  sectionId: string;
+  code: string;
+  name: string;
+  estimatedTotal: number;
+  actualTotal: number;
+  variance: number;
+  remainingBudget: number;
+  agreedCount: number;
+  invoicedCount: number;
+  paidCount: number;
+  closedCount: number;
 }
 
-function calculateMarginFromSubtotals(line: Pick<FullLineItem, "clientSubtotal" | "internalSubtotal">) {
-  const clientSubtotal = Number(line.clientSubtotal ?? 0);
-  const internalSubtotal = Number(line.internalSubtotal ?? 0);
-  const marginAmount = clientSubtotal - internalSubtotal;
-  const marginPercent = clientSubtotal > 0 ? (marginAmount / clientSubtotal) * 100 : 0;
-
-  return { marginAmount, marginPercent };
+export interface RevisionTotals {
+  subtotal: number;
+  productionFee: number;
+  insurance: number;
+  grandTotal: number;
+  totalActuals: number;
+  totalVariance: number;
+  totalRemaining: number;
+  currencyConverted: number | null;
+  sectionTotals: SectionTotals[];
+  advances: Array<{ id: string; calculatedAmount: number }>;
 }
 
-function invoiceAmountByStatus(line: FullLineItem, status: InvoiceStatus) {
-  return line.invoices
-    .filter((invoice) => invoice.status === status)
-    .reduce((sum, invoice) => sum + Number(invoice.amount ?? 0), 0);
+const activeActualStatuses = new Set<SubCostStatus>([SubCostStatus.AGREED, SubCostStatus.INVOICED, SubCostStatus.PAID]);
+
+function roundMoney(value: number): number {
+  return Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 }
 
-export function calculateLineFinancialStack(line: FullLineItem, productionMode: boolean) {
-  const totalPOs = productionMode && !line.isClosed
-    ? line.purchaseOrders.reduce((sum, po) => sum + Number(po.agreedAmount ?? 0), 0)
-    : 0;
-  const totalInvoiced = productionMode && !line.isClosed ? invoiceAmountByStatus(line, InvoiceStatus.PENDING) : 0;
-  const totalPaid = productionMode ? invoiceAmountByStatus(line, InvoiceStatus.PAID) : 0;
-  const totalCommitted = line.isClosed ? totalPaid : totalPOs + totalInvoiced + totalPaid;
-  const remainingAccrual = line.isClosed ? 0 : Number(line.internalSubtotal) - totalCommitted;
-  const isOverAccrual = !line.isClosed && totalCommitted > Number(line.internalSubtotal);
-  const isOverBudget = totalCommitted > Number(line.clientSubtotal);
-  const accrualUsedPercent = Number(line.internalSubtotal) > 0 ? (totalCommitted / Number(line.internalSubtotal)) * 100 : 0;
-  const releasedToMargin = line.isClosed ? Math.max(0, Number(line.internalSubtotal) - totalCommitted) : 0;
+function optionalNumber(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 
+function requiredNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export function calculateLineItem(item: {
+  prepTravelDays?: number | null;
+  shootDays?: number | null;
+  qty?: number | null;
+  rate?: number | null;
+  multiplier?: number | null;
+  otHours?: number | null;
+  otRate?: number | null;
+  agencyFeePercent?: number | null;
+}): number {
+  let base = 0;
+  const rate = item.rate ?? 0;
+  const multiplier = item.multiplier ?? 1;
+
+  if (item.prepTravelDays !== null && item.prepTravelDays !== undefined || item.shootDays !== null && item.shootDays !== undefined) {
+    const days = (item.prepTravelDays ?? 0) + (item.shootDays ?? 0);
+    base = days * rate * multiplier;
+  } else {
+    base = (item.qty ?? 1) * rate * multiplier;
+  }
+
+  const overtime = (item.otHours ?? 0) * (item.otRate ?? 0);
+  const subtotal = base + overtime;
+  const withFee = subtotal * (1 + (item.agencyFeePercent ?? 0));
+  return roundMoney(withFee);
+}
+
+export function calculateLineItemActual(lineItem: { subCosts: Array<{ amount: number; status: SubCostStatus }> }): number {
+  return roundMoney(lineItem.subCosts.reduce((sum, subCost) => (
+    activeActualStatuses.has(subCost.status) ? sum + Number(subCost.amount ?? 0) : sum
+  ), 0));
+}
+
+export function calculateSectionTotals(section: FullSection): SectionTotals {
+  const lineItems = section.lineItems.filter((line) => !line.isSubItem);
+  const estimatedTotal = roundMoney(lineItems.reduce((sum, line) => sum + Number(line.estimatedTotal ?? 0), 0));
+  const actualTotal = roundMoney(lineItems.reduce((sum, line) => sum + Number(line.actualTotal ?? 0), 0));
+  const variance = roundMoney(estimatedTotal - actualTotal);
   return {
-    totalPOs,
-    totalInvoiced,
-    totalPaid,
-    totalCommitted,
-    remainingAccrual,
-    isOverAccrual,
-    isOverBudget,
-    accrualUsedPercent,
-    releasedToMargin,
+    sectionId: section.id,
+    code: section.code,
+    name: section.name,
+    estimatedTotal,
+    actualTotal,
+    variance,
+    remainingBudget: variance,
+    agreedCount: lineItems.filter((line) => line.isAgreed).length,
+    invoicedCount: lineItems.filter((line) => line.subCosts.some((subCost) => subCost.status === SubCostStatus.INVOICED || subCost.status === SubCostStatus.PAID)).length,
+    paidCount: lineItems.filter((line) => line.subCosts.length > 0 && line.subCosts.every((subCost) => subCost.status === SubCostStatus.PAID)).length,
+    closedCount: lineItems.filter((line) => line.isClosed).length,
   };
 }
 
-function enrichRevision(revision: FullRevision) {
-  const productionMode = Boolean(revision.budget.productionId);
-  const sections = revision.sections.map((section) => ({
-    ...section,
-    lineItems: section.lineItems.map((line) => {
-      const margin = calculateMarginFromSubtotals(line);
-      const enrichedLine = { ...line, ...margin };
+function calculateAdvanceAmount(advance: { calculationType: AdvanceCalcType; percent: number | null; amount: number | null }, grandTotal: number, subtotal: number): number {
+  if (advance.calculationType === AdvanceCalcType.FIXED_AMOUNT) return roundMoney(advance.amount ?? 0);
+  const base = advance.calculationType === AdvanceCalcType.PERCENT_OF_PRODUCTION ? subtotal : grandTotal;
+  return roundMoney(base * ((advance.percent ?? 0) / 100));
+}
 
-      return {
-        ...enrichedLine,
-        ...(productionMode ? calculateLineFinancialStack(enrichedLine, productionMode) : {}),
-      };
-    }),
+export function calculateRevisionTotalsFromRevision(revision: FullRevision): RevisionTotals {
+  const visibleSections = revision.sections.filter((section) => section.isVisible);
+  const sectionTotals = visibleSections.map(calculateSectionTotals);
+  const subtotal = roundMoney(sectionTotals.reduce((sum, section) => sum + section.estimatedTotal, 0));
+  const productionFee = roundMoney(subtotal * (revision.productionFeePercent / 100));
+  const insurance = roundMoney((subtotal + productionFee) * (revision.insurancePercent / 100));
+  const grandTotal = roundMoney(subtotal + productionFee + insurance);
+  const totalActuals = roundMoney(sectionTotals.reduce((sum, section) => sum + section.actualTotal, 0));
+  const totalVariance = roundMoney(grandTotal - totalActuals);
+  const rate = revision.budget.currencyRate ?? null;
+  const advances = revision.budget.advanceInvoices.map((advance) => ({
+    id: advance.id,
+    calculatedAmount: calculateAdvanceAmount(advance, grandTotal, subtotal),
   }));
 
-  return { ...revision, sections };
+  return {
+    subtotal,
+    productionFee,
+    insurance,
+    grandTotal,
+    totalActuals,
+    totalVariance,
+    totalRemaining: totalVariance,
+    currencyConverted: rate ? roundMoney(grandTotal * rate) : null,
+    sectionTotals,
+    advances,
+  };
+}
+
+export async function calculateRevisionTotals(revisionId: string): Promise<RevisionTotals> {
+  const revision = await getRevision(revisionId);
+  if (!revision) throw new Error("Revision not found");
+  return revision.totals;
+}
+
+async function updateAdvanceCalculations(budgetId: string, totals: RevisionTotals): Promise<void> {
+  await Promise.all(totals.advances.map((advance) => prisma.advanceInvoice.update({
+    where: { id: advance.id },
+    data: { calculatedAmount: advance.calculatedAmount },
+  })));
+  const budget = await prisma.budget.findUnique({ where: { id: budgetId }, select: { productionId: true } });
+  if (budget?.productionId) await syncProductionTotals(budget.productionId);
 }
 
 export async function getRevision(revisionId: string) {
-  const revision = await prisma.budgetRevision.findUnique({
-    where: { id: revisionId },
-    include: revisionInclude,
-  });
+  const revision = await prisma.budgetRevision.findUnique({ where: { id: revisionId }, include: revisionInclude });
   if (!revision) return null;
-  return { ...enrichRevision(revision), totals: calculateRevisionTotalsFromRevision(revision) };
+  const totals = calculateRevisionTotalsFromRevision(revision);
+  return { ...revision, totals };
 }
 
-export function calculateRevisionTotalsFromRevision(revision: FullRevision) {
-  const productionMode = Boolean(revision.budget.productionId);
-  const sectionTotals = revision.sections.map((section) => {
-    const internalTotal = section.lineItems.reduce((sum, line) => sum + line.internalSubtotal, 0);
-    const clientTotal = section.lineItems.reduce((sum, line) => sum + line.clientSubtotal, 0);
-    const marginAmount = section.lineItems.reduce((sum, line) => sum + calculateMarginFromSubtotals(line).marginAmount, 0);
-    const marginPercent = clientTotal > 0 ? (marginAmount / clientTotal) * 100 : 0;
-    const stacks = section.lineItems.map((line) => calculateLineFinancialStack(line, productionMode));
-    const totalPOs = stacks.reduce((sum, stack) => sum + stack.totalPOs, 0);
-    const totalInvoiced = stacks.reduce((sum, stack) => sum + stack.totalInvoiced, 0);
-    const totalPaid = stacks.reduce((sum, stack) => sum + stack.totalPaid, 0);
-    const totalCommitted = stacks.reduce((sum, stack) => sum + stack.totalCommitted, 0);
-    const remaining = stacks.reduce((sum, stack) => sum + stack.remainingAccrual, 0);
-    const releasedToMargin = stacks.reduce((sum, stack) => sum + stack.releasedToMargin, 0);
-
-    return {
-      sectionId: section.id,
-      code: section.code,
-      name: section.name,
-      internalTotal,
-      clientTotal,
-      marginAmount,
-      marginPercent,
-      accrual: internalTotal,
-      totalPOs,
-      totalInvoiced,
-      totalPaid,
-      totalCommitted,
-      remaining,
-      releasedToMargin,
-    };
+async function budgetWithCurrent(id: string): Promise<FullBudget> {
+  return prisma.budget.findUniqueOrThrow({
+    where: { id },
+    include: {
+      currentRevision: { include: revisionInclude },
+      revisions: { orderBy: { revisionNumber: "asc" } },
+      advanceInvoices: { orderBy: { createdAt: "asc" } },
+      production: true,
+      opportunity: true,
+    },
   });
-
-  const internalTotal = sectionTotals.reduce((sum, section) => sum + section.internalTotal, 0);
-  const clientTotal = sectionTotals.reduce((sum, section) => sum + section.clientTotal, 0);
-  const productionFeeAmount = clientTotal * (revision.productionFeePercent / 100);
-  const clientGrandTotal = clientTotal + productionFeeAmount;
-  const totalMarginAmount = clientGrandTotal - internalTotal;
-  const totalMarginPercent = clientGrandTotal > 0 ? (totalMarginAmount / clientGrandTotal) * 100 : 0;
-  const totalAccrual = internalTotal;
-  const totalPOs = sectionTotals.reduce((sum, section) => sum + section.totalPOs, 0);
-  const totalInvoiced = sectionTotals.reduce((sum, section) => sum + section.totalInvoiced, 0);
-  const totalPaid = sectionTotals.reduce((sum, section) => sum + section.totalPaid, 0);
-  const totalCommitted = sectionTotals.reduce((sum, section) => sum + section.totalCommitted, 0);
-  const totalRemaining = sectionTotals.reduce((sum, section) => sum + section.remaining, 0);
-  const releasedToMargin = sectionTotals.reduce((sum, section) => sum + section.releasedToMargin, 0);
-  const projectedMargin = clientGrandTotal - totalAccrual + releasedToMargin;
-  const projectedMarginPercent = clientGrandTotal > 0 ? (projectedMargin / clientGrandTotal) * 100 : 0;
-
-  return {
-    mode: productionMode ? "production" : "bidding",
-    internalTotal,
-    clientTotal,
-    productionFeeAmount,
-    clientGrandTotal,
-    totalMarginAmount,
-    totalMarginPercent,
-    totalAccrual: productionMode ? totalAccrual : undefined,
-    totalPOs: productionMode ? totalPOs : undefined,
-    totalInvoiced: productionMode ? totalInvoiced : undefined,
-    totalPaid: productionMode ? totalPaid : undefined,
-    totalCommitted: productionMode ? totalCommitted : undefined,
-    totalRemaining: productionMode ? totalRemaining : undefined,
-    projectedMargin: productionMode ? projectedMargin : undefined,
-    projectedMarginPercent: productionMode ? projectedMarginPercent : undefined,
-    isOverAccrual: productionMode ? totalCommitted > totalAccrual : undefined,
-    isOverBudget: productionMode ? totalCommitted > clientGrandTotal : undefined,
-    actualTotal: productionMode ? totalCommitted : undefined,
-    variance: productionMode ? totalRemaining : undefined,
-    overBudget: productionMode ? totalCommitted > clientGrandTotal : false,
-    sectionTotals,
-  };
 }
 
-export async function calculateRevisionTotals(revisionId: string) {
-  const revision = await prisma.budgetRevision.findUnique({
-    where: { id: revisionId },
-    include: revisionInclude,
-  });
-  if (!revision) throw new Error("Revision not found");
-  return calculateRevisionTotalsFromRevision(revision);
+async function decorateBudget(budget: FullBudget) {
+  const currentRevision = budget.currentRevision ? await getRevision(budget.currentRevision.id) : null;
+  const totals = currentRevision?.totals ?? null;
+  return { ...budget, currentRevision, totals };
 }
 
 export async function getOrCreateBudget({ productionId, opportunityId }: { productionId?: string; opportunityId?: string }) {
-  if ((productionId && opportunityId) || (!productionId && !opportunityId)) {
-    throw new Error("Budget must be linked to exactly one production or opportunity");
-  }
+  if (Boolean(productionId) === Boolean(opportunityId)) throw new Error("Budget must be linked to exactly one production or opportunity");
 
-  const where = productionId ? { productionId } : { opportunityId };
-  let budget = await prisma.budget.findFirst({
-    where,
-    include: { currentRevision: { include: revisionInclude } },
-  });
+  const existing = await prisma.budget.findFirst({ where: productionId ? { productionId } : { opportunityId } });
+  if (existing) return decorateBudget(await budgetWithCurrent(existing.id));
 
-  if (!budget) {
-    budget = await prisma.$transaction(async (tx) => {
-      const createdBudget = await tx.budget.create({ data: { productionId, opportunityId } });
-      const revision = await tx.budgetRevision.create({
-        data: {
-          budgetId: createdBudget.id,
-          revisionNumber: 1,
-          label: "Original",
-          status: BudgetRevisionStatus.DRAFT,
-          productionFeePercent: 10,
-          sections: {
-            create: AICP_SECTIONS.map((section, index) => ({
-              code: section.code,
-              name: section.name,
-              order: index,
-            })),
-          },
-        },
-      });
-      await tx.budget.update({ where: { id: createdBudget.id }, data: { currentRevisionId: revision.id } });
-      return tx.budget.findUniqueOrThrow({
-        where: { id: createdBudget.id },
-        include: { currentRevision: { include: revisionInclude } },
-      });
-    });
-  }
-
-  if (productionId && budget.currentRevisionId) await syncProductionTotals(productionId);
-  const fullRevision = budget.currentRevisionId ? await getRevision(budget.currentRevisionId) : null;
-  return { ...budget, currentRevision: fullRevision, totals: fullRevision?.totals ?? null };
-}
-
-export async function createRevision(budgetId: string, options?: { label?: string; sourceRevisionId?: string }) {
-  const budget = await prisma.budget.findUnique({
-    where: { id: budgetId },
-    include: { currentRevision: { include: revisionInclude }, revisions: { select: { revisionNumber: true } } },
-  });
-  if (!budget) throw new Error("Budget not found");
-
-  const source = options?.sourceRevisionId
-    ? await prisma.budgetRevision.findUnique({ where: { id: options.sourceRevisionId }, include: revisionInclude })
-    : budget.currentRevision;
-  if (!source) throw new Error("Source revision not found");
-
-  const revisionNumber = Math.max(0, ...budget.revisions.map((revision) => revision.revisionNumber)) + 1;
-
-  const newRevision = await prisma.$transaction(async (tx) => {
-    if (budget.currentRevisionId) {
-      await tx.budgetRevision.update({
-        where: { id: budget.currentRevisionId },
-        data: { status: BudgetRevisionStatus.SUPERSEDED },
-      });
-    }
-
-    const created = await tx.budgetRevision.create({
-      data: {
-        budgetId,
-        revisionNumber,
-        label: options?.label ?? `Revision ${revisionNumber}`,
-        status: BudgetRevisionStatus.DRAFT,
-        version: source.version,
-        productionFeePercent: source.productionFeePercent,
-        notes: source.notes,
-      },
-    });
-
-    for (const section of source.sections) {
-      const createdSection = await tx.budgetSection.create({
-        data: { revisionId: created.id, code: section.code, name: section.name, order: section.order },
-      });
-      for (const line of section.lineItems) {
-        const margin = calculateMarginFromSubtotals(line);
-        await tx.budgetLineItem.create({
-          data: {
-            sectionId: createdSection.id,
-            lineCode: line.lineCode,
-            description: line.description,
-            privateMemo: line.privateMemo,
-            publicMemo: line.publicMemo,
-            internalUnitCost: line.internalUnitCost,
-            clientUnitCost: line.clientUnitCost,
-            quantity: line.quantity,
-            daysUnits: line.daysUnits,
-            unitLabel: line.unitLabel,
-            agencyMarkup: line.agencyMarkup,
-            internalSubtotal: line.internalSubtotal,
-            clientSubtotal: line.clientSubtotal,
-            marginAmount: margin.marginAmount,
-            marginPercent: margin.marginPercent,
-            actualCost: 0,
-            variance: -line.clientSubtotal,
-            isClosed: false,
-            isTaxable: line.isTaxable,
-            hasPW: line.hasPW,
-            hasHealthSafety: line.hasHealthSafety,
-            baseHours: line.baseHours,
-            overtime15x: line.overtime15x,
-            overtime2x: line.overtime2x,
-            catalogItemId: line.catalogItemId,
-            order: line.order,
-          },
-        });
-      }
-    }
-
-    await tx.budget.update({ where: { id: budgetId }, data: { currentRevisionId: created.id } });
-    return created;
-  });
-
-  if (budget.productionId) await syncProductionTotals(budget.productionId);
-  return getRevision(newRevision.id);
-}
-
-export async function syncProductionTotals(productionId: string) {
-  const budget = await prisma.budget.findFirst({ where: { productionId }, include: { currentRevision: { include: revisionInclude } } });
-  if (!budget?.currentRevision) return null;
-  const totals = calculateRevisionTotalsFromRevision(budget.currentRevision);
-  await prisma.production.update({
-    where: { id: productionId },
-    data: { value: totals.clientGrandTotal },
-  });
-  return totals;
-}
-
-async function nextLineCode(sectionId: string, sectionCode: string) {
-  const count = await prisma.budgetLineItem.count({ where: { sectionId } });
-  return `${sectionCode}_${String(count + 1).padStart(2, "0")}`;
-}
-
-export async function createLineItem(revisionId: string, sectionId: string, data: Prisma.BudgetLineItemUncheckedCreateInput) {
-  const section = await prisma.budgetSection.findFirst({ where: { id: sectionId, revisionId }, include: { revision: { include: { budget: true } } } });
-  if (!section) throw new Error("Section not found");
-  const order = await prisma.budgetLineItem.count({ where: { sectionId } });
-  const calculated = recalculateLineItem(data);
-  const line = await prisma.budgetLineItem.create({
-    data: {
-      ...data,
-      sectionId,
-      lineCode: data.lineCode ?? await nextLineCode(sectionId, section.code),
-      order,
-      ...calculated,
-    },
-    include: { invoices: true, purchaseOrders: true },
-  });
-  if (section.revision.budget.productionId) await syncProductionTotals(section.revision.budget.productionId);
-  return line;
-}
-
-export async function updateLineItem(lineItemId: string, data: Prisma.BudgetLineItemUncheckedUpdateInput) {
-  const current = await prisma.budgetLineItem.findUnique({
-    where: { id: lineItemId },
-    include: { section: { include: { revision: { include: { budget: true } } } } },
-  });
-  if (!current) throw new Error("Line item not found");
-  const merged = {
-    internalUnitCost: Number(data.internalUnitCost ?? current.internalUnitCost),
-    clientUnitCost: Number(data.clientUnitCost ?? current.clientUnitCost),
-    quantity: Number(data.quantity ?? current.quantity),
-    daysUnits: Number(data.daysUnits ?? current.daysUnits),
-    agencyMarkup: Number(data.agencyMarkup ?? current.agencyMarkup),
-    actualCost: Number(data.actualCost ?? current.actualCost),
-  };
-  const calculated = recalculateLineItem(merged);
-  const line = await prisma.budgetLineItem.update({
-    where: { id: lineItemId },
-    data: { ...data, ...calculated },
-    include: { invoices: true, purchaseOrders: true },
-  });
-  if (current.section.revision.budget.productionId) await syncProductionTotals(current.section.revision.budget.productionId);
-  return line;
-}
-
-export async function insertCatalogItem(revisionId: string, sectionCode: string, catalogItemId: string) {
-  const catalogItem = await prisma.catalogItem.findUnique({ where: { id: catalogItemId } });
-  if (!catalogItem) throw new Error("Catalog item not found");
-
-  const section = await prisma.budgetSection.upsert({
-    where: { revisionId_code: { revisionId, code: sectionCode } },
-    update: {},
-    create: {
-      revisionId,
-      code: sectionCode,
-      name: sectionName(sectionCode),
-      order: AICP_SECTIONS.findIndex((item) => item.code === sectionCode),
-    },
-    include: { revision: { include: { budget: true } } },
-  });
-
-  return createLineItem(revisionId, section.id, {
-    sectionId: section.id,
-    lineCode: await nextLineCode(section.id, section.code),
-    description: catalogItem.description,
-    internalUnitCost: catalogItem.defaultInternalUnitCost,
-    clientUnitCost: catalogItem.defaultClientUnitCost,
-    quantity: catalogItem.defaultQuantity,
-    daysUnits: catalogItem.defaultDaysUnits,
-    unitLabel: catalogItem.defaultUnitLabel,
-    agencyMarkup: catalogItem.defaultAgencyMarkup,
-    catalogItemId: catalogItem.id,
-  });
-}
-
-export async function insertCatalogGroup(revisionId: string, groupId: string) {
-  const group = await prisma.catalogGroup.findUnique({
-    where: { id: groupId },
-    include: { items: { orderBy: { order: "asc" }, include: { catalogItem: true } } },
-  });
-  if (!group) throw new Error("Catalog group not found");
-
-  const created = [];
-  for (const item of group.items) {
-    created.push(await insertCatalogItem(revisionId, item.catalogItem.section, item.catalogItemId));
-  }
-  return created;
-}
-
-export async function cloneBudgetToProduction(opportunityId: string, productionId: string) {
-  const opportunityBudget = await prisma.budget.findFirst({
-    where: { opportunityId },
-    include: { currentRevision: { include: revisionInclude } },
-  });
-  if (!opportunityBudget?.currentRevision) return null;
+  const [production, opportunity] = await Promise.all([
+    productionId ? prisma.production.findUnique({ where: { id: productionId } }) : null,
+    opportunityId ? prisma.opportunity.findUnique({ where: { id: opportunityId } }) : null,
+  ]);
 
   const budget = await prisma.$transaction(async (tx) => {
-    const createdBudget = await tx.budget.create({ data: { productionId } });
-    const source = opportunityBudget.currentRevision!;
+    const createdBudget = await tx.budget.create({
+      data: {
+        productionId,
+        opportunityId,
+        jobName: production?.title ?? opportunity?.title ?? null,
+        shootDates: null,
+        status: productionId ? "IN_PRODUCTION" : "DRAFT",
+      },
+    });
     const revision = await tx.budgetRevision.create({
       data: {
         budgetId: createdBudget.id,
         revisionNumber: 1,
-        label: "From bid",
-        status: BudgetRevisionStatus.DRAFT,
-        version: source.version,
-        productionFeePercent: source.productionFeePercent,
-        notes: source.notes,
+        label: "Original",
+        productionFeePercent: createdBudget.productionFeePercent,
+        insurancePercent: createdBudget.insurancePercent,
+      },
+    });
+    await tx.budget.update({ where: { id: createdBudget.id }, data: { currentRevisionId: revision.id } });
+    return createdBudget;
+  });
+
+  return decorateBudget(await budgetWithCurrent(budget.id));
+}
+
+export async function createRevision(budgetId: string) {
+  const budget = await budgetWithCurrent(budgetId);
+  const source = budget.currentRevision;
+  const nextNumber = Math.max(0, ...budget.revisions.map((revision) => revision.revisionNumber)) + 1;
+
+  const created = await prisma.$transaction(async (tx) => {
+    if (source) {
+      await tx.budgetRevision.update({ where: { id: source.id }, data: { status: "SUPERSEDED" } });
+    }
+    const revision = await tx.budgetRevision.create({
+      data: {
+        budgetId,
+        revisionNumber: nextNumber,
+        label: `R${nextNumber}`,
+        productionFeePercent: source?.productionFeePercent ?? budget.productionFeePercent,
+        insurancePercent: source?.insurancePercent ?? budget.insurancePercent,
+        notes: source?.notes,
       },
     });
 
-    for (const section of source.sections) {
+    if (source) {
+      for (const section of source.sections) {
+        const copiedSection = await tx.budgetSection.create({
+          data: {
+            revisionId: revision.id,
+            code: section.code,
+            name: section.name,
+            order: section.order,
+            isVisible: section.isVisible,
+          },
+        });
+        const parentMap = new Map<string, string>();
+        for (const line of section.lineItems.filter((item) => !item.parentId)) {
+          const copied = await tx.budgetLineItem.create({
+            data: copyLineData(line, copiedSection.id, line.order, null),
+          });
+          parentMap.set(line.id, copied.id);
+        }
+        for (const line of section.lineItems.filter((item) => item.parentId)) {
+          await tx.budgetLineItem.create({
+            data: copyLineData(line, copiedSection.id, line.order, parentMap.get(line.parentId ?? "") ?? null),
+          });
+        }
+      }
+    }
+
+    await tx.budget.update({ where: { id: budgetId }, data: { currentRevisionId: revision.id, version: { increment: 1 } } });
+    return revision;
+  });
+
+  return getRevision(created.id);
+}
+
+function copyLineData(line: FullLineItem, sectionId: string, order: number, parentId: string | null): Prisma.BudgetLineItemUncheckedCreateInput {
+  return {
+    sectionId,
+    lineCode: line.lineCode,
+    description: line.description,
+    clientNotes: line.clientNotes,
+    internalNotes: line.internalNotes,
+    prepTravelDays: line.prepTravelDays,
+    shootDays: line.shootDays,
+    qty: line.qty,
+    rate: line.rate,
+    multiplier: line.multiplier,
+    unit: line.unit,
+    otRate: line.otRate,
+    otHours: line.otHours,
+    agencyFeePercent: line.agencyFeePercent,
+    estimatedTotal: line.estimatedTotal,
+    actualTotal: 0,
+    variance: line.estimatedTotal,
+    isAgreed: false,
+    isClosed: false,
+    order,
+    isSubItem: Boolean(parentId),
+    parentId,
+    reconNotes: null,
+  };
+}
+
+export async function createSection(revisionId: string, data: { code: string; name: string; order?: number; isVisible?: boolean }) {
+  const max = await prisma.budgetSection.aggregate({ where: { revisionId }, _max: { order: true } });
+  return prisma.budgetSection.create({
+    data: {
+      revisionId,
+      code: data.code,
+      name: data.name,
+      order: data.order ?? ((max._max.order ?? 0) + 1),
+      isVisible: data.isVisible ?? true,
+    },
+  });
+}
+
+export async function nextLineCode(sectionId: string, parentId?: string | null) {
+  const section = await prisma.budgetSection.findUniqueOrThrow({ where: { id: sectionId } });
+  if (parentId) {
+    const parent = await prisma.budgetLineItem.findUniqueOrThrow({ where: { id: parentId } });
+    const count = await prisma.budgetLineItem.count({ where: { parentId } });
+    return `${parent.lineCode}${String.fromCharCode(97 + count)}`;
+  }
+  const count = await prisma.budgetLineItem.count({ where: { sectionId, parentId: null } });
+  return `${section.code}.${count + 1}`;
+}
+
+export async function createLineItem(sectionId: string, data: Partial<Prisma.BudgetLineItemUncheckedCreateInput>) {
+  const max = await prisma.budgetLineItem.aggregate({ where: { sectionId }, _max: { order: true } });
+  const lineCode = data.lineCode ?? await nextLineCode(sectionId, data.parentId as string | null | undefined);
+  const estimatedTotal = calculateLineItem(data);
+  return prisma.budgetLineItem.create({
+    data: {
+      sectionId,
+      lineCode,
+      description: data.description ?? "New line item",
+      clientNotes: data.clientNotes ?? null,
+      internalNotes: data.internalNotes ?? null,
+      prepTravelDays: data.prepTravelDays ?? null,
+      shootDays: data.shootDays ?? null,
+      qty: data.qty ?? 1,
+      rate: data.rate ?? 0,
+      multiplier: data.multiplier ?? 1,
+      unit: data.unit ?? "Days",
+      otRate: data.otRate ?? null,
+      otHours: data.otHours ?? null,
+      agencyFeePercent: data.agencyFeePercent ?? null,
+      estimatedTotal,
+      actualTotal: 0,
+      variance: estimatedTotal,
+      isAgreed: data.isAgreed ?? false,
+      isClosed: data.isClosed ?? false,
+      order: data.order ?? ((max._max.order ?? 0) + 1),
+      isSubItem: data.isSubItem ?? Boolean(data.parentId),
+      parentId: data.parentId ?? null,
+      reconNotes: data.reconNotes ?? null,
+    },
+  });
+}
+
+export function linePatchFromBody(body: Record<string, unknown>): Prisma.BudgetLineItemUncheckedUpdateInput {
+  return {
+    description: body.description as string | undefined,
+    clientNotes: body.clientNotes as string | null | undefined,
+    internalNotes: body.internalNotes as string | null | undefined,
+    prepTravelDays: optionalNumber(body.prepTravelDays),
+    shootDays: optionalNumber(body.shootDays),
+    qty: requiredNumber(body.qty),
+    rate: requiredNumber(body.rate),
+    multiplier: requiredNumber(body.multiplier),
+    unit: body.unit as string | undefined,
+    otRate: optionalNumber(body.otRate),
+    otHours: optionalNumber(body.otHours),
+    agencyFeePercent: optionalNumber(body.agencyFeePercent),
+    isAgreed: body.isAgreed as boolean | undefined,
+    isClosed: body.isClosed as boolean | undefined,
+    reconNotes: body.reconNotes as string | null | undefined,
+    order: requiredNumber(body.order),
+  };
+}
+
+export async function recalculateLineItem(lineItemId: string) {
+  const line = await prisma.budgetLineItem.findUniqueOrThrow({ where: { id: lineItemId }, include: { subCosts: true } });
+  const estimatedTotal = calculateLineItem(line);
+  const actualTotal = calculateLineItemActual(line);
+  return prisma.budgetLineItem.update({
+    where: { id: lineItemId },
+    data: {
+      estimatedTotal,
+      actualTotal,
+      variance: roundMoney(estimatedTotal - actualTotal),
+    },
+    include: { subCosts: true, children: { include: { subCosts: true } } },
+  });
+}
+
+export async function updateLineItem(lineItemId: string, data: Prisma.BudgetLineItemUncheckedUpdateInput) {
+  await prisma.budgetLineItem.update({ where: { id: lineItemId }, data });
+  return recalculateLineItem(lineItemId);
+}
+
+export async function duplicateLineItem(lineItemId: string) {
+  const line = await prisma.budgetLineItem.findUniqueOrThrow({ where: { id: lineItemId }, include: { subCosts: true } });
+  const max = await prisma.budgetLineItem.aggregate({ where: { sectionId: line.sectionId }, _max: { order: true } });
+  return createLineItem(line.sectionId, {
+    ...copyLineData(line as FullLineItem, line.sectionId, (max._max.order ?? 0) + 1, line.parentId),
+    lineCode: await nextLineCode(line.sectionId, line.parentId),
+    description: `${line.description} copy`,
+  });
+}
+
+export async function recalculateAfterSubCost(lineItemId: string) {
+  const line = await recalculateLineItem(lineItemId);
+  const section = await prisma.budgetSection.findUnique({ where: { id: line.sectionId }, include: { revision: true } });
+  if (section?.revision.budgetId) {
+    const totals = await calculateRevisionTotals(section.revision.id);
+    await updateAdvanceCalculations(section.revision.budgetId, totals);
+  }
+  return line;
+}
+
+export async function applyTemplate(revisionId: string, templateId: string) {
+  const template = await prisma.sectionTemplate.findUniqueOrThrow({ where: { id: templateId } });
+  const sections = template.sections as unknown as SectionTemplateSection[];
+  await prisma.$transaction(async (tx) => {
+    await tx.budgetSection.deleteMany({ where: { revisionId } });
+    for (const section of sections.sort((a, b) => a.order - b.order)) {
       const createdSection = await tx.budgetSection.create({
-        data: { revisionId: revision.id, code: section.code, name: section.name, order: section.order },
+        data: {
+          revisionId,
+          code: section.code,
+          name: section.name,
+          order: section.order,
+          isVisible: true,
+        },
       });
-      for (const line of section.lineItems) {
-        const margin = calculateMarginFromSubtotals(line);
+      for (const [index, description] of section.defaultLineItems.entries()) {
         await tx.budgetLineItem.create({
           data: {
             sectionId: createdSection.id,
-            lineCode: line.lineCode,
-            description: line.description,
-            privateMemo: line.privateMemo,
-            publicMemo: line.publicMemo,
-            internalUnitCost: line.internalUnitCost,
-            clientUnitCost: line.clientUnitCost,
-            quantity: line.quantity,
-            daysUnits: line.daysUnits,
-            unitLabel: line.unitLabel,
-            agencyMarkup: line.agencyMarkup,
-            internalSubtotal: line.internalSubtotal,
-            clientSubtotal: line.clientSubtotal,
-            marginAmount: margin.marginAmount,
-            marginPercent: margin.marginPercent,
-            actualCost: 0,
-            variance: -line.clientSubtotal,
-            isClosed: false,
-            isTaxable: line.isTaxable,
-            hasPW: line.hasPW,
-            hasHealthSafety: line.hasHealthSafety,
-            baseHours: line.baseHours,
-            overtime15x: line.overtime15x,
-            overtime2x: line.overtime2x,
-            catalogItemId: line.catalogItemId,
-            order: line.order,
+            lineCode: `${section.code}.${index + 1}`,
+            description,
+            qty: 1,
+            rate: 0,
+            multiplier: 1,
+            unit: "Days",
+            estimatedTotal: 0,
+            actualTotal: 0,
+            variance: 0,
+            order: index + 1,
           },
         });
       }
     }
+  });
+  return getRevision(revisionId);
+}
 
-    return tx.budget.update({
-      where: { id: createdBudget.id },
-      data: { currentRevisionId: revision.id },
-      include: { currentRevision: { include: revisionInclude } },
+export async function syncProductionTotals(productionId: string) {
+  const budget = await prisma.budget.findUnique({ where: { productionId }, select: { currentRevisionId: true } });
+  if (!budget?.currentRevisionId) return null;
+  const totals = await calculateRevisionTotals(budget.currentRevisionId);
+  return prisma.production.update({
+    where: { id: productionId },
+    data: {
+      value: new Prisma.Decimal(totals.grandTotal),
+      actualSpend: totals.totalActuals,
+      variance: totals.totalVariance,
+    },
+  });
+}
+
+export async function cloneBudgetToProduction(opportunityId: string, productionId: string) {
+  const opportunityBudget = await prisma.budget.findUnique({
+    where: { opportunityId },
+    include: { currentRevision: { include: revisionInclude }, advanceInvoices: true },
+  });
+  if (!opportunityBudget?.currentRevision) return null;
+
+  const source = opportunityBudget.currentRevision;
+  const createdBudget = await prisma.$transaction(async (tx) => {
+    await tx.budget.deleteMany({ where: { productionId } });
+    const budget = await tx.budget.create({
+      data: {
+        productionId,
+        jobName: opportunityBudget.jobName,
+        jobLocation: opportunityBudget.jobLocation,
+        shotCount: opportunityBudget.shotCount,
+        prepTravelDate: opportunityBudget.prepTravelDate,
+        shootDates: opportunityBudget.shootDates,
+        photographerDirector: opportunityBudget.photographerDirector,
+        accountingContact: opportunityBudget.accountingContact,
+        comments: opportunityBudget.comments,
+        caveats: opportunityBudget.caveats,
+        usages: opportunityBudget.usages,
+        productionFeePercent: opportunityBudget.productionFeePercent,
+        insurancePercent: opportunityBudget.insurancePercent,
+        currencyBase: opportunityBudget.currencyBase,
+        currencySecondary: opportunityBudget.currencySecondary,
+        currencyRate: opportunityBudget.currencyRate,
+        status: "IN_PRODUCTION",
+      },
     });
+    const revision = await tx.budgetRevision.create({
+      data: {
+        budgetId: budget.id,
+        revisionNumber: 1,
+        label: "Production budget",
+        status: "APPROVED",
+        productionFeePercent: source.productionFeePercent,
+        insurancePercent: source.insurancePercent,
+        notes: source.notes,
+      },
+    });
+    for (const section of source.sections) {
+      const copiedSection = await tx.budgetSection.create({
+        data: {
+          revisionId: revision.id,
+          code: section.code,
+          name: section.name,
+          order: section.order,
+          isVisible: section.isVisible,
+        },
+      });
+      const parentMap = new Map<string, string>();
+      for (const line of section.lineItems.filter((item) => !item.parentId)) {
+        const copied = await tx.budgetLineItem.create({
+          data: copyLineData(line, copiedSection.id, line.order, null),
+        });
+        parentMap.set(line.id, copied.id);
+      }
+      for (const line of section.lineItems.filter((item) => item.parentId)) {
+        await tx.budgetLineItem.create({
+          data: copyLineData(line, copiedSection.id, line.order, parentMap.get(line.parentId ?? "") ?? null),
+        });
+      }
+    }
+    for (const advance of opportunityBudget.advanceInvoices) {
+      await tx.advanceInvoice.create({
+        data: {
+          budgetId: budget.id,
+          label: advance.label,
+          percent: advance.percent,
+          amount: advance.amount,
+          calculationType: advance.calculationType,
+          dueDate: advance.dueDate,
+          notes: advance.notes,
+        },
+      });
+    }
+    await tx.budget.update({ where: { id: budget.id }, data: { currentRevisionId: revision.id } });
+    return budget;
   });
 
   await syncProductionTotals(productionId);
-  return budget;
+  return decorateBudget(await budgetWithCurrent(createdBudget.id));
 }
 
-export async function generatePoNumber(productionId: string) {
-  const production = await prisma.production.findUnique({
-    where: { id: productionId },
-    select: { jobCode: true, lastPoSequence: true },
-  });
-  if (!production?.jobCode) throw new Error("Production job code required before raising a PO");
+const photoSections: SectionTemplateSection[] = [
+  { code: "A", name: "Production & Management", order: 1, defaultLineItems: ["Producer", "Production manager", "Production assistant", "Creative direction & pre-production", "Budget management"] },
+  { code: "B", name: "Photo Crew", order: 2, defaultLineItems: ["Photographer", "Digital operator", "Lighting assistant", "Photo assistant", "Retoucher"] },
+  { code: "C", name: "Photo Equipment", order: 3, defaultLineItems: ["Camera kit", "Lighting kit", "Grip", "Capture station", "Hard drives"] },
+  { code: "D", name: "Studio / Location", order: 4, defaultLineItems: ["Studio hire", "Location fee", "Location manager", "Permits", "Cleaning"] },
+  { code: "E", name: "Location Vehicles & Transportation", order: 5, defaultLineItems: ["Production van", "Courier", "Taxi / car service", "Parking", "Fuel"] },
+  { code: "F", name: "Catering", order: 6, defaultLineItems: ["Breakfast", "Lunch", "Coffee / snacks", "Per diems"] },
+  { code: "G", name: "Travel & Accommodation", order: 7, defaultLineItems: ["Flights", "Train travel", "Hotel", "Transfers", "Travel days"] },
+  { code: "H", name: "Styling & HMU", order: 8, defaultLineItems: ["Stylist", "Styling assistant", "Hair stylist", "Makeup artist", "Wardrobe expenses"] },
+  { code: "I", name: "Set Design & Props", order: 9, defaultLineItems: ["Set designer", "Props", "Materials", "Build labour", "Strike"] },
+  { code: "J", name: "Post Production", order: 10, defaultLineItems: ["Edit", "Retouching", "Colour", "Delivery masters", "Archive"] },
+  { code: "K", name: "Miscellaneous", order: 11, defaultLineItems: ["Insurance", "Contingency", "Sundries", "Bank / transfer fees"] },
+];
 
-  const nextSequence = production.lastPoSequence + 1;
-  await prisma.production.update({ where: { id: productionId }, data: { lastPoSequence: nextSequence } });
-  return `PO-${production.jobCode}-${String(nextSequence).padStart(3, "0")}`;
+const motionSections: SectionTemplateSection[] = [
+  { code: "A", name: "Production & Management", order: 1, defaultLineItems: ["Producer", "Production manager", "Production assistant", "Creative direction", "Budget management"] },
+  { code: "B", name: "Photo Crew", order: 2, defaultLineItems: ["Photographer", "Digital operator", "Photo assistant"] },
+  { code: "C", name: "Motion Crew", order: 3, defaultLineItems: ["Director", "DOP", "1st AC", "Gaffer", "Sound recordist", "Runner"] },
+  { code: "D", name: "Photo Equipment", order: 4, defaultLineItems: ["Camera kit", "Lighting kit", "Capture station"] },
+  { code: "E", name: "Motion Equipment", order: 5, defaultLineItems: ["Camera package", "Lenses", "Lighting", "Grip", "Monitor / playback", "Sound kit"] },
+  { code: "F", name: "Studio / Location", order: 6, defaultLineItems: ["Studio hire", "Location fee", "Permits", "Security", "Cleaning"] },
+  { code: "G", name: "Location Vehicles & Transportation", order: 7, defaultLineItems: ["Production van", "Camera van", "Courier", "Parking", "Fuel"] },
+  { code: "H", name: "Catering", order: 8, defaultLineItems: ["Breakfast", "Lunch", "Craft", "Per diems"] },
+  { code: "I", name: "Travel & Accommodation", order: 9, defaultLineItems: ["Flights", "Train travel", "Hotel", "Transfers", "Travel days"] },
+  { code: "J", name: "Styling & HMU", order: 10, defaultLineItems: ["Stylist", "Styling assistant", "Hair", "Makeup", "Wardrobe expenses"] },
+  { code: "K", name: "Set Design & Props", order: 11, defaultLineItems: ["Set designer", "Props", "Materials", "Build labour", "Strike"] },
+  { code: "L", name: "Post Production", order: 12, defaultLineItems: ["Editor", "Grade", "Sound mix", "Motion graphics", "Delivery masters"] },
+  { code: "M", name: "Miscellaneous", order: 13, defaultLineItems: ["Insurance", "Contingency", "Sundries", "Bank / transfer fees"] },
+];
+
+const eventSections: SectionTemplateSection[] = [
+  { code: "A", name: "Production & Management", order: 1, defaultLineItems: ["Producer", "Production manager", "Production assistant", "Run of show", "Budget management"] },
+  { code: "B", name: "Crew", order: 2, defaultLineItems: ["Event crew", "Stage manager", "Runner", "Photographer", "Videographer"] },
+  { code: "C", name: "AV & Technical", order: 3, defaultLineItems: ["AV package", "Lighting", "Audio", "Screens", "Technical operator"] },
+  { code: "D", name: "Venue & Location", order: 4, defaultLineItems: ["Venue hire", "Permits", "Security", "Cleaning", "Power"] },
+  { code: "E", name: "Location Vehicles & Transportation", order: 5, defaultLineItems: ["Production van", "Courier", "Parking", "Fuel"] },
+  { code: "F", name: "Catering", order: 6, defaultLineItems: ["Crew catering", "Client catering", "Drinks", "Snacks"] },
+  { code: "G", name: "Travel & Accommodation", order: 7, defaultLineItems: ["Flights", "Train travel", "Hotel", "Transfers"] },
+  { code: "H", name: "Styling & HMU", order: 8, defaultLineItems: ["Stylist", "HMU", "Wardrobe support"] },
+  { code: "I", name: "Set Design & Props", order: 9, defaultLineItems: ["Set design", "Props", "Floral", "Build", "Strike"] },
+  { code: "J", name: "Miscellaneous", order: 10, defaultLineItems: ["Insurance", "Contingency", "Sundries"] },
+];
+
+export async function seedSectionTemplates() {
+  const templates = [
+    { name: "Photo Shoot", description: "Stills production checklist", isDefault: true, sections: photoSections },
+    { name: "Motion / Video", description: "Motion production checklist", isDefault: false, sections: motionSections },
+    { name: "Event", description: "Event production checklist", isDefault: false, sections: eventSections },
+  ];
+
+  for (const template of templates) {
+    const existing = await prisma.sectionTemplate.findFirst({ where: { name: template.name } });
+    if (existing) {
+      await prisma.sectionTemplate.update({
+        where: { id: existing.id },
+        data: { description: template.description, isDefault: template.isDefault, sections: template.sections as unknown as Prisma.InputJsonValue },
+      });
+    } else {
+      await prisma.sectionTemplate.create({
+        data: { ...template, sections: template.sections as unknown as Prisma.InputJsonValue },
+      });
+    }
+  }
 }

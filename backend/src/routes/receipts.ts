@@ -5,11 +5,11 @@ import { randomUUID } from "node:crypto";
 import { Router, Request, Response } from "express";
 import multer from "multer";
 import mime from "mime-types";
-import { InvoiceStatus, ReceiptCaptureStatus } from "@prisma/client";
+import { ReceiptCaptureStatus, SubCostStatus } from "@prisma/client";
 import prisma from "../prisma";
 import { fileExtension, ensureProductionFolders, resolveJobFilePath } from "../services/fileStorage";
 import { parseReceiptImage } from "../services/receiptParser";
-import { syncProductionTotals } from "../services/budgetService";
+import { recalculateAfterSubCost, syncProductionTotals } from "../services/budgetService";
 
 const router = Router();
 const RECEIPT_PENDING_ROOT = path.resolve(__dirname, "../../storage/receipts/pending");
@@ -260,15 +260,23 @@ router.patch("/:captureId/assign", async (req: Request, res: Response): Promise<
         notes: capture.parsedDescription,
       },
     });
-    const invoice = await prisma.lineItemInvoice.create({
+    const subCost = await prisma.subCost.create({
       data: {
         lineItemId: body.lineItemId,
+        description: capture.parsedDescription || capture.originalFilename,
         supplierName: capture.parsedVendor || "Unknown vendor",
         amount: (receiptAmount ?? 0) / 100,
-        dateReceived: capture.parsedDate,
-        status: InvoiceStatus.PAID,
-        jobFileId: jobFile.id,
-        notes: capture.parsedDescription,
+        amountGross: capture.parsedAmountGross ? capture.parsedAmountGross / 100 : null,
+        vatAmount: capture.parsedVatAmount ? capture.parsedVatAmount / 100 : null,
+        vatRate: capture.parsedVatRate,
+        invoiceDate: capture.parsedDate,
+        status: SubCostStatus.PAID,
+        invoiceFileId: jobFile.id,
+        isAgreed: true,
+        isInvoiced: true,
+        isPaid: true,
+        datePaid: capture.parsedDate ?? new Date(),
+        receiptCaptureId: capture.id,
       },
     });
     const updated = await prisma.receiptCapture.update({
@@ -282,8 +290,9 @@ router.patch("/:captureId/assign", async (req: Request, res: Response): Promise<
         storedPath: destination,
       },
     });
+    await recalculateAfterSubCost(body.lineItemId);
     await syncProductionTotals(body.productionId);
-    res.json({ ...await captureInclude(updated.id), invoice });
+    res.json({ ...await captureInclude(updated.id), subCost });
   } catch (assignErr) {
     await fs.rename(destination, capture.storedPath).catch(() => undefined);
     res.status(500).json({ error: assignErr instanceof Error ? assignErr.message : "Receipt assignment failed" });

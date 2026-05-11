@@ -100,23 +100,41 @@ enum ActivityEntityType {
   OPPORTUNITY
 }
 
-enum BudgetRevisionStatus {
+enum BudgetStatus {
+  DRAFT
+  SENT
+  CONFIRMED
+  IN_PRODUCTION
+  WRAPPED
+
+  @@map("pms_budget_status")
+}
+
+enum RevisionStatus {
   DRAFT
   SENT
   APPROVED
   REJECTED
   SUPERSEDED
+
+  @@map("pms_revision_status")
 }
 
-enum InvoiceStatus {
+enum SubCostStatus {
   PENDING
-  PAID
-}
-
-enum PurchaseOrderStatus {
-  OPEN
+  AGREED
   INVOICED
   PAID
+
+  @@map("pms_sub_cost_status")
+}
+
+enum AdvanceCalcType {
+  PERCENT_OF_TOTAL
+  PERCENT_OF_PRODUCTION
+  FIXED_AMOUNT
+
+  @@map("pms_advance_calc_type")
 }
 
 enum ReceiptCaptureStatus {
@@ -207,32 +225,32 @@ model Contact {
 // ─── Opportunities ────────────────────────────────────────────────────────────
 
 model Opportunity {
-  id            String            @id @default(cuid())
-  title         String
-  clientName    String?
-  brand         String?
-  jobType       PmsJobType?
-  source        OppSource         @default(OTHER)
-  contactId     String?
-  contact       Contact?          @relation(fields: [contactId], references: [id])
-  companyId     String?
-  company       Company?          @relation(fields: [companyId], references: [id])
-  description   String?
-  value         Decimal?          @db.Decimal(12, 2)
-  stage         Stage             @default(ENQUIRY)
-  followUpDate  DateTime?         @db.Date
-  lostReason    LostReason?
-  lostNote      String?
-  dateReceived  DateTime?         @db.Date
-  notes         String?
-  productions   Production[]
-  budgets       Budget[]
-  activityNotes OpportunityNote[]
-  tasks         OpportunityTask[]
-  emailThreads  EmailThread[]
+  id             String            @id @default(cuid())
+  title          String
+  clientName     String?
+  brand          String?
+  jobType        PmsJobType?
+  source         OppSource         @default(OTHER)
+  contactId      String?
+  contact        Contact?          @relation(fields: [contactId], references: [id])
+  companyId      String?
+  company        Company?          @relation(fields: [companyId], references: [id])
+  description    String?
+  value          Decimal?          @db.Decimal(12, 2)
+  stage          Stage             @default(ENQUIRY)
+  followUpDate   DateTime?         @db.Date
+  lostReason     LostReason?
+  lostNote       String?
+  dateReceived   DateTime?         @db.Date
+  notes          String?
+  productions    Production[]
+  budgets        Budget[]
+  activityNotes  OpportunityNote[]
+  tasks          OpportunityTask[]
+  emailThreads   EmailThread[]
   calendarEvents CalendarEvent[]
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
 
   @@map("pms_opportunities")
 }
@@ -278,6 +296,8 @@ model Production {
   notes                  String?
   storagePath            String?
   lastPoSequence         Int                    @default(0)
+  actualSpend            Float                  @default(0)
+  variance               Float                  @default(0)
   opportunityId          String?
   opportunity            Opportunity?           @relation(fields: [opportunityId], references: [id])
   contactId              String?
@@ -285,7 +305,6 @@ model Production {
   crewMembers            CrewMember[]
   budgets                Budget[]
   jobFiles               JobFile[]
-  purchaseOrders         PurchaseOrder[]
   emailThreads           EmailThread[]
   receiptCaptures        ReceiptCapture[]
   calendarEvents         CalendarEvent[]
@@ -395,46 +414,65 @@ model CrewMember {
 // ─── Budgets ──────────────────────────────────────────────────────────────────
 
 model Budget {
-  id                String           @id @default(cuid())
-  productionId      String?
-  production        Production?      @relation(fields: [productionId], references: [id], onDelete: Cascade)
-  opportunityId     String?
-  opportunity       Opportunity?     @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  currentRevisionId String?          @unique
-  currentRevision   BudgetRevision?  @relation("CurrentBudgetRevision", fields: [currentRevisionId], references: [id])
-  revisions         BudgetRevision[] @relation("BudgetRevisions")
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  id                   String           @id @default(uuid())
+  productionId         String?          @unique
+  opportunityId        String?          @unique
+  jobName              String?
+  jobLocation          String?
+  shotCount            String?
+  prepTravelDate       String?
+  shootDates           String?
+  photographerDirector String?
+  accountingContact    String?
+  comments             String?
+  caveats              String?
+  usages               String?
+  productionFeePercent Float            @default(10)
+  insurancePercent     Float            @default(0)
+  currencyBase         String           @default("GBP")
+  currencySecondary    String?
+  currencyRate         Float?
+  status               BudgetStatus     @default(DRAFT)
+  version              Int              @default(1)
+  currentRevisionId    String?          @unique
+  currentRevision      BudgetRevision?  @relation("CurrentBudgetRevision", fields: [currentRevisionId], references: [id])
+  revisions            BudgetRevision[] @relation("BudgetRevisions")
+  advanceInvoices      AdvanceInvoice[]
+  production           Production?      @relation(fields: [productionId], references: [id], onDelete: SetNull)
+  opportunity          Opportunity?     @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
   @@map("pms_budgets")
 }
 
 model BudgetRevision {
-  id                   String               @id @default(cuid())
+  id                   String          @id @default(uuid())
   budgetId             String
-  budget               Budget               @relation("BudgetRevisions", fields: [budgetId], references: [id], onDelete: Cascade)
-  currentForBudget     Budget?              @relation("CurrentBudgetRevision")
+  budget               Budget          @relation("BudgetRevisions", fields: [budgetId], references: [id], onDelete: Cascade)
+  currentForBudget     Budget?         @relation("CurrentBudgetRevision")
   revisionNumber       Int
-  label                String
-  status               BudgetRevisionStatus @default(DRAFT)
-  version              Int                  @default(1)
-  productionFeePercent Float                @default(10)
+  label                String          @default("Original")
+  status               RevisionStatus  @default(DRAFT)
+  productionFeePercent Float           @default(10)
+  insurancePercent     Float           @default(0)
   notes                String?
   sections             BudgetSection[]
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
 
   @@unique([budgetId, revisionNumber])
   @@map("pms_budget_revisions")
 }
 
 model BudgetSection {
-  id         String           @id @default(cuid())
+  id         String           @id @default(uuid())
   revisionId String
   revision   BudgetRevision   @relation(fields: [revisionId], references: [id], onDelete: Cascade)
   code       String
   name       String
   order      Int              @default(0)
+  isVisible  Boolean          @default(true)
   lineItems  BudgetLineItem[]
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
@@ -444,161 +482,136 @@ model BudgetSection {
 }
 
 model BudgetLineItem {
-  id               String            @id @default(cuid())
+  id               String           @id @default(uuid())
   sectionId        String
-  section          BudgetSection     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   lineCode         String
   description      String
-  privateMemo      String?
-  publicMemo       String?
-  internalUnitCost Float             @default(0)
-  clientUnitCost   Float             @default(0)
-  quantity         Float             @default(1)
-  daysUnits        Float             @default(1)
-  unitLabel        String            @default("Days")
-  agencyMarkup     Float             @default(0)
-  internalSubtotal Float             @default(0)
-  clientSubtotal   Float             @default(0)
-  marginAmount     Float             @default(0)
-  marginPercent    Float             @default(0)
-  actualCost       Float             @default(0)
-  variance         Float             @default(0)
-  isClosed         Boolean           @default(false)
-  isTaxable        Boolean           @default(false)
-  hasPW            Boolean           @default(false)
-  hasHealthSafety  Boolean           @default(false)
-  baseHours        Float?
-  overtime15x      Float?
-  overtime2x       Float?
-  catalogItemId    String?
-  catalogItem      CatalogItem?      @relation(fields: [catalogItemId], references: [id])
-  order            Int               @default(0)
-  invoices         LineItemInvoice[]
-  purchaseOrders   PurchaseOrder[]
+  clientNotes      String?
+  internalNotes    String?
+  prepTravelDays   Float?
+  shootDays        Float?
+  qty              Float            @default(1)
+  rate             Float            @default(0)
+  multiplier       Float            @default(1)
+  unit             String           @default("Days")
+  otRate           Float?
+  otHours          Float?
+  agencyFeePercent Float?
+  estimatedTotal   Float            @default(0)
+  actualTotal      Float            @default(0)
+  variance         Float            @default(0)
+  isAgreed         Boolean          @default(false)
+  isClosed         Boolean          @default(false)
+  subCosts         SubCost[]
+  order            Int              @default(0)
+  isSubItem        Boolean          @default(false)
+  parentId         String?
+  reconNotes       String?
+  section          BudgetSection    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  parent           BudgetLineItem?  @relation("SubItems", fields: [parentId], references: [id])
+  children         BudgetLineItem[] @relation("SubItems")
   jobFiles         JobFile[]
   receiptCaptures  ReceiptCapture[]
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
+  @@index([sectionId])
+  @@index([parentId])
   @@map("pms_budget_line_items")
 }
 
-model PurchaseOrder {
-  id            String              @id @default(cuid())
-  lineItemId    String
-  lineItem      BudgetLineItem      @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
-  productionId  String
-  production    Production          @relation(fields: [productionId], references: [id], onDelete: Cascade)
-  poNumber      String
-  supplierName  String
-  description   String?
-  agreedAmount  Float
-  status        PurchaseOrderStatus @default(OPEN)
-  dateRaised    DateTime            @default(now()) @db.Date
-  invoiceNumber String?
-  invoiceDate   DateTime?           @db.Date
-  invoiceFileId String?
-  invoiceFile   JobFile?            @relation(fields: [invoiceFileId], references: [id])
-  notes         String?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+model SubCost {
+  id               String         @id @default(uuid())
+  lineItemId       String
+  description      String
+  supplierName     String?
+  amount           Float
+  amountGross      Float?
+  vatAmount        Float?
+  vatRate          Float?
+  currency         String         @default("GBP")
+  status           SubCostStatus  @default(PENDING)
+  invoiceNumber    String?
+  invoiceDate      DateTime?
+  datePaid         DateTime?
+  invoiceFileId    String?
+  proofOfPayment   String?
+  isAgreed         Boolean        @default(false)
+  isInvoiced       Boolean        @default(false)
+  isPaid           Boolean        @default(false)
+  receiptCaptureId String?
+  lineItem         BudgetLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+  invoiceFile      JobFile?       @relation("InvoiceFile", fields: [invoiceFileId], references: [id])
+  popFile          JobFile?       @relation("POPFile", fields: [proofOfPayment], references: [id])
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
-  @@unique([productionId, poNumber])
   @@index([lineItemId])
-  @@index([productionId])
-  @@map("pms_purchase_orders")
+  @@index([invoiceFileId])
+  @@index([proofOfPayment])
+  @@map("pms_sub_costs")
 }
 
-model LineItemInvoice {
-  id            String         @id @default(cuid())
-  lineItemId    String
-  lineItem      BudgetLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
-  supplierName  String
-  invoiceNumber String?
-  amount        Float
-  dateReceived  DateTime?      @db.Date
-  status        InvoiceStatus  @default(PENDING)
-  jobFileId     String?
-  jobFile       JobFile?       @relation(fields: [jobFileId], references: [id])
-  notes         String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+model AdvanceInvoice {
+  id                 String          @id @default(uuid())
+  budgetId           String
+  label              String
+  percent            Float?
+  amount             Float?
+  calculationType    AdvanceCalcType @default(PERCENT_OF_TOTAL)
+  calculatedAmount   Float?
+  isPaid             Boolean         @default(false)
+  datePaid           DateTime?
+  freeAgentInvoiceId String?
+  dueDate            DateTime?
+  notes              String?
+  budget             Budget          @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
-  @@map("pms_line_item_invoices")
+  @@index([budgetId])
+  @@map("pms_advance_invoices")
 }
 
-model CatalogItem {
-  id                      String             @id @default(cuid())
-  section                 String
-  description             String
-  defaultInternalUnitCost Float              @default(0)
-  defaultClientUnitCost   Float              @default(0)
-  defaultUnitLabel        String             @default("Days")
-  defaultQuantity         Float              @default(1)
-  defaultDaysUnits        Float              @default(1)
-  defaultAgencyMarkup     Float              @default(0)
-  notes                   String?
-  isActive                Boolean            @default(true)
-  order                   Int                @default(0)
-  lineItems               BudgetLineItem[]
-  groupItems              CatalogGroupItem[]
-  createdAt               DateTime           @default(now())
-  updatedAt               DateTime           @updatedAt
-
-  @@index([section, isActive])
-  @@map("pms_catalog_items")
-}
-
-model CatalogGroup {
-  id          String             @id @default(cuid())
+model SectionTemplate {
+  id          String   @id @default(uuid())
   name        String
   description String?
-  items       CatalogGroupItem[]
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  isDefault   Boolean  @default(false)
+  sections    Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  @@map("pms_catalog_groups")
-}
-
-model CatalogGroupItem {
-  id            String       @id @default(cuid())
-  groupId       String
-  group         CatalogGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  catalogItemId String
-  catalogItem   CatalogItem  @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
-  order         Int          @default(0)
-
-  @@unique([groupId, catalogItemId])
-  @@map("pms_catalog_group_items")
+  @@map("pms_section_templates")
 }
 
 // ─── Files ────────────────────────────────────────────────────────────────────
 
 model JobFile {
-  id                         String            @id @default(cuid())
+  id                         String           @id @default(cuid())
   productionId               String?
-  production                 Production?       @relation(fields: [productionId], references: [id], onDelete: SetNull)
+  production                 Production?      @relation(fields: [productionId], references: [id], onDelete: SetNull)
   folder                     String
   originalFilename           String
   storedFilename             String
   mimeType                   String
   sizeBytes                  Int
-  uploadedAt                 DateTime          @default(now())
+  uploadedAt                 DateTime         @default(now())
   linkedBudgetLineId         String?
-  linkedBudgetLine           BudgetLineItem?   @relation(fields: [linkedBudgetLineId], references: [id])
-  isReceipt                  Boolean           @default(false)
+  linkedBudgetLine           BudgetLineItem?  @relation(fields: [linkedBudgetLineId], references: [id])
+  isReceipt                  Boolean          @default(false)
   receiptVendor              String?
   receiptAmount              Int?
-  receiptDate                DateTime?         @db.Date
+  receiptDate                DateTime?        @db.Date
   notes                      String?
   sourceEmailThreadId        String?
-  sourceEmailThread          EmailThread?      @relation("JobFileSourceEmailThread", fields: [sourceEmailThreadId], references: [id], onDelete: SetNull)
+  sourceEmailThread          EmailThread?     @relation("JobFileSourceEmailThread", fields: [sourceEmailThreadId], references: [id], onDelete: SetNull)
   sourceEmailMessageId       String?
-  sourceEmailMessage         EmailMessage?     @relation("JobFileSourceEmailMessage", fields: [sourceEmailMessageId], references: [id], onDelete: SetNull)
+  sourceEmailMessage         EmailMessage?    @relation("JobFileSourceEmailMessage", fields: [sourceEmailMessageId], references: [id], onDelete: SetNull)
   sourceEmailAttachmentIndex Int?
   sourceEmailFilename        String?
-  invoices                   LineItemInvoice[]
-  purchaseOrderInvoices      PurchaseOrder[]
+  subCostInvoiceFiles        SubCost[]        @relation("InvoiceFile")
+  subCostPopFiles            SubCost[]        @relation("POPFile")
   receiptCaptures            ReceiptCapture[]
 
   @@index([productionId, folder])

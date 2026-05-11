@@ -133,7 +133,7 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
   });
   const enriched = await Promise.all(items.map(async (item) => {
     const currentRevisionId = item.budgets[0]?.currentRevisionId;
-    const budgetClientGrandTotal = currentRevisionId ? (await calculateRevisionTotals(currentRevisionId)).clientGrandTotal : null;
+    const budgetClientGrandTotal = currentRevisionId ? (await calculateRevisionTotals(currentRevisionId)).grandTotal : null;
     const { budgets, ...rest } = item;
     return { ...rest, budgetClientGrandTotal };
   }));

@@ -4,7 +4,7 @@ dotenv.config();
 import { createServer } from "./server";
 import prisma from "./prisma";
 import bcrypt from "bcryptjs";
-import { seedCatalogItems } from "./services/catalogSeed";
+import { seedSectionTemplates } from "./services/budgetService";
 import { startIdleSync } from "./services/emailService";
 import { syncFromGoogleCalendar, syncOpportunityFollowUpsToCalendar, syncProductionDatesToCalendar } from "./services/calendarSyncService";
 import { getPrimaryAccount } from "./services/googleCalendarService";
@@ -116,7 +116,7 @@ async function initCalendarSync() {
 async function main() {
   await seedAdmin();
   await seedCrewRoles();
-  await seedCatalogItems();
+  await seedSectionTemplates();
   await seedEmailTemplates();
 
   const app = createServer();
