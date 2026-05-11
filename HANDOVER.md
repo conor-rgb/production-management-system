@@ -1,5 +1,34 @@
 # Budget Table Interaction Handover — 2026-05-11
 
+## Latest Cost Line Lifecycle Fix
+
+Cleaned up cost-line status display so POs are not shown as payable.
+
+Changed in `frontend/src/components/budgets/BudgetView.tsx`:
+- Removed the AGR / INV / PAID triple indicators from cost lines.
+- PO cost lines now show `+ Bill` in the lifecycle column.
+- Clicking `+ Bill` converts the cost line to `BILL` using the existing PATCH path.
+- Bill cost lines show a single paid toggle:
+  - `○ Paid`
+  - `Paid ✓`
+- Receipt cost lines show locked `Paid ✓`.
+- Actuals column now only shows the cost amount.
+
+Verification:
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- PM2 reloaded.
+- Health check passed at `2026-05-11T12:46:05.082Z`.
+
+Exact visual test:
+1. Open a budget with PO, Bill, and Receipt cost lines.
+2. Confirm PO rows show `+ Bill`, not paid.
+3. Confirm Bill rows show one paid toggle.
+4. Confirm Receipt rows show `Paid ✓`.
+5. Confirm the Actuals column is no longer crowded by three status ticks.
+
+---
+
 ## Latest Visual Width Fix
 
 Adjusted the budget grid so the Description column no longer stretches excessively on wide screens.

@@ -88,12 +88,6 @@ function lineTypeLabel(lineType: SubCostLineType) {
   return lineType;
 }
 
-function costLineFlags(lineType: SubCostLineType, subCost: Pick<SubCost, "isAgreed" | "isInvoiced" | "isPaid">) {
-  if (lineType === "RECEIPT") return { agreed: true, invoiced: true, paid: true };
-  if (lineType === "BILL") return { agreed: subCost.isAgreed, invoiced: true, paid: subCost.isPaid };
-  return { agreed: subCost.isAgreed, invoiced: false, paid: false };
-}
-
 function stateCounts(revision: BudgetRevision) {
   const counts: Record<DotState, number> = { YELLOW: 0, PURPLE: 0, BLUE: 0, LIGHT_GREEN: 0, DARK_GREEN: 0, GRAY: 0 };
   for (const section of revision.sections) {
@@ -902,7 +896,6 @@ function CostLineTypePill({ lineType, onChange }: { lineType: SubCostLineType; o
 }
 
 function SubCostRow({ subCost, closed, onRevision, onError }: { subCost: SubCost; closed: boolean; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
-  const flags = costLineFlags(subCost.lineType, subCost);
   const background = subCost.lineType === "RECEIPT" && subCost.freeAgentTransactionId ? "#dcfce7" : COST_LINE_BACKGROUNDS[subCost.lineType];
   const reference = subCost.lineType === "PO" ? subCost.poNumber : subCost.lineType === "BILL" ? subCost.invoiceNumber : null;
 
@@ -941,17 +934,48 @@ function SubCostRow({ subCost, closed, onRevision, onError }: { subCost: SubCost
       <div className="col-span-7" />
       <div className="flex min-h-[32px] items-center justify-end gap-1 px-2 text-right tabular-nums">
         <EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={subCost.lineType === "PO" ? "text-[#8b5cf6]" : subCost.lineType === "BILL" ? "text-[#3b82f6]" : "text-[#16a34a]"} />
-        <StatusButton active={flags.agreed} onClick={subCost.lineType === "RECEIPT" ? undefined : () => patch({ isAgreed: !subCost.isAgreed }).catch(console.error)} title="Agreed" />
-        <StatusButton active={flags.invoiced} title="Invoiced" />
-        <StatusButton active={flags.paid} onClick={subCost.lineType === "BILL" ? () => patch({ isPaid: !subCost.isPaid }).catch(console.error) : undefined} title="Paid" />
       </div>
-      <div />
+      <CostLineLifecycleCell subCost={subCost} onPatch={patch} />
       <div className="flex min-h-[30px] items-center justify-end gap-1 px-1">
         <Paperclip size={14} className={subCost.invoiceFileId ? "text-[#1a1a1f]" : "text-[#888]"} />
         {subCost.proofOfPayment ? <Check size={14} className="text-green-600" /> : <span className="text-[#aaa]">✓</span>}
         <button onClick={remove} className="grid h-7 w-7 place-items-center text-[#aaa] hover:text-red-600"><X size={12} /></button>
       </div>
     </div>
+  );
+}
+
+function CostLineLifecycleCell({ subCost, onPatch }: { subCost: SubCost; onPatch: (patchData: Partial<SubCost>) => Promise<void> }) {
+  if (subCost.lineType === "PO") {
+    return (
+      <div className="flex min-h-[32px] items-center justify-end px-2">
+        <button
+          onClick={() => onPatch({ lineType: "BILL" }).catch(console.error)}
+          className="min-h-7 rounded border border-[#bfdbfe] bg-[#eff6ff] px-2 text-[11px] font-medium text-[#2563eb]"
+          title="Convert this PO to a Bill"
+        >
+          + Bill
+        </button>
+      </div>
+    );
+  }
+
+  if (subCost.lineType === "RECEIPT") {
+    return (
+      <div className="flex min-h-[32px] items-center justify-end px-2 text-[11px] font-medium text-[#16a34a]">
+        Paid ✓
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => onPatch({ isPaid: !subCost.isPaid }).catch(console.error)}
+      className="flex min-h-[32px] items-center justify-end gap-1 px-2 text-[11px] font-medium"
+      title="Mark bill as paid"
+    >
+      {subCost.isPaid ? <span className="text-[#16a34a]">Paid ✓</span> : <span className="text-[#d4d4d0]">○ Paid</span>}
+    </button>
   );
 }
 
