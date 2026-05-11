@@ -512,14 +512,10 @@ export interface BudgetLineItem {
   description: string;
   clientNotes?: string | null;
   internalNotes?: string | null;
-  prepTravelDays?: number | null;
-  shootDays?: number | null;
   qty: number;
+  days: number;
   rate: number;
-  multiplier: number;
   unit: string;
-  otRate?: number | null;
-  otHours?: number | null;
   agencyFeePercent?: number | null;
   estimatedTotal: number;
   actualTotal: number;

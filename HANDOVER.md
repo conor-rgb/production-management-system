@@ -1,178 +1,168 @@
-# Budget Dot Status System Handover — 2026-05-11
+# Budget Column Simplification Handover — 2026-05-11
 
 ## Built This Session
 
-Targeted budget-table status rebuild plus the required SubCost PO/reference fields. No email, calendar, files UI, receipts UI, productions UI, opportunities UI, or dashboard UI changes were made intentionally.
+Targeted budget-table column restructure only. No email, calendar, files, receipts, productions, opportunities, or dashboard modules were intentionally changed.
+
+## Model Change
+
+Budget parent line items now use the lean commercial formula:
+
+`QTY × DAYS × RATE × (1 + AGENCY% / 100) = ESTIMATED`
+
+Example:
+
+`2 × 3 × £1,000 × 1.20 = £7,200`
+
+Removed from the model:
+- `prepTravelDays`
+- `shootDays`
+- `multiplier`
+- `otRate`
+- `otHours`
+
+Kept / added:
+- `qty`
+- `days`
+- `rate`
+- `agencyFeePercent`
+- `unit`
+
+`Flat Fee` lines force `days = 1`, so the formula becomes:
+
+`QTY × RATE × (1 + AGENCY% / 100)`
 
 ## Backend
 
 ### Schema
-- Added `poNumber String?` to `SubCost`.
-- Added `freeAgentTransactionId String?` to `SubCost`.
-- Migration applied:
-  - `20260511143000_sub_cost_po_number_freeagent`
-- The generated `DROP TABLE "pms_sessions"` was removed from the migration before applying.
 
-### PO Number Generation
-- `POST /api/budgets/lines/:lineItemId/subcosts` now auto-generates a PO number when `lineType === "PO"`.
-- Format:
-  - production budget: `PO-{jobCode}-{sequence}`
-  - opportunity budget fallback: `PO-OPP-{sequence}`
-- Sequence is counted per production budget when a production exists.
-- Sequence is zero-padded to 3 digits.
-- The generated number is stored on `SubCost.poNumber`.
+Updated `BudgetLineItem` in `backend/prisma/schema.prisma`:
+- Added `days Float @default(1)`.
+- Set `agencyFeePercent Float? @default(0)`.
+- Removed the old prep/shoot/multiplier/overtime fields.
 
-### FreeAgent Reconciliation Field
-- `freeAgentTransactionId` is present and available for Phase 8.
-- It is currently null unless populated later by the FreeAgent bank-feed matching workflow.
-- Frontend dot state already reads this field:
-  - paid but unreconciled = light green
-  - paid and reconciled = dark green
+Migration applied:
+- `20260511153000_simplified_budget_line_columns`
+
+Migration preserved existing data:
+- `days = prepTravelDays + shootDays` when either old day field existed.
+- If `multiplier != 1`, it was multiplied into `qty` to preserve estimated value.
+- Legacy decimal agency values between `0` and `1` were converted to percentage points.
+- Existing `estimatedTotal` and `variance` were recalculated with the new formula.
+
+### Calculation Service
+
+Updated `backend/src/services/budgetService.ts`:
+- `calculateLineItem()` now uses only `qty`, `days`, `rate`, and `agencyFeePercent`.
+- Line creation defaults to `qty: 1`, `days: 1`, `rate: 0`, `agencyFeePercent: 0`, `unit: "Days"`.
+- Line PATCH accepts only the new editable financial fields.
+- Template-applied lines now seed with `days: 1`.
+- `Flat Fee` updates force `days: 1`.
+
+### PDF Export
+
+Updated `backend/src/services/budgetPdf.ts`:
+- Removed Prep, Shoot, X, and OT columns.
+- Internal PDF now shows Qty, Unit, Rate, Agy%, Estimated, Actuals, Remaining.
+- Client PDF now shows Qty, Unit, Rate, Budget.
 
 ## Frontend
 
-### Shared Budget Status Utility
-- Added `frontend/src/components/budgets/budgetStatus.ts`.
-- Exports:
-  - `DotState`
-  - `DOT_COLORS`
-  - `STATE_BADGES`
-  - `COST_LINE_BACKGROUNDS`
-  - `getDotState(lineItem)`
-- Dot state is derived on every render and is not stored.
+### Types
 
-### Dot States
-- Yellow: no cost lines.
-- Purple: at least one PO remains.
-- Blue: at least one unpaid Bill remains.
-- Light green: all cost lines are paid but at least one is not FreeAgent reconciled.
-- Dark green: all cost lines are paid and FreeAgent reconciled.
-- Gray: parent line is manually closed.
+Updated `frontend/src/lib/types.ts`:
+- `BudgetLineItem` now includes `days`.
+- Removed old prep/shoot/multiplier/overtime fields.
 
-Priority logic:
-- closed overrides everything
-- no cost lines
-- any PO
-- any unpaid Bill
-- all paid, then reconciled check
+### Budget Table
 
-### Table Layout
-- Removed the checkbox column entirely.
-- Internal table now starts with a 24px dot column.
-- Client view has no dot column.
-- Parent rows render a single 10px status dot in the dot column.
-- Cost line rows, section headers, and section total rows do not render dots.
+Updated `frontend/src/components/budgets/BudgetView.tsx`.
 
-### Parent Rows
-- Parent row background is now clean white for all active states.
-- State information lives only in the dot and inline badge.
-- Closed rows:
-  - gray dot
-  - `closed` badge
-  - opacity `0.55`
-  - muted background
-  - read-only cells
-  - hidden cost-line add actions
-- Reopening via CLO recalculates the state from cost lines.
+Internal columns are now:
 
-### Status Badges
-- Parent description column now shows a permanent inline badge:
-  - `no cost lines`
-  - `PO raised`
-  - `invoice in`
-  - `paid · unreconciled`
-  - `reconciled`
-  - `closed`
-- Badges use the color map from `budgetStatus.ts`.
-- Badges are hidden in Client view.
+`● | CODE | DESCRIPTION | CLIENT NOTES | INT. NOTES | QTY | UNIT | RATE | AGY% | ESTIMATED | ACTUALS | REMAINING | CLO`
 
-### Cost Line Rows
-- Cost lines do not have dots.
-- Cost line rows use type background tints:
-  - PO: light purple
-  - Bill: light blue
-  - Receipt: light green
-  - reconciled Receipt: darker green
-- Cost line row now places:
-  - empty dot column
-  - empty code column
-  - connector / type pill / PO number or invoice reference / description in the description area
-  - supplier in the client-notes column
-  - amount in Actuals
-  - AGR / INV / PAID status controls right of amount
-  - file/proof/delete controls at far right
-- PO number is displayed prominently when present.
-- Bill invoice reference uses `invoiceNumber` when present.
+Client columns are now:
 
-### Expansion
-- Cost lines are hidden by default.
-- Purple and Blue parent rows auto-expand because they need attention.
-- Yellow, Light Green, Dark Green, and Gray rows start collapsed.
-- Chevron toggles expansion and stops propagation.
-- The “No cost lines yet” prompt only appears on hover of Yellow rows.
+`CODE | DESCRIPTION | CLIENT NOTES | QTY | UNIT | RATE | ESTIMATED`
 
-### Section Headers
-- Section headers show up to 10 line-state dots.
-- Dots use `DOT_COLORS[getDotState(line)]`.
-- Additional line items show as `+N`.
-- Section menu button still stops propagation.
+Changes:
+- Removed Prep, Shoot, X, OT Rate, and OT Hours from headers and rows.
+- Removed the extra internal status-dot spacer column after Remaining.
+- Cost line rows were remapped to the new grid and still only populate description/supplier/actuals/status/action areas.
+- Section totals were remapped to Estimated, Actuals, Remaining only.
+- Client view is clean: no dot column, no cost lines, no agency, no actuals.
 
-### Summary Bar
-- Secondary summary row now counts:
-  - Yellow: `N need POs`
-  - Purple: `N POs outstanding`
-  - Blue: `N invoices to pay`
-  - Light green: `N unreconciled`
-- Counts only show when greater than zero.
-- If there are no open counts, shows `All lines reconciled ✓`.
+### Unit / Days Cell
 
-### Client View
-- No dot column.
-- No status badges.
-- No cost line rows.
-- No state tints.
-- No internal status columns.
+The Unit cell now carries both duration and unit:
+- `3 Days ▾`
+- `2 Cars ▾`
+- `Flat Fee ▾`
+
+Clicking the number edits `days`.
+Clicking the unit label opens the custom dropdown.
+Allowed units:
+- Days
+- Pcs
+- Cars
+- Drives
+- Weeks
+- Hours
+- Flat Fee
+
+### Agency and Formula Tooltip
+
+- `AGY%` is editable inline.
+- Non-zero agency percentages display amber.
+- Estimated values show a hover tooltip with the calculation breakdown.
+- Flat Fee tooltips omit the days multiplier.
 
 ## Verification
 
-- Prisma migration applied:
-  - `npx prisma migrate deploy`
-- Prisma Client regenerated:
-  - `npx prisma generate`
-- Backend build passed:
-  - `cd backend && npm run build`
-- Frontend build passed:
-  - `cd frontend && npm run build`
-- Frontend copied to:
-  - `/var/www/agent`
-- PM2 reloaded:
-  - `pm2 reload 0 --update-env`
-- Health check passed:
-  - `curl http://localhost:3000/api/health`
-- Data sanity check confirmed `SubCost.poNumber` and `SubCost.freeAgentTransactionId` are queryable.
+Completed:
+- `cd backend && npx prisma format`
+- `cd backend && npx prisma migrate deploy`
+- `cd backend && npx prisma generate`
+- `cd backend && npm run build`
+- `cd frontend && npm run build`
+- `cp -r frontend/dist/* /var/www/agent/`
+- `pm2 reload 0 --update-env`
+- `curl http://localhost:3000/api/health`
+
+Health check returned:
+
+`{"status":"ok","time":"2026-05-11T11:44:53.613Z"}`
+
+PM2 notes:
+- New process started successfully.
+- Historical PM2 error log still contains old `BudgetRevision.version` Prisma errors and an IMAP timeout from earlier sessions.
+- Current reload served `/api/health` OK.
 
 ## Known Issues / Technical Debt
 
-- Existing PO rows created before this migration do not automatically have `poNumber`; new POs will.
-- Browser/manual smoke testing is still needed for the exact dot transitions.
+- Browser smoke testing is still needed for the exact UI interactions:
+  - inline days editing inside the Unit cell
+  - Flat Fee hiding the days value
+  - estimated tooltip placement
+  - client view cleanliness
+- Keyboard navigation remains the existing lightweight implementation; full spreadsheet-style row/down focus behavior is not deeply rebuilt in this pass.
 - Section `...` menu is still not a full contextual menu.
 - File picker integration for invoice/proof icons remains visual-only.
 - Mobile bottom-sheet budget editor remains incomplete.
-- FreeAgent reconciliation is not implemented yet; `freeAgentTransactionId` is reserved for Phase 8.
-- PM2 error log still contains old historical Prisma `BudgetRevision.version` entries from previous sessions; current health check is OK.
 
 ## Exact Next Step
 
 Run the requested browser smoke test:
-1. Open a production budget.
-2. Confirm empty lines show yellow dot and `no cost lines`.
-3. Add a PO to B.1 and confirm purple dot, purple cost-line tint, and generated PO number.
-4. Add a second PO and confirm the next zero-padded sequence.
-5. Change one PO to Bill and confirm dot remains purple if another PO remains.
-6. Change all POs to Bills and confirm the dot turns blue.
-7. Mark all Bills paid and confirm the dot turns light green.
-8. Toggle CLO on another line and confirm gray dot and faded row.
-9. Confirm section header dots and summary counts update.
-10. Switch to Client view and confirm no dots, badges, or cost-line rows appear.
 
-Then continue the deeper project/budget production management pass before Phase 8 FreeAgent automation.
+1. Open a production budget.
+2. Add a new line item in section B.
+3. Set description `Photographer`, QTY `2`, Days `3`, Rate `1000`, Agency `%` `20`.
+4. Confirm Estimated shows `£7,200.00`.
+5. Hover Estimated and confirm the tooltip shows the breakdown.
+6. Change Agency to `0` and confirm Estimated becomes `£6,000.00`.
+7. Change Unit to `Flat Fee` and confirm the days number disappears and the formula uses QTY × RATE.
+8. Add a PO cost line and confirm it does not show QTY/UNIT/RATE cells.
+9. Switch to Client view and confirm no agency, actuals, remaining, dots, badges, or cost lines are visible.
+
+After that, continue the deeper production budget manager work when ready, before Phase 8 FreeAgent automation.

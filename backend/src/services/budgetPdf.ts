@@ -121,20 +121,19 @@ async function renderPdf(revision: FullRevision, mode: "client" | "internal") {
     doc.fillColor("#555").fontSize(7);
     if (mode === "internal") {
       doc.text("DESCRIPTION", 44, rowY);
-      doc.text("PREP", 214, rowY, { width: 34, align: "right" });
-      doc.text("SHOOT", 252, rowY, { width: 36, align: "right" });
-      doc.text("QTY", 292, rowY, { width: 28, align: "right" });
-      doc.text("RATE", 326, rowY, { width: 54, align: "right" });
-      doc.text("X", 384, rowY, { width: 24, align: "right" });
-      doc.text("EST.", 414, rowY, { width: 58, align: "right" });
+      doc.text("QTY", 234, rowY, { width: 28, align: "right" });
+      doc.text("UNIT", 268, rowY, { width: 50, align: "right" });
+      doc.text("RATE", 322, rowY, { width: 58, align: "right" });
+      doc.text("AGY%", 384, rowY, { width: 32, align: "right" });
+      doc.text("EST.", 420, rowY, { width: 52, align: "right" });
       doc.text("ACT.", 476, rowY, { width: 46, align: "right" });
-      doc.text("VAR.", 526, rowY, { width: 32, align: "right" });
+      doc.text("REM.", 526, rowY, { width: 32, align: "right" });
     } else {
       doc.text("DESCRIPTION", 44, rowY);
-      doc.text("QTY", 330, rowY, { width: 40, align: "right" });
-      doc.text("RATE", 375, rowY, { width: 60, align: "right" });
-      doc.text("X", 438, rowY, { width: 30, align: "right" });
-      doc.text("BUDGET", 472, rowY, { width: 72, align: "right" });
+      doc.text("QTY", 310, rowY, { width: 40, align: "right" });
+      doc.text("UNIT", 354, rowY, { width: 62, align: "right" });
+      doc.text("RATE", 420, rowY, { width: 60, align: "right" });
+      doc.text("BUDGET", 486, rowY, { width: 58, align: "right" });
     }
     rowY += 14;
 
@@ -146,19 +145,18 @@ async function renderPdf(revision: FullRevision, mode: "client" | "internal") {
       }
       doc.fillColor("#111").font("Helvetica").fontSize(8);
       if (mode === "internal") {
-        doc.text(String(line.prepTravelDays ?? ""), 214, rowY, { width: 34, align: "right" });
-        doc.text(String(line.shootDays ?? ""), 252, rowY, { width: 36, align: "right" });
-        doc.text(String(line.qty), 292, rowY, { width: 28, align: "right" });
-        doc.text(money(line.rate), 326, rowY, { width: 54, align: "right" });
-        doc.text(String(line.multiplier), 384, rowY, { width: 24, align: "right" });
-        doc.text(money(line.estimatedTotal), 414, rowY, { width: 58, align: "right" });
+        doc.text(String(line.qty), 234, rowY, { width: 28, align: "right" });
+        doc.text(line.unit === "Flat Fee" ? "Flat Fee" : `${line.days} ${line.unit}`, 268, rowY, { width: 50, align: "right" });
+        doc.text(money(line.rate), 322, rowY, { width: 58, align: "right" });
+        doc.text(percent(line.agencyFeePercent ?? 0), 384, rowY, { width: 32, align: "right" });
+        doc.text(money(line.estimatedTotal), 420, rowY, { width: 52, align: "right" });
         doc.text(money(line.actualTotal), 476, rowY, { width: 46, align: "right" });
         doc.text(money(line.variance), 526, rowY, { width: 32, align: "right" });
       } else {
-        doc.text(String(line.qty), 330, rowY, { width: 40, align: "right" });
-        doc.text(money(line.rate), 375, rowY, { width: 60, align: "right" });
-        doc.text(String(line.multiplier), 438, rowY, { width: 30, align: "right" });
-        doc.text(money(line.estimatedTotal), 472, rowY, { width: 72, align: "right" });
+        doc.text(String(line.qty), 310, rowY, { width: 40, align: "right" });
+        doc.text(line.unit === "Flat Fee" ? "Flat Fee" : `${line.days} ${line.unit}`, 354, rowY, { width: 62, align: "right" });
+        doc.text(money(line.rate), 420, rowY, { width: 60, align: "right" });
+        doc.text(money(line.estimatedTotal), 486, rowY, { width: 58, align: "right" });
       }
       rowY += line.clientNotes && mode === "client" ? 25 : 16;
       if (rowY > 760) {

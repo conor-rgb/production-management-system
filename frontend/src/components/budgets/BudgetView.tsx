@@ -23,7 +23,7 @@ type SubCostMutationResponse = { subCost: SubCost; revision: BudgetRevision | nu
 type EditableKind = "text" | "number" | "money" | "percent";
 type AddingCostLine = { lineId: string; lineType: SubCostLineType };
 
-const UNITS = ["Days", "Flat Fee", "Cars", "Drives", "Weeks", "Hours", "Items", "People", "Other"];
+const UNITS = ["Days", "Pcs", "Cars", "Drives", "Weeks", "Hours", "Flat Fee"];
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "Draft",
   SENT: "Sent",
@@ -35,8 +35,8 @@ const STATUS_LABELS: Record<string, string> = {
   SUPERSEDED: "Superseded",
 };
 
-const internalColumns = "24px 52px minmax(160px,1fr) 130px 110px 52px 52px 44px 80px 44px 64px 64px 56px 56px 92px 80px 84px 24px 32px 150px";
-const clientColumns = "52px minmax(160px,1fr) 130px 44px 80px 44px 64px 92px 92px";
+const internalColumns = "24px 52px minmax(160px,1fr) 130px 110px 52px 72px 88px 56px 96px 84px 90px 36px 150px";
+const clientColumns = "52px minmax(160px,1fr) 130px 52px 72px 88px 96px";
 
 function money(value: number | null | undefined) {
   return `£${Number(value ?? 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -158,8 +158,8 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
     const response = await api.post<LineMutationResponse>(`/api/budgets/sections/${section.id}/lines`, {
       description: "New line item",
       qty: 1,
+      days: 1,
       rate: 0,
-      multiplier: 1,
       unit: "Days",
     });
     if (response.revision) setRevision(response.revision);
@@ -377,26 +377,20 @@ function BudgetTable(props: {
   return (
     <div className="min-w-max">
       <div className="sticky top-0 z-20 grid h-7 border-b border-[#e8e8e4] bg-[#f8f8f6] text-[10px] uppercase tracking-[0.5px] text-[#aaa]" style={gridStyle(props.mode)}>
-        {internal && <HeaderCell />}
+        {internal && <HeaderCell center>●</HeaderCell>}
         <HeaderCell>Code</HeaderCell>
         <HeaderCell>Description</HeaderCell>
         <HeaderCell>Client notes</HeaderCell>
         {internal && <HeaderCell>Int. notes</HeaderCell>}
-        {internal && <HeaderCell right>Prep</HeaderCell>}
-        {internal && <HeaderCell right>Shoot</HeaderCell>}
         <HeaderCell right>Qty</HeaderCell>
-        <HeaderCell right>Rate</HeaderCell>
-        <HeaderCell right>X</HeaderCell>
         <HeaderCell>Unit</HeaderCell>
-        {internal && <HeaderCell right>OT£</HeaderCell>}
-        {internal && <HeaderCell right>OT hrs</HeaderCell>}
+        <HeaderCell right>Rate</HeaderCell>
         {internal && <HeaderCell right>Agy%</HeaderCell>}
         <HeaderCell right>{internal ? "Estimated" : "Budget"}</HeaderCell>
         {internal && <HeaderCell right>Actuals</HeaderCell>}
         {internal && <HeaderCell right>Remaining</HeaderCell>}
-        {internal && <HeaderCell center />}
         {internal && <HeaderCell center title="Close this line when fully settled">CLO</HeaderCell>}
-        <HeaderCell />
+        {internal && <HeaderCell />}
       </div>
 
       {props.revision.sections.filter((section) => section.isVisible).map((section) => {
@@ -500,10 +494,12 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
           <div />
           <div />
           <div className="flex items-center px-2 italic">Section total</div>
-          <div className="col-span-11" />
+          <div className="col-span-6" />
           <div className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(estimated)}</div>
           <div className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(actual)}</div>
           <div className={`flex items-center justify-end px-2 font-medium not-italic tabular-nums ${remainingClass(remaining, estimated)}`}>{money(remaining)}</div>
+          <div />
+          <div />
         </div>
       )}
     </section>
@@ -541,27 +537,31 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
         <LineDescriptionCell line={line} state={state} internal={internal} readOnly={closed} onSave={(description) => props.onSaveLine(line, { description })} />
         <Cell><EditableCell value={line.clientNotes ?? ""} onSave={(value) => props.onSaveLine(line, { clientNotes: String(value) })} className="italic text-[#888]" readOnly={closed} /></Cell>
         {internal && <Cell><EditableCell value={line.internalNotes ?? ""} onSave={(value) => props.onSaveLine(line, { internalNotes: String(value) })} className="text-[#aaa]" readOnly={closed} /></Cell>}
-        {internal && <NumberCell value={line.prepTravelDays} onSave={(value) => props.onSaveLine(line, { prepTravelDays: value })} readOnly={closed} />}
-        {internal && <NumberCell value={line.shootDays} onSave={(value) => props.onSaveLine(line, { shootDays: value })} readOnly={closed} />}
         <NumberCell value={line.qty} onSave={(value) => props.onSaveLine(line, { qty: value ?? 0 })} readOnly={closed} />
+        <Cell>
+          <UnitDaysCell
+            days={line.days}
+            unit={line.unit}
+            readOnly={closed}
+            onSaveDays={(days) => props.onSaveLine(line, { days })}
+            onSaveUnit={(unit) => props.onSaveLine(line, { unit, days: unit === "Flat Fee" ? 1 : line.days })}
+          />
+        </Cell>
         <MoneyCell value={line.rate} onSave={(value) => props.onSaveLine(line, { rate: value ?? 0 })} readOnly={closed} />
-        <NumberCell value={line.multiplier} onSave={(value) => props.onSaveLine(line, { multiplier: value ?? 1 })} readOnly={closed} />
-        <Cell><UnitDropdown value={line.unit} onSave={(unit) => props.onSaveLine(line, { unit })} readOnly={closed} /></Cell>
-        {internal && <MoneyCell value={line.otRate} onSave={(value) => props.onSaveLine(line, { otRate: value })} readOnly={closed} />}
-        {internal && <NumberCell value={line.otHours} onSave={(value) => props.onSaveLine(line, { otHours: value })} readOnly={closed} />}
-        {internal && <PercentCell value={line.agencyFeePercent} onSave={(value) => props.onSaveLine(line, { agencyFeePercent: value })} readOnly={closed} />}
-        <ReadMoney value={line.estimatedTotal} strong />
+        {internal && <PercentCell value={line.agencyFeePercent} onSave={(value) => props.onSaveLine(line, { agencyFeePercent: value ?? 0 })} readOnly={closed} className={Number(line.agencyFeePercent ?? 0) > 0 ? "text-[#d97706]" : ""} />}
+        <EstimatedCell line={line} />
         {internal && <ReadMoney value={line.actualTotal} className={actualClass} />}
         {internal && <ReadMoney value={line.variance} className={remainingClass(line.variance, line.estimatedTotal)} />}
-          {internal && <div />}
         {internal && <StatusButton active={line.isClosed} onClick={() => props.onSaveLine(line, { isClosed: !line.isClosed }).catch(console.error)} title="Close this line when fully settled" />}
-        <div className="flex items-center justify-end gap-1 px-2 opacity-0 group-hover:opacity-100">
-          {internal && !closed && <CostLineAddButton lineType="PO" onClick={() => props.onSetAddingCostLine({ lineId: line.id, lineType: "PO" })} />}
-          {internal && !closed && <CostLineAddButton lineType="BILL" onClick={() => props.onSetAddingCostLine({ lineId: line.id, lineType: "BILL" })} />}
-          {internal && !closed && <CostLineAddButton lineType="RECEIPT" onClick={() => props.onSetAddingCostLine({ lineId: line.id, lineType: "RECEIPT" })} />}
-          <button onClick={() => props.onDuplicate(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#888] hover:bg-gray-100" title="Duplicate"><Copy size={13} /></button>
-          <button onClick={() => props.onDelete(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#888] hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 size={13} /></button>
-        </div>
+        {internal && (
+          <div className="flex items-center justify-end gap-1 px-2 opacity-0 group-hover:opacity-100">
+            {!closed && <CostLineAddButton lineType="PO" onClick={() => props.onSetAddingCostLine({ lineId: line.id, lineType: "PO" })} />}
+            {!closed && <CostLineAddButton lineType="BILL" onClick={() => props.onSetAddingCostLine({ lineId: line.id, lineType: "BILL" })} />}
+            {!closed && <CostLineAddButton lineType="RECEIPT" onClick={() => props.onSetAddingCostLine({ lineId: line.id, lineType: "RECEIPT" })} />}
+            <button onClick={() => props.onDuplicate(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#888] hover:bg-gray-100" title="Duplicate"><Copy size={13} /></button>
+            <button onClick={() => props.onDelete(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#888] hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 size={13} /></button>
+          </div>
+        )}
       </div>
 
       {internal && costLinesExpanded && line.subCosts.map((subCost) => (
@@ -721,13 +721,24 @@ function MoneyCell({ value, onSave, readOnly = false }: { value?: number | null;
   return <Cell><EditableCell value={value ?? ""} onSave={(next) => onSave(typeof next === "number" ? next : null)} kind="money" readOnly={readOnly} /></Cell>;
 }
 
-function PercentCell({ value, onSave, readOnly = false }: { value?: number | null; onSave: (value: number | null) => Promise<void>; readOnly?: boolean }) {
-  return <Cell><EditableCell value={value ?? ""} onSave={(next) => onSave(typeof next === "number" ? next : null)} kind="percent" readOnly={readOnly} /></Cell>;
+function PercentCell({ value, onSave, readOnly = false, className = "" }: { value?: number | null; onSave: (value: number | null) => Promise<void>; readOnly?: boolean; className?: string }) {
+  return <Cell><EditableCell value={value ?? ""} onSave={(next) => onSave(typeof next === "number" ? next : null)} kind="percent" readOnly={readOnly} className={className} /></Cell>;
 }
 
-function UnitDropdown({ value, onSave, readOnly = false }: { value: string; onSave: (value: string) => Promise<void>; readOnly?: boolean }) {
+function UnitDaysCell({ days, unit, onSaveDays, onSaveUnit, readOnly = false }: {
+  days: number;
+  unit: string;
+  onSaveDays: (value: number) => Promise<void>;
+  onSaveUnit: (value: string) => Promise<void>;
+  readOnly?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const [editingDays, setEditingDays] = useState(false);
+  const [draftDays, setDraftDays] = useState(String(days ?? 1));
   const ref = useRef<HTMLDivElement>(null);
+  const flatFee = unit === "Flat Fee";
+
+  useEffect(() => setDraftDays(String(days ?? 1)), [days]);
   useEffect(() => {
     function close(event: MouseEvent) {
       if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
@@ -735,20 +746,80 @@ function UnitDropdown({ value, onSave, readOnly = false }: { value: string; onSa
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
   }, []);
+
+  async function saveDays() {
+    setEditingDays(false);
+    const next = Number(draftDays || 1);
+    if (next !== days) await onSaveDays(next);
+  }
+
   return (
-    <div ref={ref} className="relative w-full">
-      <button disabled={readOnly} onClick={() => setOpen(!open)} className="flex min-h-[30px] w-full items-center justify-between text-left text-xs">
-        <span>{value}</span><span className="text-[10px]">▾</span>
+    <div ref={ref} className="relative flex w-full items-center justify-end gap-1 text-right text-xs tabular-nums">
+      {!flatFee && (
+        editingDays && !readOnly ? (
+          <input
+            autoFocus
+            type="number"
+            step="any"
+            value={draftDays}
+            onChange={(event) => setDraftDays(event.target.value)}
+            onBlur={() => saveDays().catch(console.error)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") saveDays().catch(console.error);
+              if (event.key === "Escape") { setDraftDays(String(days ?? 1)); setEditingDays(false); }
+            }}
+            className="h-7 w-8 border-0 border-b border-blue-500 bg-transparent p-0 text-right text-xs outline-none"
+          />
+        ) : (
+          <button disabled={readOnly} data-budget-editable="true" onClick={() => setEditingDays(true)} className={Number(days ?? 0) === 0 ? "text-[#c8c8c4]" : ""}>
+            {numeric(days) || "0"}
+          </button>
+        )
+      )}
+      <button disabled={readOnly} onClick={() => setOpen(!open)} className="flex min-h-[30px] items-center gap-1 text-xs">
+        <span>{unit}</span><span className="text-[10px]">▾</span>
       </button>
       {open && (
-        <div className="absolute left-0 top-7 z-40 w-32 rounded border border-[#e8e8e4] bg-white py-1 text-xs shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
-          {UNITS.map((unit) => (
-            <button key={unit} onClick={() => { onSave(unit).catch(console.error); setOpen(false); }} className={`block h-[30px] w-full px-2 text-left hover:bg-[#f5f5f3] ${unit === value ? "bg-[#1a1a1f] text-white" : ""}`}>
-              {unit}
+        <div className="absolute right-0 top-7 z-40 w-32 rounded border border-[#e8e8e4] bg-white py-1 text-xs shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
+          {UNITS.map((option) => (
+            <button
+              key={option}
+              onClick={() => { onSaveUnit(option).catch(console.error); setOpen(false); }}
+              className={`block h-[30px] w-full px-2 text-left hover:bg-[#f5f5f3] ${option === unit ? "bg-[#1a1a1f] text-white" : ""}`}
+            >
+              {option}
             </button>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function EstimatedCell({ line }: { line: BudgetLineItem }) {
+  const qty = Number(line.qty ?? 1);
+  const days = Number(line.unit === "Flat Fee" ? 1 : line.days ?? 1);
+  const rate = Number(line.rate ?? 0);
+  const agency = Number(line.agencyFeePercent ?? 0);
+  const base = qty * days * rate;
+  const agencyValue = base * (agency / 100);
+
+  return (
+    <div className="group/estimated relative">
+      <ReadMoney value={line.estimatedTotal} strong />
+      <div className="pointer-events-none absolute bottom-8 right-1 z-40 hidden w-max min-w-48 rounded border border-[#e8e8e4] bg-white px-3 py-2 text-left text-[11px] leading-[1.6] text-[#1a1a1f] shadow-[0_4px_12px_rgba(0,0,0,0.1)] group-hover/estimated:block">
+        {line.unit === "Flat Fee" ? (
+          <div>{qty} × {money(rate)} Flat Fee = {money(base)}</div>
+        ) : (
+          <div>{qty} × {days} {line.unit} × {money(rate)} = {money(base)}</div>
+        )}
+        {agency > 0 && (
+          <>
+            <div>+ {percentLabel(agency)} agency = {money(agencyValue)}</div>
+            <div className="font-medium">Total: {money(line.estimatedTotal)}</div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -850,13 +921,14 @@ function SubCostRow({ subCost, closed, onRevision, onError }: { subCost: SubCost
         <EditableCell value={subCost.description} onSave={(value) => patch({ description: String(value) })} className="min-w-0 text-[#555]" />
       </div>
       <Cell><EditableCell value={subCost.supplierName ?? ""} onSave={(value) => patch({ supplierName: String(value) })} className="text-[11px] italic text-[#888]" /></Cell>
-      <div className="col-span-10" />
-      <div />
+      <div className="col-span-6" />
       <Cell><EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={subCost.lineType === "PO" ? "text-[#8b5cf6]" : subCost.lineType === "BILL" ? "text-[#3b82f6]" : "text-[#16a34a]"} /></Cell>
-      <StatusButton active={flags.agreed} onClick={subCost.lineType === "RECEIPT" ? undefined : () => patch({ isAgreed: !subCost.isAgreed }).catch(console.error)} title="Agreed" />
-      <StatusButton active={flags.invoiced} title="Invoiced" />
-      <StatusButton active={flags.paid} onClick={subCost.lineType === "BILL" ? () => patch({ isPaid: !subCost.isPaid }).catch(console.error) : undefined} title="Paid" />
+      <div />
+      <div />
       <div className="flex min-h-[30px] items-center justify-end gap-2 px-2">
+        <StatusButton active={flags.agreed} onClick={subCost.lineType === "RECEIPT" ? undefined : () => patch({ isAgreed: !subCost.isAgreed }).catch(console.error)} title="Agreed" />
+        <StatusButton active={flags.invoiced} title="Invoiced" />
+        <StatusButton active={flags.paid} onClick={subCost.lineType === "BILL" ? () => patch({ isPaid: !subCost.isPaid }).catch(console.error) : undefined} title="Paid" />
         <Paperclip size={14} className={subCost.invoiceFileId ? "text-[#1a1a1f]" : "text-[#888]"} />
         {subCost.proofOfPayment ? <Check size={14} className="text-green-600" /> : <span className="text-[#aaa]">✓</span>}
         <button onClick={remove} className="grid h-7 w-7 place-items-center text-[#aaa] hover:text-red-600"><X size={12} /></button>
@@ -895,12 +967,14 @@ function SubCostDraftRow({ lineId, initialLineType, onCancel, onRevision, onErro
         <input autoFocus value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description..." className="h-7 min-w-0 flex-1 border-0 bg-transparent text-xs outline-none" />
       </div>
       <Cell><input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="Supplier..." className="h-7 w-full border-0 bg-transparent text-xs outline-none" /></Cell>
-      <div className="col-span-11" />
+      <div className="col-span-6" />
       <Cell><input value={amount} onChange={(event) => setAmount(event.target.value)} type="number" placeholder="£" className="h-7 w-full border-0 bg-transparent text-right text-xs tabular-nums outline-none" /></Cell>
       <div />
       <div />
-      <button onClick={save} className="min-h-[30px] text-[11px] font-medium text-[#1a1a1f]">Save</button>
-      <button onClick={onCancel} className="grid min-h-[30px] place-items-center text-red-600"><X size={12} /></button>
+      <div className="flex items-center justify-end gap-2 px-2">
+        <button onClick={save} className="min-h-[28px] rounded bg-[#1a1a1f] px-2 text-[11px] font-medium text-white">Save</button>
+        <button onClick={onCancel} className="grid min-h-[28px] w-7 place-items-center text-red-600"><X size={12} /></button>
+      </div>
     </div>
   );
 }

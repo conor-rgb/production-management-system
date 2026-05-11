@@ -496,15 +496,11 @@ model BudgetLineItem {
   description      String
   clientNotes      String?
   internalNotes    String?
-  prepTravelDays   Float?
-  shootDays        Float?
   qty              Float            @default(1)
+  days             Float            @default(1)
   rate             Float            @default(0)
-  multiplier       Float            @default(1)
   unit             String           @default("Days")
-  otRate           Float?
-  otHours          Float?
-  agencyFeePercent Float?
+  agencyFeePercent Float?           @default(0)
   estimatedTotal   Float            @default(0)
   actualTotal      Float            @default(0)
   variance         Float            @default(0)

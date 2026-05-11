@@ -88,30 +88,14 @@ function requiredNumber(value: unknown): number | undefined {
 }
 
 export function calculateLineItem(item: {
-  prepTravelDays?: number | null;
-  shootDays?: number | null;
   qty?: number | null;
+  days?: number | null;
   rate?: number | null;
-  multiplier?: number | null;
-  otHours?: number | null;
-  otRate?: number | null;
   agencyFeePercent?: number | null;
 }): number {
-  let base = 0;
-  const rate = item.rate ?? 0;
-  const multiplier = item.multiplier ?? 1;
-
-  if (item.prepTravelDays !== null && item.prepTravelDays !== undefined || item.shootDays !== null && item.shootDays !== undefined) {
-    const days = (item.prepTravelDays ?? 0) + (item.shootDays ?? 0);
-    base = days * rate * multiplier;
-  } else {
-    base = (item.qty ?? 1) * rate * multiplier;
-  }
-
-  const overtime = (item.otHours ?? 0) * (item.otRate ?? 0);
-  const subtotal = base + overtime;
-  const withFee = subtotal * (1 + (item.agencyFeePercent ?? 0));
-  return roundMoney(withFee);
+  const base = (item.qty ?? 1) * (item.days ?? 1) * (item.rate ?? 0);
+  const agencyMultiplier = 1 + ((item.agencyFeePercent ?? 0) / 100);
+  return roundMoney(base * agencyMultiplier);
 }
 
 export function calculateLineItemActual(lineItem: { subCosts: Array<{ amount: number }> }): number {
@@ -311,14 +295,10 @@ function copyLineData(line: FullLineItem, sectionId: string, order: number, pare
     description: line.description,
     clientNotes: line.clientNotes,
     internalNotes: line.internalNotes,
-    prepTravelDays: line.prepTravelDays,
-    shootDays: line.shootDays,
     qty: line.qty,
+    days: line.days,
     rate: line.rate,
-    multiplier: line.multiplier,
     unit: line.unit,
-    otRate: line.otRate,
-    otHours: line.otHours,
     agencyFeePercent: line.agencyFeePercent,
     estimatedTotal: line.estimatedTotal,
     actualTotal: 0,
@@ -359,7 +339,9 @@ export async function nextLineCode(sectionId: string, parentId?: string | null) 
 export async function createLineItem(sectionId: string, data: Partial<Prisma.BudgetLineItemUncheckedCreateInput>) {
   const max = await prisma.budgetLineItem.aggregate({ where: { sectionId }, _max: { order: true } });
   const lineCode = data.lineCode ?? await nextLineCode(sectionId, data.parentId as string | null | undefined);
-  const estimatedTotal = calculateLineItem(data);
+  const unit = data.unit ?? "Days";
+  const days = unit === "Flat Fee" ? 1 : data.days ?? 1;
+  const estimatedTotal = calculateLineItem({ ...data, days });
   return prisma.budgetLineItem.create({
     data: {
       sectionId,
@@ -367,15 +349,11 @@ export async function createLineItem(sectionId: string, data: Partial<Prisma.Bud
       description: data.description ?? "New line item",
       clientNotes: data.clientNotes ?? null,
       internalNotes: data.internalNotes ?? null,
-      prepTravelDays: data.prepTravelDays ?? null,
-      shootDays: data.shootDays ?? null,
       qty: data.qty ?? 1,
+      days,
       rate: data.rate ?? 0,
-      multiplier: data.multiplier ?? 1,
-      unit: data.unit ?? "Days",
-      otRate: data.otRate ?? null,
-      otHours: data.otHours ?? null,
-      agencyFeePercent: data.agencyFeePercent ?? null,
+      unit,
+      agencyFeePercent: data.agencyFeePercent ?? 0,
       estimatedTotal,
       actualTotal: 0,
       variance: estimatedTotal,
@@ -390,19 +368,16 @@ export async function createLineItem(sectionId: string, data: Partial<Prisma.Bud
 }
 
 export function linePatchFromBody(body: Record<string, unknown>): Prisma.BudgetLineItemUncheckedUpdateInput {
+  const unit = body.unit as string | undefined;
   return {
     description: body.description as string | undefined,
     clientNotes: body.clientNotes as string | null | undefined,
     internalNotes: body.internalNotes as string | null | undefined,
-    prepTravelDays: optionalNumber(body.prepTravelDays),
-    shootDays: optionalNumber(body.shootDays),
     qty: requiredNumber(body.qty),
+    days: unit === "Flat Fee" ? 1 : requiredNumber(body.days),
     rate: requiredNumber(body.rate),
-    multiplier: requiredNumber(body.multiplier),
-    unit: body.unit as string | undefined,
-    otRate: optionalNumber(body.otRate),
-    otHours: optionalNumber(body.otHours),
-    agencyFeePercent: optionalNumber(body.agencyFeePercent),
+    unit,
+    agencyFeePercent: requiredNumber(body.agencyFeePercent),
     isAgreed: body.isAgreed as boolean | undefined,
     isClosed: body.isClosed as boolean | undefined,
     reconNotes: body.reconNotes as string | null | undefined,
@@ -472,8 +447,8 @@ export async function applyTemplate(revisionId: string, templateId: string) {
             lineCode: `${section.code}.${index + 1}`,
             description,
             qty: 1,
+            days: 1,
             rate: 0,
-            multiplier: 1,
             unit: "Days",
             estimatedTotal: 0,
             actualTotal: 0,
