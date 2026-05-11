@@ -1,130 +1,104 @@
-# Budget Column Simplification Handover — 2026-05-11
+# Budget Table Alignment Handover — 2026-05-11
 
 ## Built This Session
 
-Targeted budget-table column restructure only. No email, calendar, files, receipts, productions, opportunities, or dashboard modules were intentionally changed.
+Targeted budget table alignment and spacing fix only. No schema changes and no backend code changes were made.
 
-## Model Change
+## Frontend Layout Changes
 
-Budget parent line items now use the lean commercial formula:
+### Shared Grid Constants
 
-`QTY × DAYS × RATE × (1 + AGENCY% / 100) = ESTIMATED`
+Added `frontend/src/components/budgets/budgetLayout.ts`.
 
-Example:
+Exports:
+- `BUDGET_GRID_INTERNAL`
+- `BUDGET_GRID_CLIENT`
 
-`2 × 3 × £1,000 × 1.20 = £7,200`
+Internal grid:
 
-Removed from the model:
-- `prepTravelDays`
-- `shootDays`
-- `multiplier`
-- `otRate`
-- `otHours`
+`24px 52px 1fr 130px 110px 52px 80px 88px 56px 96px 84px 90px 36px`
 
-Kept / added:
-- `qty`
-- `days`
-- `rate`
-- `agencyFeePercent`
-- `unit`
+Client grid:
 
-`Flat Fee` lines force `days = 1`, so the formula becomes:
+`52px 1fr 130px 52px 80px 88px 96px`
 
-`QTY × RATE × (1 + AGENCY% / 100)`
+`BudgetView.tsx` now imports these constants and uses them through `gridStyle()`.
 
-## Backend
+### Header Row
 
-### Schema
+The column header row now uses the shared grid exactly.
 
-Updated `BudgetLineItem` in `backend/prisma/schema.prisma`:
-- Added `days Float @default(1)`.
-- Set `agencyFeePercent Float? @default(0)`.
-- Removed the old prep/shoot/multiplier/overtime fields.
+Internal headers:
 
-Migration applied:
-- `20260511153000_simplified_budget_line_columns`
+empty dot column, CODE, DESCRIPTION, CLIENT NOTES, INT. NOTES, QTY, UNIT, RATE, AGY%, ESTIMATED, ACTUALS, REMAINING, CLO.
 
-Migration preserved existing data:
-- `days = prepTravelDays + shootDays` when either old day field existed.
-- If `multiplier != 1`, it was multiplied into `qty` to preserve estimated value.
-- Legacy decimal agency values between `0` and `1` were converted to percentage points.
-- Existing `estimatedTotal` and `variance` were recalculated with the new formula.
+The dot column header is now intentionally empty.
 
-### Calculation Service
+### Section Headers
 
-Updated `backend/src/services/budgetService.ts`:
-- `calculateLineItem()` now uses only `qty`, `days`, `rate`, and `agencyFeePercent`.
-- Line creation defaults to `qty: 1`, `days: 1`, `rate: 0`, `agencyFeePercent: 0`, `unit: "Days"`.
-- Line PATCH accepts only the new editable financial fields.
-- Template-applied lines now seed with `days: 1`.
-- `Flat Fee` updates force `days: 1`.
+Section headers no longer use the grid. They are full-width flex rows:
+- dark background
+- section badge and name on the left
+- section state dots inline after the name
+- totals, remaining pill, add button, and menu button on the right
 
-### PDF Export
+The section menu button still stops propagation so it does not collapse the section.
 
-Updated `backend/src/services/budgetPdf.ts`:
-- Removed Prep, Shoot, X, and OT columns.
-- Internal PDF now shows Qty, Unit, Rate, Agy%, Estimated, Actuals, Remaining.
-- Client PDF now shows Qty, Unit, Rate, Budget.
+### Parent Rows
 
-## Frontend
+Parent line item rows now use only the shared internal/client grids.
 
-### Types
+Removed the old extra 150px action column from the grid. Hover actions are now absolutely positioned over the right edge of the parent row, so they no longer create an extra implicit column that shifts alignment.
 
-Updated `frontend/src/lib/types.ts`:
-- `BudgetLineItem` now includes `days`.
-- Removed old prep/shoot/multiplier/overtime fields.
+### Cost Line Rows
 
-### Budget Table
+Cost line rows now use the same internal grid:
+- Dot column empty.
+- Code column contains the connector and type pill.
+- Description column contains reference, description, and supplier inline.
+- Actuals column contains amount and AGR/INV/PAID indicators.
+- CLO column contains file/proof/delete controls.
 
-Updated `frontend/src/components/budgets/BudgetView.tsx`.
+Cost line rows no longer add extra implicit grid columns.
 
-Internal columns are now:
+### Section Total Rows
 
-`● | CODE | DESCRIPTION | CLIENT NOTES | INT. NOTES | QTY | UNIT | RATE | AGY% | ESTIMATED | ACTUALS | REMAINING | CLO`
+Section total rows now use the same internal grid:
+- Description label in column 3.
+- Estimated in column 10.
+- Actuals in column 11.
+- Remaining in column 12.
+- Remaining uses the existing color logic.
 
-Client columns are now:
+### Table Container
 
-`CODE | DESCRIPTION | CLIENT NOTES | QTY | UNIT | RATE | ESTIMATED`
+The table now has a consistent scroll container:
+- `.budget-table`
+- `.budget-table-inner`
+- both have `min-width: 900px`
+- all row types are direct children of the inner table container.
 
-Changes:
-- Removed Prep, Shoot, X, OT Rate, and OT Hours from headers and rows.
-- Removed the extra internal status-dot spacer column after Remaining.
-- Cost line rows were remapped to the new grid and still only populate description/supplier/actuals/status/action areas.
-- Section totals were remapped to Estimated, Actuals, Remaining only.
-- Client view is clean: no dot column, no cost lines, no agency, no actuals.
+## Data Cleanup
 
-### Unit / Days Cell
+Ran the requested one-time cleanup against `pms_budget_line_items`:
 
-The Unit cell now carries both duration and unit:
-- `3 Days ▾`
-- `2 Cars ▾`
-- `Flat Fee ▾`
+```sql
+UPDATE pms_budget_line_items SET days = 1 WHERE days < 0 OR days IS NULL;
+UPDATE pms_budget_line_items SET qty = 1 WHERE qty < 0 OR qty IS NULL;
+UPDATE pms_budget_line_items SET rate = 0 WHERE rate < 0 OR rate IS NULL;
+```
 
-Clicking the number edits `days`.
-Clicking the unit label opens the custom dropdown.
-Allowed units:
-- Days
-- Pcs
-- Cars
-- Drives
-- Weeks
-- Hours
-- Flat Fee
+Result:
+- `days`: 1 row fixed.
+- `qty`: 0 rows fixed.
+- `rate`: 0 rows fixed.
+- Verification query confirmed `bad_days = 0`.
 
-### Agency and Formula Tooltip
-
-- `AGY%` is editable inline.
-- Non-zero agency percentages display amber.
-- Estimated values show a hover tooltip with the calculation breakdown.
-- Flat Fee tooltips omit the days multiplier.
+Backend validation for negative values was not added because this session was explicitly scoped to frontend layout/no backend changes.
 
 ## Verification
 
 Completed:
-- `cd backend && npx prisma format`
-- `cd backend && npx prisma migrate deploy`
-- `cd backend && npx prisma generate`
-- `cd backend && npm run build`
 - `cd frontend && npm run build`
 - `cp -r frontend/dist/* /var/www/agent/`
 - `pm2 reload 0 --update-env`
@@ -132,37 +106,25 @@ Completed:
 
 Health check returned:
 
-`{"status":"ok","time":"2026-05-11T11:44:53.613Z"}`
-
-PM2 notes:
-- New process started successfully.
-- Historical PM2 error log still contains old `BudgetRevision.version` Prisma errors and an IMAP timeout from earlier sessions.
-- Current reload served `/api/health` OK.
+`{"status":"ok","time":"2026-05-11T12:27:11.411Z"}`
 
 ## Known Issues / Technical Debt
 
-- Browser smoke testing is still needed for the exact UI interactions:
-  - inline days editing inside the Unit cell
-  - Flat Fee hiding the days value
-  - estimated tooltip placement
-  - client view cleanliness
-- Keyboard navigation remains the existing lightweight implementation; full spreadsheet-style row/down focus behavior is not deeply rebuilt in this pass.
-- Section `...` menu is still not a full contextual menu.
-- File picker integration for invoice/proof icons remains visual-only.
-- Mobile bottom-sheet budget editor remains incomplete.
+- Browser visual smoke testing is still needed to confirm pixel-perfect column alignment in the actual budget screen.
+- Sticky header is `top: 0` inside the budget scroll area because the scroll container starts below the nav/action/summary bars. This achieves the requested visual behavior without hard-coding the full page chrome height.
+- Cost line status indicators are compacted into the Actuals column. If they feel cramped with very large amounts, the next refinement should make them appear on hover or in a small popover.
+- No backend validation was added for negative `qty`, `days`, or `rate` because this pass was constrained to no backend changes.
 
 ## Exact Next Step
 
-Run the requested browser smoke test:
+Open a production budget and smoke test:
 
-1. Open a production budget.
-2. Add a new line item in section B.
-3. Set description `Photographer`, QTY `2`, Days `3`, Rate `1000`, Agency `%` `20`.
-4. Confirm Estimated shows `£7,200.00`.
-5. Hover Estimated and confirm the tooltip shows the breakdown.
-6. Change Agency to `0` and confirm Estimated becomes `£6,000.00`.
-7. Change Unit to `Flat Fee` and confirm the days number disappears and the formula uses QTY × RATE.
-8. Add a PO cost line and confirm it does not show QTY/UNIT/RATE cells.
-9. Switch to Client view and confirm no agency, actuals, remaining, dots, badges, or cost lines are visible.
+1. Confirm headers align with parent rows.
+2. Confirm cost line actual amounts align under Actuals.
+3. Confirm section total Estimated, Actuals, and Remaining align with the same columns.
+4. Scroll a long budget and confirm the header stays visible and aligned.
+5. Confirm section headers span full width.
+6. Confirm no bullet appears between days and unit.
+7. Confirm C.2 Lighting kit no longer shows negative days.
 
-After that, continue the deeper production budget manager work when ready, before Phase 8 FreeAgent automation.
+Then continue the next budget interaction refinement only after this alignment pass is visually confirmed.

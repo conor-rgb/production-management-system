@@ -13,6 +13,7 @@ import type {
   SubCost,
   SubCostLineType,
 } from "../../lib/types";
+import { BUDGET_GRID_CLIENT, BUDGET_GRID_INTERNAL } from "./budgetLayout";
 import { COST_LINE_BACKGROUNDS, DOT_COLORS, STATE_BADGES, getDotState, type DotState } from "./budgetStatus";
 
 type Entity = { type: "production" | "opportunity"; id: string; label?: string; data?: unknown };
@@ -34,9 +35,6 @@ const STATUS_LABELS: Record<string, string> = {
   REJECTED: "Rejected",
   SUPERSEDED: "Superseded",
 };
-
-const internalColumns = "24px 52px minmax(160px,1fr) 130px 110px 52px 72px 88px 56px 96px 84px 90px 36px 150px";
-const clientColumns = "52px minmax(160px,1fr) 130px 52px 72px 88px 96px";
 
 function money(value: number | null | undefined) {
   return `£${Number(value ?? 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -72,7 +70,7 @@ function remainingPillClass(remaining: number, estimated: number) {
 }
 
 function gridStyle(mode: ViewMode): CSSProperties {
-  return { gridTemplateColumns: mode === "internal" ? internalColumns : clientColumns };
+  return { gridTemplateColumns: mode === "internal" ? BUDGET_GRID_INTERNAL : BUDGET_GRID_CLIENT };
 }
 
 function statusSymbol(active: boolean) {
@@ -375,9 +373,10 @@ function BudgetTable(props: {
   const internal = props.mode === "internal";
 
   return (
-    <div className="min-w-max">
-      <div className="sticky top-0 z-20 grid h-7 border-b border-[#e8e8e4] bg-[#f8f8f6] text-[10px] uppercase tracking-[0.5px] text-[#aaa]" style={gridStyle(props.mode)}>
-        {internal && <HeaderCell center>●</HeaderCell>}
+    <div className="budget-table w-full min-w-[900px] overflow-x-auto">
+      <div className="budget-table-inner w-full min-w-[900px]">
+      <div className="sticky top-0 z-20 grid h-7 items-center border-b border-[#e8e8e4] bg-[#f8f8f6] text-[10px] uppercase tracking-[0.5px] text-[#aaa]" style={gridStyle(props.mode)}>
+        {internal && <HeaderCell center />}
         <HeaderCell>Code</HeaderCell>
         <HeaderCell>Description</HeaderCell>
         <HeaderCell>Client notes</HeaderCell>
@@ -390,7 +389,6 @@ function BudgetTable(props: {
         {internal && <HeaderCell right>Actuals</HeaderCell>}
         {internal && <HeaderCell right>Remaining</HeaderCell>}
         {internal && <HeaderCell center title="Close this line when fully settled">CLO</HeaderCell>}
-        {internal && <HeaderCell />}
       </div>
 
       {props.revision.sections.filter((section) => section.isVisible).map((section) => {
@@ -416,6 +414,7 @@ function BudgetTable(props: {
           />
         );
       })}
+      </div>
     </div>
   );
 }
@@ -442,30 +441,29 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
 
   return (
     <section>
-      <button onClick={onToggleSection} className="grid h-9 w-full bg-[#1a1a1f] text-left text-white" style={gridStyle(internal ? "internal" : "client")}>
-        {internal && <div />}
-        <div className="col-span-3 flex items-center gap-2 px-2">
+      <button onClick={onToggleSection} className="flex h-9 w-full items-center bg-[#1a1a1f] px-3 text-left text-white">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <span className="grid h-5 w-5 place-items-center rounded-[3px] bg-white/15 text-[10px] font-medium">{section.code}</span>
-          <span className="text-xs font-medium uppercase">{section.name}</span>
+          <span className="truncate text-xs font-medium uppercase">{section.name}</span>
           {collapsed ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
-        </div>
-        <div className="col-span-full flex items-center justify-end gap-3 px-2 text-xs">
           {internal && (
-            <div className="mr-auto flex items-center gap-[3px]">
+            <div className="ml-3 flex items-center gap-[3px]">
               {dots.map((state, index) => <span key={`${section.id}-${index}`} className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: DOT_COLORS[state] }} title={state.toLowerCase()} />)}
               {overflowCount > 0 && <span className="ml-1 text-[10px] text-white/70">+{overflowCount}</span>}
             </div>
           )}
+        </div>
+        <div className="flex items-center justify-end gap-3 text-xs">
           <span className="font-medium tabular-nums">{money(estimated)}</span>
           {internal && <span className={`rounded-full px-2 py-0.5 text-[10px] ${remainingPillClass(remaining, estimated)}`}>Remaining {money(remaining)}</span>}
-              <button
-                onClick={(event) => { event.stopPropagation(); props.onAddLine(section).catch(console.error); }}
-                className="grid h-8 w-8 place-items-center rounded hover:bg-white/10"
-                title="Add line"
-              >
-                <Plus size={14} />
-              </button>
-              <button onClick={(event) => event.stopPropagation()} className="grid h-8 w-8 place-items-center text-base" title="Section menu"><MoreHorizontal size={15} /></button>
+          <button
+            onClick={(event) => { event.stopPropagation(); props.onAddLine(section).catch(console.error); }}
+            className="grid h-8 w-8 place-items-center rounded hover:bg-white/10"
+            title="Add line"
+          >
+            <Plus size={14} />
+          </button>
+          <button onClick={(event) => event.stopPropagation()} className="grid h-8 w-8 place-items-center text-base" title="Section menu"><MoreHorizontal size={15} /></button>
         </div>
       </button>
 
@@ -490,7 +488,7 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
       ))}
 
       {internal && sectionTotal && estimated !== 0 && (
-        <div className="grid h-[26px] border-t border-[#e0e0dc] bg-[#f0f0ee] text-[11px] text-gray-500" style={gridStyle("internal")}>
+        <div className="grid h-7 items-center border-t border-[#e0e0dc] bg-[#f0f0ee] text-[11px] text-gray-500" style={gridStyle("internal")}>
           <div />
           <div />
           <div className="flex items-center px-2 italic">Section total</div>
@@ -498,7 +496,6 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
           <div className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(estimated)}</div>
           <div className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(actual)}</div>
           <div className={`flex items-center justify-end px-2 font-medium not-italic tabular-nums ${remainingClass(remaining, estimated)}`}>{money(remaining)}</div>
-          <div />
           <div />
         </div>
       )}
@@ -524,7 +521,7 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
 
   return (
     <div className="group/line">
-      <div className="group grid min-h-[34px] border-b border-[#ebebea] text-xs hover:bg-[#f5f5f3]" style={rowStyle}>
+      <div className="group relative grid min-h-[34px] items-center border-b border-[#ebebea] text-xs hover:bg-[#f5f5f3]" style={rowStyle}>
         {internal && <StatusDot state={state} />}
         <div className="flex items-center gap-1 px-2 text-[11px] text-[#888]">
           {internal && (
@@ -554,7 +551,7 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
         {internal && <ReadMoney value={line.variance} className={remainingClass(line.variance, line.estimatedTotal)} />}
         {internal && <StatusButton active={line.isClosed} onClick={() => props.onSaveLine(line, { isClosed: !line.isClosed }).catch(console.error)} title="Close this line when fully settled" />}
         {internal && (
-          <div className="flex items-center justify-end gap-1 px-2 opacity-0 group-hover:opacity-100">
+          <div className="absolute inset-y-0 right-0 flex items-center justify-end gap-1 bg-[#f5f5f3]/95 px-2 opacity-0 group-hover:opacity-100">
             {!closed && <CostLineAddButton lineType="PO" onClick={() => props.onSetAddingCostLine({ lineId: line.id, lineType: "PO" })} />}
             {!closed && <CostLineAddButton lineType="BILL" onClick={() => props.onSetAddingCostLine({ lineId: line.id, lineType: "BILL" })} />}
             {!closed && <CostLineAddButton lineType="RECEIPT" onClick={() => props.onSetAddingCostLine({ lineId: line.id, lineType: "RECEIPT" })} />}
@@ -852,7 +849,7 @@ function CostLineTypePill({ lineType, onChange }: { lineType: SubCostLineType; o
   }, []);
   return (
     <div ref={ref} className="relative flex items-center justify-center">
-      <button onClick={() => setOpen(!open)} className={`rounded border px-2 py-1 text-[10px] font-medium ${lineTypeClass(lineType)}`}>
+      <button onClick={() => setOpen(!open)} className={`max-w-[44px] truncate rounded border px-1 py-1 text-[10px] font-medium ${lineTypeClass(lineType)}`}>
         {lineTypeLabel(lineType)} ▾
       </button>
       {open && (
@@ -913,22 +910,24 @@ function SubCostRow({ subCost, closed, onRevision, onError }: { subCost: SubCost
   return (
     <div className="grid min-h-[32px] border-b border-[#ebebea] text-xs" style={{ ...gridStyle("internal"), background, opacity: closed ? 0.55 : 1 }}>
       <div />
-      <div />
-      <div className="flex min-h-[32px] min-w-0 items-center gap-2 px-2">
+      <div className="flex min-h-[32px] min-w-0 items-center gap-1 overflow-hidden px-1">
         <span className="text-[#ccc]">{subCost.receiptCaptureId ? <Camera size={12} /> : "└"}</span>
         <CostLineTypePill lineType={subCost.lineType} onChange={(lineType) => patch({ lineType }).catch(console.error)} />
-        {reference && <span className="whitespace-nowrap text-xs font-medium" style={{ color: DOT_COLORS[subCost.lineType === "PO" ? "PURPLE" : "BLUE" ] }}>{reference}</span>}
-        <EditableCell value={subCost.description} onSave={(value) => patch({ description: String(value) })} className="min-w-0 text-[#555]" />
       </div>
-      <Cell><EditableCell value={subCost.supplierName ?? ""} onSave={(value) => patch({ supplierName: String(value) })} className="text-[11px] italic text-[#888]" /></Cell>
-      <div className="col-span-6" />
-      <Cell><EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={subCost.lineType === "PO" ? "text-[#8b5cf6]" : subCost.lineType === "BILL" ? "text-[#3b82f6]" : "text-[#16a34a]"} /></Cell>
-      <div />
-      <div />
-      <div className="flex min-h-[30px] items-center justify-end gap-2 px-2">
+      <div className="flex min-h-[32px] min-w-0 items-center gap-2 overflow-hidden px-2">
+        {reference && <span className="shrink-0 whitespace-nowrap text-xs font-medium" style={{ color: DOT_COLORS[subCost.lineType === "PO" ? "PURPLE" : "BLUE" ] }}>{reference}</span>}
+        <EditableCell value={subCost.description} onSave={(value) => patch({ description: String(value) })} className="min-w-0 text-[#555]" />
+        {subCost.supplierName && <span className="shrink-0 truncate text-[11px] italic text-[#888]">{subCost.supplierName}</span>}
+      </div>
+      <div className="col-span-7" />
+      <div className="flex min-h-[32px] items-center justify-end gap-1 px-2 text-right tabular-nums">
+        <EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={subCost.lineType === "PO" ? "text-[#8b5cf6]" : subCost.lineType === "BILL" ? "text-[#3b82f6]" : "text-[#16a34a]"} />
         <StatusButton active={flags.agreed} onClick={subCost.lineType === "RECEIPT" ? undefined : () => patch({ isAgreed: !subCost.isAgreed }).catch(console.error)} title="Agreed" />
         <StatusButton active={flags.invoiced} title="Invoiced" />
         <StatusButton active={flags.paid} onClick={subCost.lineType === "BILL" ? () => patch({ isPaid: !subCost.isPaid }).catch(console.error) : undefined} title="Paid" />
+      </div>
+      <div />
+      <div className="flex min-h-[30px] items-center justify-end gap-1 px-1">
         <Paperclip size={14} className={subCost.invoiceFileId ? "text-[#1a1a1f]" : "text-[#888]"} />
         {subCost.proofOfPayment ? <Check size={14} className="text-green-600" /> : <span className="text-[#aaa]">✓</span>}
         <button onClick={remove} className="grid h-7 w-7 place-items-center text-[#aaa] hover:text-red-600"><X size={12} /></button>
@@ -960,16 +959,16 @@ function SubCostDraftRow({ lineId, initialLineType, onCancel, onRevision, onErro
   return (
     <div className="grid min-h-[30px] border-b border-[#ebebea] bg-[#fafaf8] text-xs" style={gridStyle("internal")}>
       <div />
-      <div />
-      <div className="flex min-h-[30px] items-center gap-2 px-2">
+      <div className="flex min-h-[30px] items-center gap-1 overflow-hidden px-1">
         <span className="text-[#ccc]">└</span>
         <CostLineTypePill lineType={lineType} onChange={setLineType} />
-        <input autoFocus value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description..." className="h-7 min-w-0 flex-1 border-0 bg-transparent text-xs outline-none" />
       </div>
-      <Cell><input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="Supplier..." className="h-7 w-full border-0 bg-transparent text-xs outline-none" /></Cell>
-      <div className="col-span-6" />
+      <div className="flex min-h-[30px] items-center gap-2 px-2">
+        <input autoFocus value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description..." className="h-7 min-w-0 flex-1 border-0 bg-transparent text-xs outline-none" />
+        <input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="Supplier..." className="h-7 w-28 border-0 bg-transparent text-[11px] italic text-[#888] outline-none" />
+      </div>
+      <div className="col-span-7" />
       <Cell><input value={amount} onChange={(event) => setAmount(event.target.value)} type="number" placeholder="£" className="h-7 w-full border-0 bg-transparent text-right text-xs tabular-nums outline-none" /></Cell>
-      <div />
       <div />
       <div className="flex items-center justify-end gap-2 px-2">
         <button onClick={save} className="min-h-[28px] rounded bg-[#1a1a1f] px-2 text-[11px] font-medium text-white">Save</button>
