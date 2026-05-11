@@ -27,7 +27,7 @@ import { PreviewPanel } from "../components/files/FileBrowser";
 import type { EmailAccount, EmailAttachmentSummary, EmailMessage, EmailTemplate, EmailThread, EmailThreadsResponse, JobFile, Production } from "../lib/types";
 import { formatBytes, JOB_FOLDERS } from "../lib/types";
 
-type Folder = "inbox" | "sent" | "flagged" | "archived";
+type Folder = "inbox" | "sent" | "starred" | "unread" | "archived";
 type Filter = "all" | "unread" | "flagged";
 type ComposerDraft = {
   to?: string;
@@ -340,7 +340,8 @@ export default function Email() {
               </button>
               <FolderButton active={folder === "inbox" && activeAccountId === account.id} icon={<Inbox size={14} />} label="Inbox" count={unreadCount} onClick={() => { setActiveAccountId(account.id); setFolder("inbox"); }} />
               <FolderButton active={folder === "sent" && activeAccountId === account.id} icon={<Send size={14} />} label="Sent" onClick={() => { setActiveAccountId(account.id); setFolder("sent"); }} />
-              <FolderButton active={folder === "flagged" && activeAccountId === account.id} icon={<Flag size={14} />} label="Flagged" onClick={() => { setActiveAccountId(account.id); setFolder("flagged"); }} />
+              <FolderButton active={folder === "starred" && activeAccountId === account.id} icon={<Star size={14} />} label="Starred" onClick={() => { setActiveAccountId(account.id); setFolder("starred"); }} />
+              <FolderButton active={folder === "unread" && activeAccountId === account.id} icon={<Flag size={14} />} label="Unread" onClick={() => { setActiveAccountId(account.id); setFolder("unread"); }} />
               <FolderButton active={folder === "archived" && activeAccountId === account.id} icon={<Archive size={14} />} label="Archived" onClick={() => { setActiveAccountId(account.id); setFolder("archived"); }} />
             </div>
           ))}
@@ -358,7 +359,8 @@ export default function Email() {
           <select value={folder} onChange={(event) => setFolder(event.target.value as Folder)} className="min-h-11 rounded-lg border border-gray-200 px-3 text-sm capitalize">
             <option value="inbox">Inbox</option>
             <option value="sent">Sent</option>
-            <option value="flagged">Flagged</option>
+            <option value="starred">Starred</option>
+            <option value="unread">Unread</option>
             <option value="archived">Archived</option>
           </select>
         </div>
@@ -400,8 +402,13 @@ export default function Email() {
             onLoadOlder={() => { loadOlderMessages().catch(console.error); }}
             onBack={() => setSelectedThreadId(null)}
             onOpenReply={() => openReply(thread)}
-            onFlag={async () => { await api.patch(`/api/email/threads/${thread.id}/flag`, {}); await loadThread(thread.id); await loadThreads(); }}
-            onArchive={async () => { await api.patch(`/api/email/threads/${thread.id}/archive`, {}); setSelectedThreadId(null); await loadThreads(); }}
+            onFlag={async () => { await api.post(`/api/email/threads/${thread.id}/star`, { starred: !thread.isFlagged }); await loadThread(thread.id); await loadThreads(); }}
+            onArchive={async () => {
+              if (folder === "archived") await api.post(`/api/email/threads/${thread.id}/unarchive`, {});
+              else await api.post(`/api/email/threads/${thread.id}/archive`, {});
+              setSelectedThreadId(null);
+              await loadThreads();
+            }}
           />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center text-gray-400">
@@ -480,13 +487,21 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
       <span className="min-w-0">
         <span className="flex items-center gap-2">
           <span className={`min-w-0 flex-1 truncate text-[13px] ${thread.isRead ? "font-normal text-gray-700" : "font-medium text-gray-950"}`}>{name}</span>
+          {thread.isFlagged && <Star size={12} className="shrink-0 fill-amber-400 text-amber-400" />}
           <span className="text-[11px] text-gray-400">{timeLabel(thread.lastMessageAt)}</span>
         </span>
         <span className={`flex min-w-0 items-center gap-1 truncate text-[13px] ${thread.isRead ? "font-normal" : "font-medium"} text-gray-800`}>
           <span className="truncate">{thread.subject}</span>
           {thread.hasAttachments && <Paperclip size={12} className="shrink-0 text-gray-400" />}
         </span>
-        <span className="block truncate text-xs text-gray-500">{thread.latestPreview}</span>
+        <span className="flex min-w-0 items-center gap-1 truncate text-xs text-gray-500">
+          {(thread.linkedOpportunity || thread.linkedProduction) && (
+            <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600">
+              {thread.linkedProduction?.jobCode ?? thread.linkedOpportunity?.clientName ?? "Linked"}
+            </span>
+          )}
+          <span className="truncate">{thread.latestPreview}</span>
+        </span>
       </span>
     </button>
   );
@@ -506,7 +521,7 @@ function ThreadDetail({ thread, filingAttachment, loadingOlder, onOpenAttachment
         <div className="mb-1 flex items-center gap-2">
           <button onClick={onBack} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500 md:hidden"><ArrowLeft size={18} /></button>
           <h1 className="min-w-0 flex-1 truncate text-base font-medium text-gray-900">{thread.subject}</h1>
-          <button onClick={onFlag} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><Star size={17} /></button>
+          <button onClick={onFlag} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><Star size={17} className={thread.isFlagged ? "fill-amber-400 text-amber-400" : ""} /></button>
           <button onClick={onArchive} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><Archive size={17} /></button>
         </div>
         <p className="truncate text-xs text-gray-500">{participantNames}</p>

@@ -688,6 +688,7 @@ model EmailAccount {
   isActive              Boolean       @default(true)
   isPrimary             Boolean       @default(false)
   lastSyncedAt          DateTime?
+  gmailHistoryId        String?
   threads               EmailThread[]
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
@@ -700,12 +701,23 @@ model EmailThread {
   accountId           String?
   account             EmailAccount?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
   externalThreadId    String         @default(uuid())
+  gmailThreadId       String?
+  historyId           String?
   subject             String
+  snippet             String?
   participants        String[]       @default([])
+  participantNames    String[]       @default([])
   lastMessageAt       DateTime       @default(now())
+  lastInboxMessageAt  DateTime?
+  lastSentMessageAt   DateTime?
   isRead              Boolean        @default(false)
   isFlagged           Boolean        @default(false)
   isArchived          Boolean        @default(false)
+  inInbox             Boolean        @default(false)
+  inSent              Boolean        @default(false)
+  isStarred           Boolean        @default(false)
+  isUnread            Boolean        @default(false)
+  isTrashed           Boolean        @default(false)
   linkedContactId     String?
   linkedContact       Contact?       @relation(fields: [linkedContactId], references: [id], onDelete: SetNull)
   linkedOpportunityId String?
@@ -718,7 +730,12 @@ model EmailThread {
   updatedAt           DateTime       @updatedAt
 
   @@unique([accountId, externalThreadId])
+  @@unique([accountId, gmailThreadId])
   @@index([lastMessageAt])
+  @@index([accountId, inInbox, lastMessageAt])
+  @@index([accountId, inSent, lastSentMessageAt])
+  @@index([accountId, isStarred])
+  @@index([accountId, isUnread])
   @@index([linkedContactId])
   @@index([linkedOpportunityId])
   @@index([linkedProductionId])
@@ -753,29 +770,39 @@ model ActivityTask {
 }
 
 model EmailMessage {
-  id                String      @id @default(uuid())
-  threadId          String
-  thread            EmailThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  externalMessageId String      @unique
-  fromAddress       String
-  fromName          String?
-  toAddresses       String[]    @default([])
-  ccAddresses       String[]    @default([])
-  bccAddresses      String[]    @default([])
-  subject           String
-  bodyHtml          String      @default("")
-  bodyText          String      @default("")
-  sentAt            DateTime
-  isFromMe          Boolean     @default(false)
-  hasAttachments    Boolean     @default(false)
-  attachments       Json        @default("[]")
-  imapMailbox       String?
-  imapUid           Int?
-  sourceJobFiles    JobFile[]   @relation("JobFileSourceEmailMessage")
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  id                 String      @id @default(uuid())
+  threadId           String
+  thread             EmailThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  externalMessageId  String      @unique
+  gmailMessageId     String?     @unique
+  gmailThreadId      String?
+  labelIds           String[]    @default([])
+  inInbox            Boolean     @default(false)
+  inSent             Boolean     @default(false)
+  isUnread           Boolean     @default(false)
+  isStarred          Boolean     @default(false)
+  fromAddress        String
+  fromName           String?
+  toAddresses        String[]    @default([])
+  ccAddresses        String[]    @default([])
+  bccAddresses       String[]    @default([])
+  subject            String
+  bodyHtml           String      @default("")
+  bodyText           String      @default("")
+  snippet            String?
+  sentAt             DateTime
+  isFromMe           Boolean     @default(false)
+  hasAttachments     Boolean     @default(false)
+  attachments        Json        @default("[]")
+  gmailAttachmentIds Json        @default("[]")
+  imapMailbox        String?
+  imapUid            Int?
+  sourceJobFiles     JobFile[]   @relation("JobFileSourceEmailMessage")
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
   @@index([threadId, sentAt])
+  @@index([gmailThreadId])
   @@index([imapMailbox, imapUid])
   @@map("pms_email_messages")
 }

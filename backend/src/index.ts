@@ -4,8 +4,12 @@ dotenv.config();
 import { createServer } from "./server";
 import prisma from "./prisma";
 import bcrypt from "bcryptjs";
+import fs from "fs/promises";
+import path from "path";
+import { EmailProvider } from "@prisma/client";
 import { seedSectionTemplates } from "./services/budgetService";
 import { startIdleSync } from "./services/emailService";
+import { fullGmailSync, incrementalGmailSync } from "./services/gmailSyncService";
 import { syncFromGoogleCalendar, syncOpportunityFollowUpsToCalendar, syncProductionDatesToCalendar } from "./services/calendarSyncService";
 import { getPrimaryAccount } from "./services/googleCalendarService";
 
@@ -80,13 +84,44 @@ async function seedEmailTemplates() {
   });
 }
 
+async function runGmailResyncCleanup() {
+  if (process.env.GMAIL_RESYNC_DONE) return;
+  console.log("[GMAIL] Wiping IMAP-synced email data for fresh Gmail API sync...");
+  await prisma.emailMessage.deleteMany({});
+  await prisma.emailThread.deleteMany({});
+  console.log("[GMAIL] Email data wiped. Re-sync will begin shortly.");
+  const envPath = path.resolve(__dirname, "../.env");
+  try {
+    const env = await fs.readFile(envPath, "utf8").catch(() => "");
+    if (!/^GMAIL_RESYNC_DONE=/m.test(env)) {
+      await fs.appendFile(envPath, `${env.endsWith("\n") || env.length === 0 ? "" : "\n"}GMAIL_RESYNC_DONE=true\n`);
+      process.env.GMAIL_RESYNC_DONE = "true";
+      console.log("[GMAIL] Set GMAIL_RESYNC_DONE=true in backend/.env");
+    }
+  } catch (err) {
+    console.error("[GMAIL] Failed to persist GMAIL_RESYNC_DONE=true:", err instanceof Error ? err.message : err);
+  }
+}
+
 async function initEmailSync() {
   try {
     const accounts = await prisma.emailAccount.findMany({ where: { isActive: true } });
     for (const account of accounts) {
-      startIdleSync(account.id).catch((err) => {
-        console.error(`Failed to start IDLE for ${account.emailAddress}:`, err);
-      });
+      if (account.provider === EmailProvider.GOOGLE) {
+        fullGmailSync(account).catch((err) => {
+          console.error("[GMAIL SYNC] Initial sync failed:", err instanceof Error ? err.message : err);
+        });
+        setInterval(() => {
+          incrementalGmailSync(account).catch((err) => {
+            console.error("[GMAIL SYNC] Incremental sync failed:", err instanceof Error ? err.message : err);
+          });
+        }, 2 * 60 * 1000);
+        console.log(`[GMAIL SYNC] Started sync for ${account.emailAddress}`);
+      } else {
+        startIdleSync(account.id).catch((err) => {
+          console.error(`Failed to start IDLE for ${account.emailAddress}:`, err);
+        });
+      }
     }
     console.log(`Email sync started for ${accounts.length} accounts`);
   } catch (err) {
@@ -118,6 +153,7 @@ async function main() {
   await seedCrewRoles();
   await seedSectionTemplates();
   await seedEmailTemplates();
+  await runGmailResyncCleanup();
 
   const app = createServer();
   const port = parseInt(process.env.PORT ?? "3000", 10);

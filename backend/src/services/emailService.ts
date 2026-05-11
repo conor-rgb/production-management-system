@@ -71,7 +71,7 @@ export interface SendEmailOptions {
 
 export interface ThreadListOptions {
   accountId?: string;
-  folder?: "inbox" | "sent" | "flagged" | "archived";
+  folder?: "inbox" | "sent" | "flagged" | "archived" | "starred" | "unread" | "all";
   isRead?: boolean;
   isFlagged?: boolean;
   isArchived?: boolean;
@@ -117,6 +117,7 @@ type StoredAttachment = {
   filename?: string;
   mimeType?: string;
   sizeBytes?: number;
+  attachmentId?: string;
   contentId?: string | null;
   isInline?: boolean;
 };
@@ -445,6 +446,7 @@ function parseAttachments(value: Prisma.JsonValue): StoredAttachment[] {
       filename: typeof attachment.filename === "string" ? attachment.filename : "attachment",
       mimeType: typeof attachment.mimeType === "string" ? attachment.mimeType : "application/octet-stream",
       sizeBytes: typeof attachment.sizeBytes === "number" ? attachment.sizeBytes : 0,
+      attachmentId: typeof attachment.attachmentId === "string" ? attachment.attachmentId : undefined,
       contentId: typeof attachment.contentId === "string" ? attachment.contentId : null,
       isInline: typeof attachment.isInline === "boolean" ? attachment.isInline : false,
     });
@@ -608,21 +610,9 @@ export async function syncAccount(accountId: string): Promise<void> {
   console.log(`[SYNC] Account: ${account.emailAddress}, provider: ${account.provider}, hasAccessToken: ${Boolean(account.encryptedAccessToken)}, hasRefreshToken: ${Boolean(account.encryptedRefreshToken)}`);
 
   if (account.provider === EmailProvider.GOOGLE) {
-    if (!account.encryptedAccessToken) {
-      console.error(`[SYNC] No access token for ${account.emailAddress} — re-authenticate`);
-      return;
-    }
-
-    if (account.tokenExpiry && account.tokenExpiry <= new Date()) {
-      console.log(`[SYNC] Access token expired for ${account.emailAddress}, refreshing...`);
-      try {
-        account = await refreshGoogleToken(account);
-        console.log("[SYNC] Token refreshed successfully");
-      } catch (err) {
-        console.error("[SYNC] Token refresh failed:", err instanceof Error ? err.message : err);
-        return;
-      }
-    }
+    const { fullGmailSync } = await import("./gmailSyncService");
+    await fullGmailSync(account);
+    return;
   }
 
   let client: ImapFlow | null = null;
@@ -635,9 +625,6 @@ export async function syncAccount(accountId: string): Promise<void> {
     console.log(`[SYNC] Connected successfully to IMAP for ${account.emailAddress}`);
   } catch (err) {
     console.error(`[SYNC] IMAP connection failed for ${account.emailAddress}:`, err instanceof Error ? err.message : err);
-    if (account.provider === EmailProvider.GOOGLE && err instanceof Error) {
-      console.error("[IMAP] Google auth hint: Enable IMAP in Gmail Settings → See all settings → Forwarding and POP/IMAP → Enable IMAP. For Google Workspace, the admin may need to enable IMAP access.");
-    }
     if (err instanceof Error) console.error("[SYNC] Connection error stack:", err.stack);
     return;
   }
@@ -722,6 +709,10 @@ export async function startIdleSync(accountId: string): Promise<void> {
   const foundAccount = await prisma.emailAccount.findUnique({ where: { id: accountId } });
   if (!foundAccount || !foundAccount.isActive) return;
   const account = foundAccount;
+  if (account.provider === EmailProvider.GOOGLE) {
+    console.log(`[GMAIL SYNC] Skipping IMAP IDLE for Gmail account ${account.emailAddress}`);
+    return;
+  }
   const state: IdleState = { connected: false };
   idleConnections.set(accountId, state);
 
@@ -780,6 +771,22 @@ export async function getEmailAttachment(messageId: string, attachmentIndex: num
   });
   if (!message) throw new Error("Email message not found");
   if (!message.thread.account) throw new Error("Email account not found for message");
+  if (message.thread.account.provider === EmailProvider.GOOGLE) {
+    const attachmentSummary = parseAttachments(message.attachments)[attachmentIndex];
+    if (!attachmentSummary?.attachmentId) throw new Error("Gmail attachment ID not found");
+    const { getAttachment } = await import("./gmailService");
+    const content = await getAttachment(
+      message.thread.account,
+      message.gmailMessageId ?? message.externalMessageId,
+      attachmentSummary.attachmentId
+    );
+    return {
+      filename: attachmentSummary.filename ?? `attachment-${attachmentIndex + 1}`,
+      mimeType: attachmentSummary.mimeType ?? "application/octet-stream",
+      sizeBytes: attachmentSummary.sizeBytes ?? content.byteLength,
+      content,
+    };
+  }
   if (!message.imapMailbox || !message.imapUid) {
     throw new Error("Attachment is not available until this message is resynced");
   }
@@ -862,6 +869,26 @@ export async function saveEmailAttachmentToJob(options: {
 export async function sendEmail(options: SendEmailOptions) {
   const account = await prisma.emailAccount.findUnique({ where: { id: options.fromAccountId } });
   if (!account) throw new Error("Email account not found");
+  if (account.provider === EmailProvider.GOOGLE) {
+    const existingThread = options.threadId
+      ? await prisma.emailThread.findUnique({ where: { id: options.threadId } })
+      : null;
+    const { sendGmailMessage } = await import("./gmailService");
+    const sent = await sendGmailMessage(account, {
+      to: options.to,
+      cc: options.cc,
+      bcc: options.bcc,
+      subject: options.subject,
+      bodyHtml: options.bodyHtml,
+      inReplyTo: options.inReplyTo,
+      gmailThreadId: existingThread?.gmailThreadId ?? null,
+    });
+    const { syncThread } = await import("./gmailSyncService");
+    await syncThread(account, sent.gmailThreadId);
+    const localMessage = await prisma.emailMessage.findUnique({ where: { externalMessageId: sent.gmailMessageId } });
+    if (localMessage) return localMessage;
+    throw new Error("Gmail sent message could not be synced locally");
+  }
   const transporter = await getSmtpTransporter(account);
   const info = await transporter.sendMail({
     from: account.emailAddress,
@@ -946,17 +973,30 @@ export async function getThreads(options: ThreadListOptions) {
 
   switch (folder) {
     case "sent":
-      andFilters.push({ messages: { some: { isFromMe: true } } });
+      andFilters.push({ OR: [{ inSent: true }, { messages: { some: { isFromMe: true } } }] });
       break;
     case "flagged":
-      andFilters.push({ isFlagged: true, isArchived: false });
+    case "starred":
+      andFilters.push({ OR: [{ isStarred: true }, { isFlagged: true }], isArchived: false });
       break;
     case "archived":
       andFilters.push({ isArchived: true });
       break;
+    case "unread":
+      andFilters.push({ OR: [{ isUnread: true }, { isRead: false }], isArchived: false, isTrashed: false });
+      break;
+    case "all":
+      andFilters.push({ isTrashed: false });
+      break;
     case "inbox":
     default:
-      andFilters.push({ isArchived: false, messages: { some: { isFromMe: false } } });
+      andFilters.push({
+        OR: [
+          { inInbox: true },
+          { isArchived: false, messages: { some: { isFromMe: false } } },
+        ],
+        isTrashed: false,
+      });
       break;
   }
 

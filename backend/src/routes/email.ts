@@ -17,6 +17,8 @@ import {
   stopIdleSync,
   syncAccount,
 } from "../services/emailService";
+import { fullGmailSync } from "../services/gmailSyncService";
+import { archiveThread as gmailArchiveThread, markThreadRead, markThreadUnread, starThread, unarchiveThread as gmailUnarchiveThread, unstarThread } from "../services/gmailService";
 
 const router = Router();
 
@@ -105,7 +107,7 @@ router.post("/accounts", async (req: Request, res: Response): Promise<void> => {
     await prisma.emailAccount.updateMany({ where: { id: { not: account.id } }, data: { isPrimary: false } });
   }
   syncAccount(account.id).catch((err) => console.error("Initial email sync failed:", err));
-  startIdleSync(account.id).catch((err) => console.error("Initial IDLE sync failed:", err));
+  if (account.provider !== EmailProvider.GOOGLE) startIdleSync(account.id).catch((err) => console.error("Initial IDLE sync failed:", err));
   res.status(201).json(redactAccount(account));
 });
 
@@ -123,7 +125,7 @@ router.patch("/accounts/:accountId", async (req: Request, res: Response): Promis
     },
   });
   if (body.isActive === false) stopIdleSync(account.id);
-  if (body.isActive === true) startIdleSync(account.id).catch((err) => console.error("IDLE restart failed:", err));
+  if (body.isActive === true && account.provider !== EmailProvider.GOOGLE) startIdleSync(account.id).catch((err) => console.error("IDLE restart failed:", err));
   res.json(redactAccount(account));
 });
 
@@ -138,7 +140,9 @@ router.post("/accounts/:accountId/sync", async (req: Request, res: Response): Pr
   res.json({ status: "syncing" });
   try {
     console.log(`[EMAIL SYNC] Starting manual sync for account ${accountId}`);
-    await syncAccount(accountId);
+    const account = await prisma.emailAccount.findUnique({ where: { id: accountId } });
+    if (account?.provider === EmailProvider.GOOGLE) await fullGmailSync(account);
+    else await syncAccount(accountId);
     console.log(`[EMAIL SYNC] Manual sync completed for account ${accountId}`);
   } catch (err) {
     console.error(`[EMAIL SYNC] Manual sync failed for account ${accountId}:`, err instanceof Error ? err.message : err);
@@ -229,8 +233,7 @@ export async function googleOAuthCallbackHandler(req: Request, res: Response): P
         tokenExpiry: token.expiresAt,
       },
     });
-    syncAccount(account.id).catch((err) => console.error("Google initial sync failed:", err));
-    startIdleSync(account.id).catch((err) => console.error("Google IDLE sync failed:", err));
+    fullGmailSync(account).catch((err) => console.error("[GMAIL SYNC] Google initial sync failed:", err));
     res.type("html").send(`<!doctype html>
 <html lang="en">
   <head>
@@ -276,7 +279,7 @@ router.get("/oauth/google/callback", googleOAuthCallbackHandler);
 router.get("/threads", async (req: Request, res: Response): Promise<void> => {
   const result = await getThreads({
     accountId: typeof req.query.accountId === "string" ? req.query.accountId : undefined,
-    folder: req.query.folder === "sent" || req.query.folder === "flagged" || req.query.folder === "archived" || req.query.folder === "inbox" ? req.query.folder : undefined,
+    folder: req.query.folder === "sent" || req.query.folder === "flagged" || req.query.folder === "archived" || req.query.folder === "inbox" || req.query.folder === "starred" || req.query.folder === "unread" || req.query.folder === "all" ? req.query.folder : undefined,
     isRead: req.query.unread !== undefined ? !boolQuery(req.query.unread) : undefined,
     isFlagged: boolQuery(req.query.flagged),
     isArchived: boolQuery(req.query.archived),
@@ -297,16 +300,47 @@ router.get("/threads/:threadId", async (req: Request, res: Response): Promise<vo
     res.status(404).json({ error: "Thread not found" });
     return;
   }
-  await prisma.emailThread.update({ where: { id: req.params.threadId }, data: { isRead: true } });
+  if (!thread.isRead && thread.account?.provider === EmailProvider.GOOGLE && thread.gmailThreadId) {
+    markThreadRead(thread.account, thread.gmailThreadId).catch((err) => console.error("[GMAIL] Mark read failed:", err instanceof Error ? err.message : err));
+  }
+  await prisma.emailThread.update({ where: { id: req.params.threadId }, data: { isRead: true, isUnread: false } });
+  await prisma.emailMessage.updateMany({ where: { threadId: req.params.threadId }, data: { isUnread: false } });
   res.json({ ...thread, isRead: true });
 });
 
 router.patch("/threads/:threadId/read", async (req: Request, res: Response): Promise<void> => {
+  const read = Boolean((req.body as { isRead?: boolean; read?: boolean }).isRead ?? (req.body as { read?: boolean }).read);
+  const current = await prisma.emailThread.findUnique({ where: { id: req.params.threadId }, include: { account: true } });
+  if (!current) {
+    res.status(404).json({ error: "Thread not found" });
+    return;
+  }
+  if (current.account?.provider === EmailProvider.GOOGLE && current.gmailThreadId) {
+    if (read) await markThreadRead(current.account, current.gmailThreadId);
+    else await markThreadUnread(current.account, current.gmailThreadId);
+  }
   const thread = await prisma.emailThread.update({
     where: { id: req.params.threadId },
-    data: { isRead: Boolean((req.body as { isRead?: boolean }).isRead) },
+    data: { isRead: read, isUnread: !read },
   });
+  await prisma.emailMessage.updateMany({ where: { threadId: thread.id }, data: { isUnread: !read } });
   res.json(thread);
+});
+
+router.post("/threads/:threadId/read", async (req: Request, res: Response): Promise<void> => {
+  const read = Boolean((req.body as { read?: boolean }).read);
+  const current = await prisma.emailThread.findUnique({ where: { id: req.params.threadId }, include: { account: true } });
+  if (!current) {
+    res.status(404).json({ error: "Thread not found" });
+    return;
+  }
+  if (current.account?.provider === EmailProvider.GOOGLE && current.gmailThreadId) {
+    if (read) await markThreadRead(current.account, current.gmailThreadId);
+    else await markThreadUnread(current.account, current.gmailThreadId);
+  }
+  await prisma.emailThread.update({ where: { id: current.id }, data: { isRead: read, isUnread: !read } });
+  await prisma.emailMessage.updateMany({ where: { threadId: current.id }, data: { isUnread: !read } });
+  res.json({ success: true });
 });
 
 router.patch("/threads/:threadId/flag", async (req: Request, res: Response): Promise<void> => {
@@ -315,12 +349,63 @@ router.patch("/threads/:threadId/flag", async (req: Request, res: Response): Pro
     res.status(404).json({ error: "Thread not found" });
     return;
   }
-  const thread = await prisma.emailThread.update({ where: { id: current.id }, data: { isFlagged: !current.isFlagged } });
+  const account = current.accountId ? await prisma.emailAccount.findUnique({ where: { id: current.accountId } }) : null;
+  const starred = !current.isFlagged;
+  if (account?.provider === EmailProvider.GOOGLE && current.gmailThreadId) {
+    if (starred) await starThread(account, current.gmailThreadId);
+    else await unstarThread(account, current.gmailThreadId);
+  }
+  const thread = await prisma.emailThread.update({ where: { id: current.id }, data: { isFlagged: starred, isStarred: starred } });
+  res.json(thread);
+});
+
+router.post("/threads/:threadId/star", async (req: Request, res: Response): Promise<void> => {
+  const starred = Boolean((req.body as { starred?: boolean }).starred);
+  const current = await prisma.emailThread.findUnique({ where: { id: req.params.threadId }, include: { account: true } });
+  if (!current) {
+    res.status(404).json({ error: "Thread not found" });
+    return;
+  }
+  if (current.account?.provider === EmailProvider.GOOGLE && current.gmailThreadId) {
+    if (starred) await starThread(current.account, current.gmailThreadId);
+    else await unstarThread(current.account, current.gmailThreadId);
+  }
+  const thread = await prisma.emailThread.update({ where: { id: current.id }, data: { isFlagged: starred, isStarred: starred } });
   res.json(thread);
 });
 
 router.patch("/threads/:threadId/archive", async (req: Request, res: Response): Promise<void> => {
-  const thread = await prisma.emailThread.update({ where: { id: req.params.threadId }, data: { isArchived: true } });
+  const current = await prisma.emailThread.findUnique({ where: { id: req.params.threadId }, include: { account: true } });
+  if (!current) {
+    res.status(404).json({ error: "Thread not found" });
+    return;
+  }
+  if (current.account?.provider === EmailProvider.GOOGLE && current.gmailThreadId) {
+    await gmailArchiveThread(current.account, current.gmailThreadId);
+  }
+  const thread = await prisma.emailThread.update({ where: { id: req.params.threadId }, data: { isArchived: true, inInbox: false } });
+  res.json(thread);
+});
+
+router.post("/threads/:threadId/archive", async (req: Request, res: Response): Promise<void> => {
+  const current = await prisma.emailThread.findUnique({ where: { id: req.params.threadId }, include: { account: true } });
+  if (!current) {
+    res.status(404).json({ error: "Thread not found" });
+    return;
+  }
+  if (current.account?.provider === EmailProvider.GOOGLE && current.gmailThreadId) await gmailArchiveThread(current.account, current.gmailThreadId);
+  const thread = await prisma.emailThread.update({ where: { id: current.id }, data: { isArchived: true, inInbox: false } });
+  res.json(thread);
+});
+
+router.post("/threads/:threadId/unarchive", async (req: Request, res: Response): Promise<void> => {
+  const current = await prisma.emailThread.findUnique({ where: { id: req.params.threadId }, include: { account: true } });
+  if (!current) {
+    res.status(404).json({ error: "Thread not found" });
+    return;
+  }
+  if (current.account?.provider === EmailProvider.GOOGLE && current.gmailThreadId) await gmailUnarchiveThread(current.account, current.gmailThreadId);
+  const thread = await prisma.emailThread.update({ where: { id: current.id }, data: { isArchived: false, inInbox: true } });
   res.json(thread);
 });
 
@@ -468,8 +553,46 @@ router.patch("/signature", async (req: Request, res: Response): Promise<void> =>
 });
 
 router.get("/unread-count", async (_req: Request, res: Response): Promise<void> => {
-  const count = await prisma.emailThread.count({ where: { isRead: false, isArchived: false, account: { isActive: true } } });
+  const count = await prisma.emailThread.count({
+    where: {
+      OR: [{ isRead: false }, { isUnread: true }],
+      isArchived: false,
+      inInbox: true,
+      isTrashed: false,
+      account: { isActive: true },
+    },
+  });
   res.json({ count });
+});
+
+router.get("/search", async (req: Request, res: Response): Promise<void> => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  if (!q) {
+    res.json({ threads: [] });
+    return;
+  }
+  const accountId = typeof req.query.accountId === "string" ? req.query.accountId : undefined;
+  const threads = await prisma.emailThread.findMany({
+    where: {
+      accountId,
+      isTrashed: false,
+      OR: [
+        { subject: { contains: q, mode: "insensitive" } },
+        { snippet: { contains: q, mode: "insensitive" } },
+        { participants: { has: q.toLowerCase() } },
+        { messages: { some: { bodyText: { contains: q, mode: "insensitive" } } } },
+      ],
+    },
+    orderBy: { lastMessageAt: "desc" },
+    take: 20,
+    include: {
+      linkedContact: { include: { company: true } },
+      linkedOpportunity: true,
+      linkedProduction: true,
+      _count: { select: { messages: true } },
+    },
+  });
+  res.json({ threads });
 });
 
 router.get("/health", async (_req: Request, res: Response): Promise<void> => {
@@ -478,7 +601,7 @@ router.get("/health", async (_req: Request, res: Response): Promise<void> => {
   res.json(accounts.map((account) => ({
     accountId: account.id,
     emailAddress: account.emailAddress,
-    connected: statuses.get(account.id)?.connected ?? false,
+    connected: account.provider === EmailProvider.GOOGLE ? account.isActive : statuses.get(account.id)?.connected ?? false,
     lastSyncedAt: account.lastSyncedAt,
   })));
 });
