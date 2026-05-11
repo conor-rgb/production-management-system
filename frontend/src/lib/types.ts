@@ -12,6 +12,7 @@ export type JobFolder = "Briefs" | "Estimates" | "Budgets" | "Contracts" | "Crew
 export type BudgetStatus = "DRAFT" | "SENT" | "CONFIRMED" | "IN_PRODUCTION" | "WRAPPED";
 export type BudgetRevisionStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED" | "SUPERSEDED";
 export type SubCostStatus = "PENDING" | "AGREED" | "INVOICED" | "PAID";
+export type SubCostLineType = "PO" | "BILL" | "RECEIPT";
 export type AdvanceCalcType = "PERCENT_OF_TOTAL" | "PERCENT_OF_PRODUCTION" | "FIXED_AMOUNT";
 export type ReceiptCaptureStatus = "PENDING" | "PARSING" | "PARSED" | "ASSIGNED" | "FAILED";
 export type EmailProvider = "GOOGLE" | "IMAP";
@@ -480,6 +481,7 @@ export interface BudgetTotals {
 export interface SubCost {
   id: string;
   lineItemId: string;
+  lineType: SubCostLineType;
   description: string;
   supplierName?: string | null;
   amount: number;

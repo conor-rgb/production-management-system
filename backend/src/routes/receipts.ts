@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { Router, Request, Response } from "express";
 import multer from "multer";
 import mime from "mime-types";
-import { ReceiptCaptureStatus, SubCostStatus } from "@prisma/client";
+import { ReceiptCaptureStatus, SubCostLineType, SubCostStatus } from "@prisma/client";
 import prisma from "../prisma";
 import { fileExtension, ensureProductionFolders, resolveJobFilePath } from "../services/fileStorage";
 import { parseReceiptImage } from "../services/receiptParser";
@@ -263,6 +263,7 @@ router.patch("/:captureId/assign", async (req: Request, res: Response): Promise<
     const subCost = await prisma.subCost.create({
       data: {
         lineItemId: body.lineItemId,
+        lineType: SubCostLineType.RECEIPT,
         description: capture.parsedDescription || capture.originalFilename,
         supplierName: capture.parsedVendor || "Unknown vendor",
         amount: (receiptAmount ?? 0) / 100,

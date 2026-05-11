@@ -129,6 +129,14 @@ enum SubCostStatus {
   @@map("pms_sub_cost_status")
 }
 
+enum SubCostLineType {
+  PO
+  BILL
+  RECEIPT
+
+  @@map("pms_sub_cost_line_type")
+}
+
 enum AdvanceCalcType {
   PERCENT_OF_TOTAL
   PERCENT_OF_PRODUCTION
@@ -521,30 +529,31 @@ model BudgetLineItem {
 }
 
 model SubCost {
-  id               String         @id @default(uuid())
+  id               String          @id @default(uuid())
   lineItemId       String
+  lineType         SubCostLineType @default(PO)
   description      String
   supplierName     String?
   amount           Float
   amountGross      Float?
   vatAmount        Float?
   vatRate          Float?
-  currency         String         @default("GBP")
-  status           SubCostStatus  @default(PENDING)
+  currency         String          @default("GBP")
+  status           SubCostStatus   @default(PENDING)
   invoiceNumber    String?
   invoiceDate      DateTime?
   datePaid         DateTime?
   invoiceFileId    String?
   proofOfPayment   String?
-  isAgreed         Boolean        @default(false)
-  isInvoiced       Boolean        @default(false)
-  isPaid           Boolean        @default(false)
+  isAgreed         Boolean         @default(false)
+  isInvoiced       Boolean         @default(false)
+  isPaid           Boolean         @default(false)
   receiptCaptureId String?
-  lineItem         BudgetLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
-  invoiceFile      JobFile?       @relation("InvoiceFile", fields: [invoiceFileId], references: [id])
-  popFile          JobFile?       @relation("POPFile", fields: [proofOfPayment], references: [id])
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  lineItem         BudgetLineItem  @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+  invoiceFile      JobFile?        @relation("InvoiceFile", fields: [invoiceFileId], references: [id])
+  popFile          JobFile?        @relation("POPFile", fields: [proofOfPayment], references: [id])
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   @@index([lineItemId])
   @@index([invoiceFileId])

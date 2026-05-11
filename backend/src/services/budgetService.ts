@@ -1,4 +1,4 @@
-import { AdvanceCalcType, Prisma, SubCostStatus } from "@prisma/client";
+import { AdvanceCalcType, Prisma } from "@prisma/client";
 import prisma from "../prisma";
 
 export const revisionInclude = {
@@ -70,8 +70,6 @@ export interface RevisionTotals {
   advances: Array<{ id: string; calculatedAmount: number }>;
 }
 
-const activeActualStatuses = new Set<SubCostStatus>([SubCostStatus.AGREED, SubCostStatus.INVOICED, SubCostStatus.PAID]);
-
 function roundMoney(value: number): number {
   return Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 }
@@ -116,10 +114,8 @@ export function calculateLineItem(item: {
   return roundMoney(withFee);
 }
 
-export function calculateLineItemActual(lineItem: { subCosts: Array<{ amount: number; status: SubCostStatus }> }): number {
-  return roundMoney(lineItem.subCosts.reduce((sum, subCost) => (
-    activeActualStatuses.has(subCost.status) ? sum + Number(subCost.amount ?? 0) : sum
-  ), 0));
+export function calculateLineItemActual(lineItem: { subCosts: Array<{ amount: number }> }): number {
+  return roundMoney(lineItem.subCosts.reduce((sum, subCost) => sum + Number(subCost.amount ?? 0), 0));
 }
 
 export function calculateSectionTotals(section: FullSection): SectionTotals {
@@ -135,9 +131,9 @@ export function calculateSectionTotals(section: FullSection): SectionTotals {
     actualTotal,
     variance,
     remainingBudget: variance,
-    agreedCount: lineItems.filter((line) => line.isAgreed).length,
-    invoicedCount: lineItems.filter((line) => line.subCosts.some((subCost) => subCost.status === SubCostStatus.INVOICED || subCost.status === SubCostStatus.PAID)).length,
-    paidCount: lineItems.filter((line) => line.subCosts.length > 0 && line.subCosts.every((subCost) => subCost.status === SubCostStatus.PAID)).length,
+    agreedCount: lineItems.filter((line) => line.subCosts.some((subCost) => subCost.isAgreed)).length,
+    invoicedCount: lineItems.filter((line) => line.subCosts.some((subCost) => subCost.isInvoiced)).length,
+    paidCount: lineItems.filter((line) => line.subCosts.length > 0 && line.subCosts.every((subCost) => subCost.isPaid)).length,
     closedCount: lineItems.filter((line) => line.isClosed).length,
   };
 }

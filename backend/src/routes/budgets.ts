@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { AdvanceCalcType, Prisma, RevisionStatus, SubCostStatus } from "@prisma/client";
+import { AdvanceCalcType, Prisma, RevisionStatus, SubCostLineType, SubCostStatus } from "@prisma/client";
 import prisma from "../prisma";
 import {
   applyTemplate,
@@ -38,6 +38,20 @@ function dateOrNull(value: unknown): Date | null | undefined {
   return new Date(String(value));
 }
 
+function normalizeLineType(value: unknown): SubCostLineType {
+  return Object.values(SubCostLineType).includes(value as SubCostLineType) ? value as SubCostLineType : SubCostLineType.PO;
+}
+
+function lineTypeLifecycle(lineType: SubCostLineType): Pick<Prisma.SubCostUncheckedCreateInput, "status" | "isAgreed" | "isInvoiced" | "isPaid" | "datePaid"> {
+  if (lineType === SubCostLineType.RECEIPT) {
+    return { status: SubCostStatus.PAID, isAgreed: true, isInvoiced: true, isPaid: true, datePaid: new Date() };
+  }
+  if (lineType === SubCostLineType.BILL) {
+    return { status: SubCostStatus.INVOICED, isAgreed: false, isInvoiced: true, isPaid: false };
+  }
+  return { status: SubCostStatus.PENDING, isAgreed: false, isInvoiced: false, isPaid: false, datePaid: null };
+}
+
 function budgetPatch(body: Record<string, unknown>): Prisma.BudgetUpdateInput {
   return {
     jobName: body.jobName as string | null | undefined,
@@ -61,23 +75,26 @@ function budgetPatch(body: Record<string, unknown>): Prisma.BudgetUpdateInput {
 
 function subCostPatch(body: Record<string, unknown>): Prisma.SubCostUncheckedUpdateInput {
   const status = body.status as SubCostStatus | undefined;
+  const lineType = body.lineType === undefined ? undefined : normalizeLineType(body.lineType);
+  const lifecycle = lineType ? lineTypeLifecycle(lineType) : {};
   return {
     description: body.description as string | undefined,
+    lineType,
     supplierName: body.supplierName as string | null | undefined,
     amount: numberOrUndefined(body.amount),
     amountGross: numberOrNull(body.amountGross),
     vatAmount: numberOrNull(body.vatAmount),
     vatRate: numberOrNull(body.vatRate),
     currency: body.currency as string | undefined,
-    status,
+    status: status ?? lifecycle.status,
     invoiceNumber: body.invoiceNumber as string | null | undefined,
     invoiceDate: dateOrNull(body.invoiceDate),
-    datePaid: dateOrNull(body.datePaid),
     invoiceFileId: body.invoiceFileId as string | null | undefined,
     proofOfPayment: body.proofOfPayment as string | null | undefined,
-    isAgreed: body.isAgreed as boolean | undefined,
-    isInvoiced: body.isInvoiced as boolean | undefined,
-    isPaid: body.isPaid as boolean | undefined,
+    isAgreed: body.isAgreed as boolean | undefined ?? lifecycle.isAgreed,
+    isInvoiced: body.isInvoiced as boolean | undefined ?? lifecycle.isInvoiced,
+    isPaid: body.isPaid as boolean | undefined ?? lifecycle.isPaid,
+    datePaid: dateOrNull(body.datePaid) ?? lifecycle.datePaid,
   };
 }
 
@@ -269,23 +286,29 @@ router.post("/lines/:lineItemId/sub-item", async (req: Request, res: Response): 
 // Sub-costs
 router.post("/lines/:lineItemId/subcosts", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as Record<string, unknown>;
+  const lineType = normalizeLineType(body.lineType);
+  const lifecycle = lineTypeLifecycle(lineType);
   const subCost = await prisma.subCost.create({
     data: {
       lineItemId: req.params.lineItemId,
-      description: body.description as string || "Sub-cost",
+      lineType,
+      description: body.description as string || `${lineType === SubCostLineType.PO ? "PO" : lineType === SubCostLineType.BILL ? "Bill" : "Receipt"} cost line`,
       supplierName: body.supplierName as string | null | undefined,
       amount: Number(body.amount ?? 0),
       amountGross: numberOrNull(body.amountGross),
       vatAmount: numberOrNull(body.vatAmount),
       vatRate: numberOrNull(body.vatRate),
       currency: body.currency as string || "GBP",
-      status: body.status as SubCostStatus | undefined,
+      status: body.status as SubCostStatus | undefined ?? lifecycle.status,
       invoiceNumber: body.invoiceNumber as string | null | undefined,
       invoiceDate: dateOrNull(body.invoiceDate),
       datePaid: dateOrNull(body.datePaid),
       invoiceFileId: body.invoiceFileId as string | null | undefined,
       proofOfPayment: body.proofOfPayment as string | null | undefined,
       receiptCaptureId: body.receiptCaptureId as string | null | undefined,
+      isAgreed: body.isAgreed as boolean | undefined ?? lifecycle.isAgreed,
+      isInvoiced: body.isInvoiced as boolean | undefined ?? lifecycle.isInvoiced,
+      isPaid: body.isPaid as boolean | undefined ?? lifecycle.isPaid,
     },
   });
   await recalculateAfterSubCost(req.params.lineItemId);
@@ -305,7 +328,7 @@ router.delete("/subcosts/:subCostId", async (req: Request, res: Response): Promi
   if (!existing) { res.status(404).json({ error: "Sub-cost not found" }); return; }
   await prisma.subCost.delete({ where: { id: existing.id } });
   await recalculateAfterSubCost(existing.lineItemId);
-  res.status(204).end();
+  res.json({ revision: await lineRevision(existing.lineItemId) });
 });
 
 router.patch("/subcosts/:subCostId/status", async (req: Request, res: Response): Promise<void> => {
