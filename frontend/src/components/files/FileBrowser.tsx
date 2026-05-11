@@ -314,14 +314,15 @@ export function PreviewPanel({ file, productionId, folders, onClose, onPatch }: 
   async function linkBudgetLine(lineId: string) {
     await onPatch({ linkedBudgetLineId: lineId || undefined });
     if (file.isReceipt && lineId && file.receiptAmount) {
-      await api.post(`/api/budgets/lines/${lineId}/invoices`, {
+      await api.post(`/api/budgets/lines/${lineId}/subcosts`, {
+        description: file.notes || file.originalFilename,
         supplierName: file.receiptVendor || file.originalFilename,
         amount: file.receiptAmount / 100,
-        dateReceived: file.receiptDate,
         status: "PAID",
-        jobFileId: file.id,
+        invoiceFileId: file.id,
+        invoiceDate: file.receiptDate,
       });
-      setLinkMessage("Receipt invoice created.");
+      setLinkMessage("Receipt sub-cost created.");
     } else {
       setLinkMessage(lineId ? "Budget line linked." : "Budget line cleared.");
     }

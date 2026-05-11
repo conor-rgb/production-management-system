@@ -9,9 +9,10 @@ export type FreeAgentInvoiceStatus = "NOT_RAISED" | "DRAFT" | "SENT" | "VIEWED" 
 export type ProductionDateType = "PPM" | "RECCE" | "FITTING" | "MEETING" | "SHOOT_DAY" | "POST_DELIVERY" | "OTHER";
 export type CrewStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFIRMED" | "RELEASED";
 export type JobFolder = "Briefs" | "Estimates" | "Budgets" | "Contracts" | "Crew Deals" | "Receipts" | "References" | "Selects" | "Delivery" | "Mail Attachments";
+export type BudgetStatus = "DRAFT" | "SENT" | "CONFIRMED" | "IN_PRODUCTION" | "WRAPPED";
 export type BudgetRevisionStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED" | "SUPERSEDED";
-export type InvoiceStatus = "PENDING" | "PAID";
-export type PurchaseOrderStatus = "OPEN" | "INVOICED" | "PAID";
+export type SubCostStatus = "PENDING" | "AGREED" | "INVOICED" | "PAID";
+export type AdvanceCalcType = "PERCENT_OF_TOTAL" | "PERCENT_OF_PRODUCTION" | "FIXED_AMOUNT";
 export type ReceiptCaptureStatus = "PENDING" | "PARSING" | "PARSED" | "ASSIGNED" | "FAILED";
 export type EmailProvider = "GOOGLE" | "IMAP";
 export type CalendarEventType = "SHOOT_DAY" | "PPM" | "RECCE" | "FITTING" | "MEETING" | "POST_DELIVERY" | "FOLLOW_UP" | "GOOGLE_SYNC" | "STANDALONE" | "OTHER";
@@ -452,54 +453,50 @@ export interface StorageInfo {
 }
 
 export interface BudgetTotals {
-  mode: "bidding" | "production";
-  internalTotal: number;
-  clientTotal: number;
-  productionFeeAmount: number;
-  clientGrandTotal: number;
-  totalMarginAmount: number;
-  totalMarginPercent: number;
-  totalAccrual?: number;
-  totalPOs?: number;
-  totalInvoiced?: number;
-  totalPaid?: number;
-  totalCommitted?: number;
-  totalRemaining?: number;
-  projectedMargin?: number;
-  projectedMarginPercent?: number;
-  isOverAccrual?: boolean;
-  isOverBudget?: boolean;
-  actualTotal?: number;
-  variance?: number;
-  overBudget: boolean;
+  subtotal: number;
+  productionFee: number;
+  insurance: number;
+  grandTotal: number;
+  totalActuals: number;
+  totalVariance: number;
+  totalRemaining: number;
+  currencyConverted: number | null;
+  advances: { id: string; calculatedAmount: number }[];
   sectionTotals: {
     sectionId: string;
     code: string;
     name: string;
-    internalTotal: number;
-    clientTotal: number;
-    marginAmount: number;
-    marginPercent: number;
-    accrual: number;
-    totalPOs: number;
-    totalInvoiced: number;
-    totalPaid: number;
-    totalCommitted: number;
-    remaining: number;
-    releasedToMargin: number;
+    estimatedTotal: number;
+    actualTotal: number;
+    variance: number;
+    remainingBudget: number;
+    agreedCount: number;
+    invoicedCount: number;
+    paidCount: number;
+    closedCount: number;
   }[];
 }
 
-export interface BudgetLineInvoice {
+export interface SubCost {
   id: string;
   lineItemId: string;
-  supplierName: string;
-  invoiceNumber?: string;
+  description: string;
+  supplierName?: string | null;
   amount: number;
-  dateReceived?: string;
-  status: InvoiceStatus;
-  jobFileId?: string;
-  notes?: string;
+  amountGross?: number | null;
+  vatAmount?: number | null;
+  vatRate?: number | null;
+  currency: string;
+  status: SubCostStatus;
+  invoiceNumber?: string | null;
+  invoiceDate?: string | null;
+  datePaid?: string | null;
+  invoiceFileId?: string | null;
+  proofOfPayment?: string | null;
+  isAgreed: boolean;
+  isInvoiced: boolean;
+  isPaid: boolean;
+  receiptCaptureId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -509,58 +506,28 @@ export interface BudgetLineItem {
   sectionId: string;
   lineCode: string;
   description: string;
-  privateMemo?: string;
-  publicMemo?: string;
-  internalUnitCost: number;
-  clientUnitCost: number;
-  quantity: number;
-  daysUnits: number;
-  unitLabel: string;
-  agencyMarkup: number;
-  internalSubtotal: number;
-  clientSubtotal: number;
-  marginAmount: number;
-  marginPercent: number;
-  actualCost: number;
+  clientNotes?: string | null;
+  internalNotes?: string | null;
+  prepTravelDays?: number | null;
+  shootDays?: number | null;
+  qty: number;
+  rate: number;
+  multiplier: number;
+  unit: string;
+  otRate?: number | null;
+  otHours?: number | null;
+  agencyFeePercent?: number | null;
+  estimatedTotal: number;
+  actualTotal: number;
   variance: number;
+  isAgreed: boolean;
   isClosed: boolean;
-  isTaxable: boolean;
-  hasPW: boolean;
-  hasHealthSafety: boolean;
-  baseHours?: number;
-  overtime15x?: number;
-  overtime2x?: number;
-  catalogItemId?: string;
+  subCosts: SubCost[];
   order: number;
-  invoices: BudgetLineInvoice[];
-  purchaseOrders: PurchaseOrder[];
-  totalPOs?: number;
-  totalInvoiced?: number;
-  totalPaid?: number;
-  totalCommitted?: number;
-  remainingAccrual?: number;
-  isOverAccrual?: boolean;
-  isOverBudget?: boolean;
-  accrualUsedPercent?: number;
-  releasedToMargin?: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PurchaseOrder {
-  id: string;
-  lineItemId: string;
-  productionId: string;
-  poNumber: string;
-  supplierName: string;
-  description?: string;
-  agreedAmount: number;
-  status: PurchaseOrderStatus;
-  dateRaised: string;
-  invoiceNumber?: string;
-  invoiceDate?: string;
-  invoiceFileId?: string;
-  notes?: string;
+  isSubItem: boolean;
+  parentId?: string | null;
+  children?: BudgetLineItem[];
+  reconNotes?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -571,6 +538,7 @@ export interface BudgetSection {
   code: string;
   name: string;
   order: number;
+  isVisible: boolean;
   lineItems: BudgetLineItem[];
   createdAt: string;
   updatedAt: string;
@@ -582,8 +550,8 @@ export interface BudgetRevision {
   revisionNumber: number;
   label: string;
   status: BudgetRevisionStatus;
-  version: number;
   productionFeePercent: number;
+  insurancePercent: number;
   notes?: string;
   sections: BudgetSection[];
   createdAt: string;
@@ -595,9 +563,61 @@ export interface Budget {
   id: string;
   productionId?: string;
   opportunityId?: string;
+  jobName?: string | null;
+  jobLocation?: string | null;
+  shotCount?: string | null;
+  prepTravelDate?: string | null;
+  shootDates?: string | null;
+  photographerDirector?: string | null;
+  accountingContact?: string | null;
+  comments?: string | null;
+  caveats?: string | null;
+  usages?: string | null;
+  productionFeePercent: number;
+  insurancePercent: number;
+  currencyBase: string;
+  currencySecondary?: string | null;
+  currencyRate?: number | null;
+  status: BudgetStatus;
+  version: number;
   currentRevisionId?: string;
   currentRevision?: BudgetRevision;
+  advanceInvoices: AdvanceInvoice[];
   totals?: BudgetTotals;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdvanceInvoice {
+  id: string;
+  budgetId: string;
+  label: string;
+  percent?: number | null;
+  amount?: number | null;
+  calculationType: AdvanceCalcType;
+  calculatedAmount?: number | null;
+  isPaid: boolean;
+  datePaid?: string | null;
+  freeAgentInvoiceId?: string | null;
+  dueDate?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SectionTemplateSection {
+  code: string;
+  name: string;
+  order: number;
+  defaultLineItems: string[];
+}
+
+export interface SectionTemplate {
+  id: string;
+  name: string;
+  description?: string | null;
+  isDefault: boolean;
+  sections: SectionTemplateSection[];
   createdAt: string;
   updatedAt: string;
 }
@@ -629,10 +649,9 @@ export interface BudgetRevisionSummary {
   revisionNumber: number;
   label: string;
   status: BudgetRevisionStatus;
-  version: number;
   createdAt: string;
   updatedAt: string;
-  clientGrandTotal: number;
+  grandTotal: number;
 }
 
 export const JOB_FOLDERS: JobFolder[] = ["Briefs", "Estimates", "Budgets", "Contracts", "Crew Deals", "Receipts", "References", "Selects", "Delivery", "Mail Attachments"];
