@@ -298,11 +298,9 @@ function DraftComposerWindow({ draft }: { draft: Draft }) {
 }
 
 export function ComposerTray() {
-  const { drafts, maximizeDraft, closeDraft, error, clearError } = useDrafts();
+  const { drafts, openDraft, maximizeDraft, closeDraft, error, clearError } = useDrafts();
   const expanded = drafts.filter((draft) => !draft.isMinimized);
   const minimized = drafts.filter((draft) => draft.isMinimized);
-
-  if (!drafts.length && !error) return null;
 
   return (
     <>
@@ -354,6 +352,16 @@ export function ComposerTray() {
             className="mb-16 hidden min-h-10 rounded-full bg-[#1a1a1f] px-4 text-xs font-medium text-white shadow-lg pointer-events-auto max-md:block"
           >
             {minimized.length} draft{minimized.length === 1 ? "" : "s"} ▲
+          </button>
+        )}
+        {drafts.length === 0 && (
+          <button
+            type="button"
+            onClick={() => openDraft().catch(() => undefined)}
+            className="flex h-9 w-[220px] items-center gap-2 rounded-t-lg bg-[#1a1a1f] px-3 text-left text-xs font-medium text-white shadow-lg pointer-events-auto max-md:mb-16 max-md:w-40"
+          >
+            <span className="text-sm">✏</span>
+            <span className="min-w-0 flex-1 truncate">Compose</span>
           </button>
         )}
       </div>

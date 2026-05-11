@@ -119,9 +119,14 @@ export function DraftProvider({ children }: { children: ReactNode }) {
       setError(message);
       throw new Error(message);
     }
-    const draft = await api.post<Draft>("/api/email/drafts", payloadFromDraftOptions({ ...options, isMinimized: false }));
-    setDrafts((prev) => [draft, ...prev]);
-    return draft;
+    try {
+      const draft = await api.post<Draft>("/api/email/drafts", payloadFromDraftOptions({ ...options, isMinimized: false }));
+      setDrafts((prev) => [draft, ...prev]);
+      return draft;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create draft");
+      throw err;
+    }
   }, [drafts.length]);
 
   const openReply = useCallback(async (thread: ReplyThreadInput) => {

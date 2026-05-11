@@ -1,31 +1,30 @@
-# HANDOVER — 2026-05-11 — Composer Tray Root Wiring Fix
+# HANDOVER — 2026-05-11 — Composer Tray Visibility Fix
 
 ## Built this session
-- Debugged the persistent composer tray render path only.
-- Moved `DraftProvider` to the true frontend root in `frontend/src/main.tsx`, wrapping the whole app before `App` and therefore before the router/routes.
-- Removed the route-scoped `DraftProvider` and separate `ComposerTray` render from `frontend/src/App.tsx`.
-- Updated `DraftProvider` in `frontend/src/store/draftStore.tsx` so it renders `<ComposerTray />` alongside `{children}`.
-- Suppressed draft-load errors on `/login` and ignored unauthorised draft-load errors, so the provider can safely live at the root.
-- Removed `useNavigate` from `ComposerTray` because the tray is now outside the router; `View thread` uses `window.location.href` instead.
-- Kept the email thread reply button wired to `useDrafts().openReply(...)`; with provider root wrapping fixed, clicking Reply opens the tray instead of an inline panel.
+- Continued debugging the persistent composer tray only.
+- Confirmed the provider/root fix from the prior pass was in place.
+- Fixed the tray visibility issue: `ComposerTray` no longer returns `null` when there are no drafts.
+- Added an always-visible bottom-right Compose dock/tab rendered by `ComposerTray` when there are zero open drafts.
+- Updated `openDraft()` in `frontend/src/store/draftStore.tsx` to surface API failures through the tray error toast instead of only throwing to callers.
+- Left the thread detail reply button in place as the simple trigger. It opens the composer tray; it does not expand an inline composer.
 
 ## Verification
 - Frontend build passed: `npm run build` in `/frontend`.
 - Frontend build copied to `/var/www/agent`.
 - PM2 reloaded with `pm2 reload 0 --update-env`.
-- Health check passed: `curl http://localhost:3000/api/health` returned `ok`.
-- No backend/schema/Gmail sync changes were made in this pass.
+- No backend/schema/Gmail sync changes were made.
 
 ## Current composer tray state
-- `DraftProvider` is now mounted above the whole app and owns `ComposerTray` rendering.
-- `AppLayout` and `Email` can safely call `useDrafts()` because they sit under the root provider.
-- The tray remains fixed bottom-right with `pointer-events-none` on the outer container and `pointer-events-auto` on composer windows/tabs.
-- Reply opens the tray with thread context; compose opens a blank persisted draft.
+- A bottom-right `Compose` dock should now be visible app-wide even with no drafts open.
+- Clicking the dock calls `openDraft()` and opens the full composer tray.
+- Existing minimized drafts still render as tabs.
+- Existing expanded drafts still render as composer windows.
+- Reply from a thread still creates/maximizes a reply draft in the tray.
 
 ## Issues / technical debt
-- The tray sits outside the router by design now, so any future navigation inside it should use `window.location` or the provider/tray should be moved under a router-owned shell while still wrapping all routes.
-- The app still has pre-existing unrelated deleted docs/config files and untracked storage/screenshot files in the worktree. They were not touched.
+- The old-looking “Reply to [sender]…” button at the bottom of a thread is still intentionally present as the reply trigger. It is not an inline composer.
 - Attachments in the composer remain disabled from Prompt 3.
+- Existing unrelated deleted docs/config files and untracked storage/screenshot files remain in the worktree and were not touched.
 
 ## Exact next step — Prompt 4 performance
 Build email performance improvements without changing the Gmail sync foundation:
