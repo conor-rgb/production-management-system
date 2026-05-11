@@ -12,14 +12,17 @@ import {
   ChevronRight,
   Flag,
   Inbox,
+  Link2,
   Mail,
   MailPlus,
   MoreHorizontal,
   Paperclip,
+  Plus,
   Reply,
   Search,
   Send,
   Star,
+  Users,
   X,
 } from "lucide-react";
 import { api } from "../lib/api";
@@ -49,6 +52,42 @@ type ReplyState = {
 type SaveAttachmentState = {
   attachment: EmailAttachmentSummary;
   productionId?: string;
+};
+
+type LinkTargetsResponse = {
+  opportunities?: Array<{ id: string; title: string; clientName?: string | null; brand?: string | null; stage: string; value?: string | null; company?: { id: string; name: string } | null }>;
+  productions?: Array<{ id: string; title: string; jobCode?: string | null; clientName?: string | null; brand?: string | null; status: string }>;
+  contacts?: Array<{ id: string; firstName: string; lastName?: string | null; email?: string | null; type: string; company?: { id: string; name: string } | null }>;
+};
+
+type ThreadPerson = {
+  email: string;
+  name: string;
+  roles: string[];
+  inferredCompany: string;
+  domain: string;
+  isMe?: boolean;
+  isLinkedToThread: boolean;
+  existingContact: null | {
+    id: string;
+    firstName: string;
+    lastName?: string | null;
+    email?: string | null;
+    type: string;
+    company?: { id: string; name: string } | null;
+  };
+};
+
+type OpportunityPrefill = {
+  title: string;
+  clientName: string;
+  company: string;
+  contactId: string | null;
+  contactEmail: string;
+  contactName: string;
+  description: string;
+  dateReceived: string;
+  linkedThreadId: string;
 };
 
 function timeLabel(value?: string) {
@@ -86,8 +125,20 @@ function initials(name: string) {
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
 }
 
+function getEmailColor(email: string) {
+  const colors = ["#5B8DEF", "#E8A838", "#E85D5D", "#5DBE8A", "#9B5DEF", "#EF8C5D", "#5DBEE8", "#EF5DB8"];
+  let hash = 0;
+  for (let i = 0; i < email.length; i += 1) hash = email.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length] ?? colors[0];
+}
+
 function senderName(thread: EmailThread) {
   return thread.resolvedSenderName ?? thread.participantNames?.[0] ?? thread.participants[0] ?? "Unknown sender";
+}
+
+function contactName(contact?: { firstName?: string; lastName?: string | null } | null) {
+  if (!contact) return "";
+  return `${contact.firstName ?? ""}${contact.lastName ? ` ${contact.lastName}` : ""}`.trim();
 }
 
 function fileTone(mimeType: string) {
@@ -200,6 +251,8 @@ export default function Email() {
   const [replyState, setReplyState] = useState<ReplyState | null>(null);
   const [saveAttachment, setSaveAttachment] = useState<SaveAttachmentState | null>(null);
   const [previewFile, setPreviewFile] = useState<JobFile | null>(null);
+  const [peopleThread, setPeopleThread] = useState<EmailThread | null>(null);
+  const [opportunityThread, setOpportunityThread] = useState<EmailThread | null>(null);
   const [filingAttachment, setFilingAttachment] = useState("");
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -409,6 +462,9 @@ export default function Email() {
               setSelectedThreadId(null);
               await loadThreads();
             }}
+            onOpenPeople={() => setPeopleThread(thread)}
+            onCreateOpportunity={() => setOpportunityThread(thread)}
+            onLinked={async () => { await loadThread(thread.id); await loadThreads(); }}
           />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center text-gray-400">
@@ -460,6 +516,29 @@ export default function Email() {
           }}
         />
       )}
+      {peopleThread && (
+        <PeoplePanel
+          thread={peopleThread}
+          accountEmail={peopleThread.account?.emailAddress}
+          onClose={() => setPeopleThread(null)}
+          onChanged={() => {
+            loadThread(peopleThread.id).catch(console.error);
+            loadThreads().catch(console.error);
+          }}
+        />
+      )}
+      {opportunityThread && (
+        <CreateOpportunityDrawer
+          thread={opportunityThread}
+          onClose={() => setOpportunityThread(null)}
+          onCreated={(opportunityId) => {
+            setOpportunityThread(null);
+            loadThread(opportunityThread.id).catch(console.error);
+            loadThreads().catch(console.error);
+            window.setTimeout(() => { window.location.href = `/opportunities?opportunity=${opportunityId}`; }, 600);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -474,6 +553,13 @@ function FolderButton({ active, icon, label, count, onClick }: { active: boolean
 
 function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: boolean; onClick: () => void }) {
   const name = senderName(thread);
+  const linkDot = thread.linkedProductionId
+    ? { color: "bg-emerald-500", title: `Linked to ${thread.linkedProduction?.jobCode ?? "production"}` }
+    : thread.linkedOpportunityId
+      ? { color: "bg-blue-500", title: `Linked to ${thread.linkedOpportunity?.title ?? thread.linkedOpportunity?.clientName ?? "opportunity"}` }
+      : thread.linkedContactId
+        ? { color: "bg-gray-400", title: `Linked to ${contactName(thread.linkedContact) || "contact"}` }
+        : null;
   return (
     <button
       onClick={onClick}
@@ -487,6 +573,7 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
       <span className="min-w-0">
         <span className="flex items-center gap-2">
           <span className={`min-w-0 flex-1 truncate text-[13px] ${thread.isRead ? "font-normal text-gray-700" : "font-medium text-gray-950"}`}>{name}</span>
+          {linkDot && <span title={linkDot.title} className={`h-2 w-2 shrink-0 rounded-full ${linkDot.color}`} />}
           {thread.isFlagged && <Star size={12} className="shrink-0 fill-amber-400 text-amber-400" />}
           <span className="text-[11px] text-gray-400">{timeLabel(thread.lastMessageAt)}</span>
         </span>
@@ -507,8 +594,9 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
   );
 }
 
-function ThreadDetail({ thread, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onArchive }: { thread: EmailThread; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onArchive: () => void }) {
+function ThreadDetail({ thread, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onArchive, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onArchive: () => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
   const [expandedAttachments, setExpandedAttachments] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
   const attachments = thread.attachments ?? [];
   const visibleAttachments = expandedAttachments ? attachments : attachments.slice(0, 3);
   const latestId = thread.messages[thread.messages.length - 1]?.id;
@@ -525,6 +613,7 @@ function ThreadDetail({ thread, filingAttachment, loadingOlder, onOpenAttachment
           <button onClick={onArchive} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><Archive size={17} /></button>
         </div>
         <p className="truncate text-xs text-gray-500">{participantNames}</p>
+        <LinkedRecordPills thread={thread} onLinked={onLinked} />
         {attachments.length > 0 && (
           <div className="mt-2 hidden flex-wrap gap-2 md:flex">
             {visibleAttachments.map((attachment) => (
@@ -541,6 +630,18 @@ function ThreadDetail({ thread, filingAttachment, loadingOlder, onOpenAttachment
           </div>
         )}
       </header>
+      <div className="relative flex min-h-10 shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-4">
+        <button onClick={onBack} className="hidden min-h-8 items-center gap-1 rounded-full px-2 text-[11px] text-gray-500 hover:bg-gray-100 md:inline-flex"><ArrowLeft size={13} /> Back</button>
+        <div className="min-w-0 flex-1 truncate text-xs text-gray-500">{thread.subject}</div>
+        <button onClick={() => setLinkOpen((current) => !current)} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-100 px-3 text-[11px] text-gray-700 hover:bg-gray-200"><Link2 size={13} /> Link</button>
+        <button onClick={onOpenPeople} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-100 px-3 text-[11px] text-gray-700 hover:bg-gray-200"><Users size={13} /> People</button>
+        <button onClick={onCreateOpportunity} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-900 px-3 text-[11px] text-white"><Plus size={13} /> Opportunity</button>
+        <button onClick={onArchive} className="hidden min-h-8 items-center rounded-full px-2 text-[11px] text-gray-500 hover:bg-gray-100 md:inline-flex">Archive</button>
+        <button onClick={onFlag} className="grid min-h-8 min-w-8 place-items-center rounded-full text-gray-500 hover:bg-gray-100"><Star size={14} className={thread.isFlagged ? "fill-amber-400 text-amber-400" : ""} /></button>
+        <button className="grid min-h-8 min-w-8 place-items-center rounded-full text-gray-500 hover:bg-gray-100"><MoreHorizontal size={14} /></button>
+        {linkOpen && <LinkDropdown thread={thread} onClose={() => setLinkOpen(false)} onLinked={onLinked} />}
+      </div>
+      <CrmSuggestionBanner thread={thread} onLinked={onLinked} />
       <div className="flex-1 overflow-auto bg-white p-2 pb-28 md:p-4">
         {thread.hasMoreOlder && (
           <div className="mb-3 flex justify-center">
@@ -572,6 +673,357 @@ function ThreadDetail({ thread, filingAttachment, loadingOlder, onOpenAttachment
         </button>
       </div>
     </>
+  );
+}
+
+function LinkedRecordPills({ thread, onLinked }: { thread: EmailThread; onLinked: () => void }) {
+  const items = [
+    thread.linkedContact ? {
+      field: "contact",
+      label: contactName(thread.linkedContact),
+      meta: `${thread.linkedContact.company?.name ?? "Contact"}`,
+      href: `/contacts?contact=${thread.linkedContact.id}`,
+      tone: "bg-gray-800",
+    } : null,
+    thread.linkedOpportunity ? {
+      field: "opportunity",
+      label: thread.linkedOpportunity.title ?? thread.linkedOpportunity.clientName ?? "Opportunity",
+      meta: `Opportunity · ${thread.linkedOpportunity.stage ?? ""}`,
+      href: `/opportunities?opportunity=${thread.linkedOpportunity.id}`,
+      tone: "bg-[#1a1a1f]",
+    } : null,
+    thread.linkedProduction ? {
+      field: "production",
+      label: `${thread.linkedProduction.jobCode ?? ""} ${thread.linkedProduction.clientName ?? thread.linkedProduction.title ?? ""}`.trim(),
+      meta: "Production",
+      href: `/productions?production=${thread.linkedProduction.id}`,
+      tone: "bg-emerald-700",
+    } : null,
+  ].filter((item): item is { field: string; label: string; meta: string; href: string; tone: string } => Boolean(item));
+  if (!items.length) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map((item) => (
+        <span key={item.field} className={`group inline-flex min-h-7 items-center gap-1 rounded px-2 text-[10px] text-white ${item.tone}`}>
+          <button onClick={() => { window.location.href = item.href; }} className="min-h-7 truncate text-left">→ {item.label} <span className="text-white/65">{item.meta}</span></button>
+          <button
+            onClick={async () => {
+              await api.patch(`/api/email/threads/${thread.id}/unlink`, { field: item.field });
+              onLinked();
+            }}
+            className="hidden min-h-6 min-w-6 place-items-center rounded text-white/70 hover:bg-white/10 group-hover:grid"
+          >
+            <X size={11} />
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function LinkDropdown({ thread, onClose, onLinked }: { thread: EmailThread; onClose: () => void; onLinked: () => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<LinkTargetsResponse>({});
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      api.get<LinkTargetsResponse>(`/api/email/threads/search-link-targets?q=${encodeURIComponent(query)}&type=all`).then(setResults).catch(console.error);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  async function link(body: { opportunityId?: string; productionId?: string; contactId?: string }) {
+    await api.patch(`/api/email/threads/${thread.id}/link`, body);
+    onLinked();
+    onClose();
+  }
+
+  return (
+    <div className="absolute right-3 top-10 z-30 w-[330px] rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
+      <div className="mb-2 flex items-center">
+        <p className="text-xs font-medium text-gray-900">Link to...</p>
+        <button onClick={onClose} className="ml-auto grid min-h-8 min-w-8 place-items-center text-gray-400"><X size={14} /></button>
+      </div>
+      {(thread.linkedOpportunity || thread.linkedProduction || thread.linkedContact) && (
+        <button
+          onClick={async () => { await api.patch(`/api/email/threads/${thread.id}/unlink`, { field: "all" }); onLinked(); onClose(); }}
+          className="mb-2 min-h-8 w-full rounded bg-red-50 px-2 text-left text-xs text-red-600"
+        >
+          Unlink current records
+        </button>
+      )}
+      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search opportunities, productions, contacts..." className="mb-3 min-h-10 w-full rounded-lg border border-gray-200 px-3 text-xs outline-none" />
+      <LinkSection title="Opportunities">
+        {(results.opportunities ?? []).map((item) => (
+          <button key={item.id} onClick={() => link({ opportunityId: item.id })} className="min-h-9 w-full rounded px-2 text-left text-xs hover:bg-gray-50">→ {item.title || item.clientName} <span className="text-gray-400">{item.brand}</span></button>
+        ))}
+      </LinkSection>
+      <LinkSection title="Productions">
+        {(results.productions ?? []).map((item) => (
+          <button key={item.id} onClick={() => link({ productionId: item.id })} className="min-h-9 w-full rounded px-2 text-left text-xs hover:bg-gray-50">→ {item.jobCode ?? "No code"} {item.clientName ?? item.title}</button>
+        ))}
+      </LinkSection>
+      <LinkSection title="Contacts">
+        {(results.contacts ?? []).map((item) => (
+          <button key={item.id} onClick={() => link({ contactId: item.id })} className="min-h-9 w-full rounded px-2 text-left text-xs hover:bg-gray-50">→ {contactName(item)} <span className="text-gray-400">{item.email}</span></button>
+        ))}
+      </LinkSection>
+    </div>
+  );
+}
+
+function LinkSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="mb-2">
+      <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">{title}</p>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function CrmSuggestionBanner({ thread, onLinked }: { thread: EmailThread; onLinked: () => void }) {
+  const [person, setPerson] = useState<ThreadPerson | null>(null);
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(`email-crm-suggestion-${thread.id}`) === "1");
+  useEffect(() => {
+    setDismissed(localStorage.getItem(`email-crm-suggestion-${thread.id}`) === "1");
+    if (thread.linkedContactId || thread.linkedOpportunityId || thread.linkedProductionId) {
+      setPerson(null);
+      return;
+    }
+    api.get<{ people: ThreadPerson[] }>(`/api/email/threads/${thread.id}/people`)
+      .then((data) => setPerson(data.people.find((item) => item.existingContact && !item.isMe) ?? null))
+      .catch(() => setPerson(null));
+  }, [thread.id, thread.linkedContactId, thread.linkedOpportunityId, thread.linkedProductionId]);
+  if (!person || dismissed || !person.existingContact) return null;
+  return (
+    <div className="flex min-h-10 items-center gap-2 border-b border-blue-100 bg-blue-50 px-4 text-xs text-blue-900">
+      <span className="min-w-0 flex-1 truncate">{person.name} is a contact — link this thread?</span>
+      <button
+        onClick={async () => {
+          await api.post(`/api/email/threads/${thread.id}/people/link-contact`, { contactId: person.existingContact?.id });
+          onLinked();
+        }}
+        className="min-h-8 underline"
+      >
+        Link to contact
+      </button>
+      <button
+        onClick={() => {
+          localStorage.setItem(`email-crm-suggestion-${thread.id}`, "1");
+          setDismissed(true);
+        }}
+        className="min-h-8 underline"
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
+function PeoplePanel({ thread, accountEmail, onClose, onChanged }: { thread: EmailThread; accountEmail?: string; onClose: () => void; onChanged: () => void }) {
+  const [people, setPeople] = useState<ThreadPerson[]>([]);
+  const [creating, setCreating] = useState<string | null>(null);
+  const [form, setForm] = useState({ firstName: "", lastName: "", company: "", type: "CLIENT" });
+
+  function load() {
+    api.get<{ people: ThreadPerson[] }>(`/api/email/threads/${thread.id}/people`).then((data) => setPeople(data.people)).catch(console.error);
+  }
+
+  useEffect(load, [thread.id]);
+
+  function startCreate(person: ThreadPerson) {
+    const parts = person.name.split(" ");
+    setCreating(person.email);
+    setForm({
+      firstName: parts[0] ?? "",
+      lastName: parts.slice(1).join(" "),
+      company: person.inferredCompany,
+      type: "CLIENT",
+    });
+  }
+
+  async function createContact(person: ThreadPerson) {
+    await api.post(`/api/email/threads/${thread.id}/people/create-contact`, {
+      email: person.email,
+      firstName: form.firstName,
+      lastName: form.lastName,
+      company: form.company,
+      type: form.type,
+      linkToThread: true,
+    });
+    setCreating(null);
+    load();
+    onChanged();
+  }
+
+  async function linkContact(contactId: string) {
+    await api.post(`/api/email/threads/${thread.id}/people/link-contact`, { contactId });
+    load();
+    onChanged();
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] flex justify-end bg-black/20">
+      <div className="h-full w-full overflow-auto bg-white shadow-xl md:w-[360px]">
+        <header className="sticky top-0 z-10 flex min-h-14 items-center border-b border-gray-100 bg-white px-4">
+          <h2 className="text-sm font-medium text-gray-900">People in this thread</h2>
+          <button onClick={onClose} className="ml-auto grid min-h-11 min-w-11 place-items-center text-gray-500"><X size={17} /></button>
+        </header>
+        <div className="divide-y divide-gray-100 p-3">
+          {people.map((person) => {
+            const isMe = person.isMe || person.email === accountEmail?.toLowerCase();
+            return (
+              <div key={person.email} className="py-3">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-medium text-white" style={{ background: getEmailColor(person.email) }}>{initials(person.name)}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-900">{person.name}</p>
+                    <p className="truncate text-[11px] text-gray-500">{person.email}</p>
+                    <p className="truncate text-[11px] italic text-gray-400">{person.roles.join(" · ")} · {person.existingContact?.company?.name ?? person.inferredCompany}</p>
+                  </div>
+                  {isMe ? (
+                    <span className="rounded-full bg-gray-100 px-2 py-1 text-[11px] text-gray-500">You</span>
+                  ) : person.existingContact ? (
+                    <button onClick={() => linkContact(person.existingContact!.id)} className="min-h-8 rounded-full bg-emerald-50 px-2 text-[11px] text-emerald-700">
+                      {person.isLinkedToThread ? "Linked ✓" : "Contact"}
+                    </button>
+                  ) : (
+                    <button onClick={() => startCreate(person)} className="min-h-8 rounded-full bg-blue-50 px-2 text-[11px] text-blue-700">+ Create</button>
+                  )}
+                </div>
+                {creating === person.email && (
+                  <div className="mt-3 rounded-lg bg-gray-50 p-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <input value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} placeholder="First name" className="min-h-10 rounded border border-gray-200 px-2 text-xs" />
+                      <input value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} placeholder="Last name" className="min-h-10 rounded border border-gray-200 px-2 text-xs" />
+                    </div>
+                    <input value={form.company} onChange={(event) => setForm({ ...form, company: event.target.value })} placeholder="Company" className="mt-2 min-h-10 w-full rounded border border-gray-200 px-2 text-xs" />
+                    <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} className="mt-2 min-h-10 w-full rounded border border-gray-200 px-2 text-xs">
+                      <option value="CLIENT">Client</option>
+                      <option value="SUPPLIER">Supplier</option>
+                    </select>
+                    <p className="mt-2 truncate text-[11px] text-gray-400">{person.email}</p>
+                    <div className="mt-2 flex justify-end gap-2">
+                      <button onClick={() => setCreating(null)} className="min-h-9 px-2 text-xs text-gray-500">Cancel</button>
+                      <button onClick={() => createContact(person)} disabled={!form.firstName} className="min-h-9 rounded bg-gray-900 px-3 text-xs text-white disabled:opacity-40">Create contact →</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreateOpportunityDrawer({ thread, onClose, onCreated }: { thread: EmailThread; onClose: () => void; onCreated: (opportunityId: string) => void }) {
+  const [prefill, setPrefill] = useState<OpportunityPrefill | null>(null);
+  const [form, setForm] = useState({
+    title: "",
+    clientName: "",
+    company: "",
+    brand: "",
+    jobType: "STILLS",
+    estimatedValue: "",
+    followUpDate: "",
+    description: "",
+    createContact: true,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api.post<{ prefill: OpportunityPrefill }>(`/api/email/threads/${thread.id}/create-opportunity`, {})
+      .then((data) => {
+        setPrefill(data.prefill);
+        setForm((current) => ({
+          ...current,
+          title: data.prefill.title,
+          clientName: data.prefill.clientName,
+          company: data.prefill.company,
+          description: data.prefill.description,
+          createContact: !data.prefill.contactId,
+        }));
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to prepare opportunity"));
+  }, [thread.id]);
+
+  async function create() {
+    if (!prefill) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await api.post<{ opportunity: { id: string } }>(`/api/email/threads/${thread.id}/confirm-opportunity`, {
+        ...form,
+        contactId: prefill.contactId ?? undefined,
+        contactEmail: prefill.contactEmail,
+        contactName: prefill.contactName,
+        estimatedValue: form.estimatedValue ? Number(form.estimatedValue) : undefined,
+      });
+      onCreated(result.opportunity.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create opportunity");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] flex justify-end bg-black/20">
+      <div className="h-full w-full overflow-auto bg-white shadow-xl md:w-[400px]">
+        <header className="sticky top-0 z-10 flex min-h-14 items-center border-b border-gray-100 bg-white px-4">
+          <h2 className="text-sm font-medium text-gray-900">Create opportunity from email</h2>
+          <button onClick={onClose} className="ml-auto grid min-h-11 min-w-11 place-items-center text-gray-500"><X size={17} /></button>
+        </header>
+        <div className="space-y-3 p-4">
+          {!prefill && !error && <p className="text-sm text-gray-400">Preparing email details...</p>}
+          <DrawerField label="Title"><input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></DrawerField>
+          <DrawerField label="Client"><input value={form.clientName} onChange={(event) => setForm({ ...form, clientName: event.target.value })} /></DrawerField>
+          <DrawerField label="Company"><input value={form.company} onChange={(event) => setForm({ ...form, company: event.target.value })} /></DrawerField>
+          <DrawerField label="Brand"><input value={form.brand} onChange={(event) => setForm({ ...form, brand: event.target.value })} /></DrawerField>
+          <DrawerField label="Job type">
+            <select value={form.jobType} onChange={(event) => setForm({ ...form, jobType: event.target.value })}>
+              <option value="STILLS">Stills</option>
+              <option value="MOTION">Motion</option>
+              <option value="EVENTS">Events</option>
+            </select>
+          </DrawerField>
+          <DrawerField label="Est. value"><input value={form.estimatedValue} onChange={(event) => setForm({ ...form, estimatedValue: event.target.value })} type="number" /></DrawerField>
+          <DrawerField label="Follow-up"><input value={form.followUpDate} onChange={(event) => setForm({ ...form, followUpDate: event.target.value })} type="date" /></DrawerField>
+          <label className="block text-xs text-gray-500">Description<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} rows={5} className="mt-1 min-h-28 w-full rounded-lg border border-gray-200 p-3 text-sm text-gray-900" /></label>
+          <div className="rounded-lg bg-gray-50 p-3 text-xs text-gray-600">
+            <p className="font-medium text-gray-900">Contact</p>
+            <p className="mt-1">{prefill?.contactEmail || "No sender email"}</p>
+            {!prefill?.contactId && (
+              <label className="mt-2 flex min-h-8 items-center gap-2">
+                <input type="checkbox" checked={form.createContact} onChange={(event) => setForm({ ...form, createContact: event.target.checked })} />
+                Create contact from this sender
+              </label>
+            )}
+          </div>
+          <div className="rounded-lg bg-gray-50 p-3 text-xs text-gray-600">
+            Linked thread ✓<br /><span className="text-gray-900">{thread.subject}</span>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={onClose} className="min-h-11 px-3 text-sm text-gray-500">Cancel</button>
+            <button onClick={create} disabled={saving || !prefill || !form.title || !form.clientName} className="min-h-11 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-40">{saving ? "Creating..." : "Create opportunity →"}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DrawerField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block text-xs text-gray-500">
+      {label}
+      <div className="mt-1 [&_input]:min-h-10 [&_input]:w-full [&_input]:rounded-lg [&_input]:border [&_input]:border-gray-200 [&_input]:px-3 [&_input]:text-sm [&_select]:min-h-10 [&_select]:w-full [&_select]:rounded-lg [&_select]:border [&_select]:border-gray-200 [&_select]:px-3 [&_select]:text-sm">
+        {children}
+      </div>
+    </label>
   );
 }
 

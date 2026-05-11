@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { EmailProvider } from "@prisma/client";
+import { ContactSource, ContactType, EmailProvider, PmsJobType, Prisma } from "@prisma/client";
 import prisma from "../prisma";
 import { encrypt } from "../services/encryptionService";
 import {
@@ -21,6 +21,56 @@ import { fullGmailSync } from "../services/gmailSyncService";
 import { archiveThread as gmailArchiveThread, markThreadRead, markThreadUnread, starThread, unarchiveThread as gmailUnarchiveThread, unstarThread } from "../services/gmailService";
 
 const router = Router();
+
+type LinkTargets = {
+  opportunityId?: string;
+  productionId?: string;
+  contactId?: string;
+};
+
+function cleanSubject(subject: string): string {
+  return subject.replace(/^(re|fwd?|fw):\s*/gi, "").trim() || subject;
+}
+
+function splitName(name: string): { firstName: string; lastName: string | null } {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] ?? "Unknown",
+    lastName: parts.length > 1 ? parts.slice(1).join(" ") : null,
+  };
+}
+
+function inferNameFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? email;
+  return local
+    .replace(/[._\-+]/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ") || email;
+}
+
+function inferCompanyFromEmail(email: string): string {
+  const domain = email.split("@")[1] ?? "";
+  const parts = domain.split(".").filter(Boolean);
+  const main = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+  return main ? main.charAt(0).toUpperCase() + main.slice(1) : "";
+}
+
+async function findOrCreateCompany(name?: string | null): Promise<string | undefined> {
+  const trimmed = name?.trim();
+  if (!trimmed) return undefined;
+  const existing = await prisma.company.findFirst({ where: { name: { equals: trimmed, mode: "insensitive" } } });
+  if (existing) return existing.id;
+  const created = await prisma.company.create({ data: { name: trimmed } });
+  return created.id;
+}
+
+const emailThreadCrmInclude = {
+  linkedContact: { include: { company: true } },
+  linkedOpportunity: { include: { company: true } },
+  linkedProduction: true,
+} satisfies Prisma.EmailThreadInclude;
 
 type AccountBody = {
   label?: string;
@@ -290,6 +340,74 @@ router.get("/threads", async (req: Request, res: Response): Promise<void> => {
   res.json(result);
 });
 
+router.get("/threads/search-link-targets", async (req: Request, res: Response): Promise<void> => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const type = typeof req.query.type === "string" ? req.query.type : "all";
+  const results: {
+    opportunities?: Array<{ id: string; title: string; clientName: string | null; brand: string | null; stage: string; value: string | null; company?: { id: string; name: string } | null }>;
+    productions?: Array<{ id: string; title: string; jobCode: string | null; clientName: string | null; brand: string | null; status: string }>;
+    contacts?: Array<{ id: string; firstName: string; lastName: string | null; email: string | null; type: string; company?: { id: string; name: string } | null }>;
+  } = {};
+  const contains = { contains: q, mode: "insensitive" as const };
+
+  if (type === "all" || type === "opportunity") {
+    results.opportunities = await prisma.opportunity.findMany({
+      where: {
+        stage: { not: "LOST" },
+        ...(q ? {
+          OR: [
+            { title: contains },
+            { clientName: contains },
+            { brand: contains },
+            { description: contains },
+            { company: { name: contains } },
+          ],
+        } : {}),
+      },
+      select: { id: true, title: true, clientName: true, brand: true, stage: true, value: true, company: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+    }).then((items) => items.map((item) => ({ ...item, value: item.value?.toString() ?? null })));
+  }
+
+  if (type === "all" || type === "production") {
+    results.productions = await prisma.production.findMany({
+      where: {
+        status: { not: "WRAPPED" },
+        ...(q ? {
+          OR: [
+            { title: contains },
+            { clientName: contains },
+            { brand: contains },
+            { jobCode: contains },
+          ],
+        } : {}),
+      },
+      select: { id: true, title: true, jobCode: true, clientName: true, brand: true, status: true },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+    });
+  }
+
+  if (type === "all" || type === "contact") {
+    results.contacts = await prisma.contact.findMany({
+      where: q ? {
+        OR: [
+          { firstName: contains },
+          { lastName: contains },
+          { email: contains },
+          { company: { name: contains } },
+        ],
+      } : {},
+      select: { id: true, firstName: true, lastName: true, email: true, type: true, company: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+    });
+  }
+
+  res.json(results);
+});
+
 router.get("/threads/:threadId", async (req: Request, res: Response): Promise<void> => {
   const before = typeof req.query.before === "string" ? new Date(req.query.before) : undefined;
   const thread = await getThread(req.params.threadId, {
@@ -410,24 +528,322 @@ router.post("/threads/:threadId/unarchive", async (req: Request, res: Response):
 });
 
 router.patch("/threads/:threadId/link", async (req: Request, res: Response): Promise<void> => {
-  const body = req.body as { contactId?: string; opportunityId?: string; productionId?: string };
-  const thread = await prisma.emailThread.update({
+  const body = req.body as LinkTargets;
+  if (!body.opportunityId && !body.productionId && !body.contactId) {
+    res.status(400).json({ error: "At least one link target required" });
+    return;
+  }
+  const updated = await prisma.emailThread.update({
     where: { id: req.params.threadId },
     data: {
-      linkedContactId: body.contactId ?? null,
-      linkedOpportunityId: body.opportunityId ?? null,
-      linkedProductionId: body.productionId ?? null,
+      linkedOpportunityId: body.opportunityId ?? undefined,
+      linkedProductionId: body.productionId ?? undefined,
+      linkedContactId: body.contactId ?? undefined,
     },
+    include: emailThreadCrmInclude,
   });
-  res.json(thread);
+  console.log(`[EMAIL CRM] Linked thread ${req.params.threadId} → opportunity:${body.opportunityId ?? ""} production:${body.productionId ?? ""} contact:${body.contactId ?? ""}`);
+  res.json(updated);
 });
 
 router.patch("/threads/:threadId/unlink", async (req: Request, res: Response): Promise<void> => {
-  const thread = await prisma.emailThread.update({
+  const field = ((req.body as { field?: string }).field ?? "all").toLowerCase();
+  const data: Prisma.EmailThreadUpdateInput = {};
+  if (field === "opportunity" || field === "all") data.linkedOpportunity = { disconnect: true };
+  if (field === "production" || field === "all") data.linkedProduction = { disconnect: true };
+  if (field === "contact" || field === "all") data.linkedContact = { disconnect: true };
+  const updated = await prisma.emailThread.update({
     where: { id: req.params.threadId },
-    data: { linkedContactId: null, linkedOpportunityId: null, linkedProductionId: null },
+    data,
+    include: emailThreadCrmInclude,
   });
-  res.json(thread);
+  console.log(`[EMAIL CRM] Unlinked ${field} from thread ${req.params.threadId}`);
+  res.json(updated);
+});
+
+router.post("/threads/:threadId/create-opportunity", async (req: Request, res: Response): Promise<void> => {
+  const thread = await prisma.emailThread.findUnique({
+    where: { id: req.params.threadId },
+    include: {
+      account: true,
+      messages: {
+        orderBy: { sentAt: "asc" },
+        take: 8,
+        select: { fromAddress: true, fromName: true, bodyText: true, snippet: true, sentAt: true, isFromMe: true },
+      },
+    },
+  });
+  if (!thread) {
+    res.status(404).json({ error: "Thread not found" });
+    return;
+  }
+
+  const firstExternal = thread.messages.find((message) => !message.isFromMe) ?? thread.messages[0];
+  const senderEmail = firstExternal?.fromAddress ?? "";
+  const senderName = firstExternal?.fromName || inferNameFromEmail(senderEmail);
+  const existingContact = senderEmail
+    ? await prisma.contact.findFirst({
+        where: { email: { equals: senderEmail, mode: "insensitive" } },
+        include: { company: true },
+      })
+    : null;
+  const company = existingContact?.company?.name || inferCompanyFromEmail(senderEmail);
+  const bodyText = firstExternal?.bodyText || firstExternal?.snippet || thread.snippet || "";
+  res.json({
+    prefill: {
+      title: cleanSubject(thread.subject),
+      clientName: existingContact ? `${existingContact.firstName}${existingContact.lastName ? ` ${existingContact.lastName}` : ""}` : senderName || company,
+      company,
+      contactId: existingContact?.id ?? null,
+      contactEmail: senderEmail,
+      contactName: senderName,
+      source: "EMAIL",
+      description: bodyText.slice(0, 500).trim(),
+      dateReceived: firstExternal?.sentAt ?? new Date(),
+      linkedThreadId: thread.id,
+    },
+    thread: {
+      id: thread.id,
+      subject: thread.subject,
+      participants: thread.participants,
+    },
+  });
+});
+
+router.post("/threads/:threadId/confirm-opportunity", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as {
+    title?: string;
+    clientName?: string;
+    company?: string;
+    brand?: string;
+    jobType?: PmsJobType;
+    estimatedValue?: number | string;
+    followUpDate?: string;
+    description?: string;
+    contactId?: string;
+    contactEmail?: string;
+    contactName?: string;
+    createContact?: boolean;
+  };
+  if (!body.title?.trim()) {
+    res.status(400).json({ error: "title required" });
+    return;
+  }
+  if (!body.clientName?.trim()) {
+    res.status(400).json({ error: "clientName required" });
+    return;
+  }
+  const title = body.title.trim();
+  const clientName = body.clientName.trim();
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const companyId = await (async () => {
+        const trimmed = body.company?.trim();
+        if (!trimmed) return undefined;
+        const existing = await tx.company.findFirst({ where: { name: { equals: trimmed, mode: "insensitive" } } });
+        if (existing) return existing.id;
+        const created = await tx.company.create({ data: { name: trimmed } });
+        return created.id;
+      })();
+
+      let resolvedContactId = body.contactId || undefined;
+      if (body.createContact && body.contactEmail && !resolvedContactId) {
+        const existing = await tx.contact.findFirst({ where: { email: { equals: body.contactEmail, mode: "insensitive" } } });
+        if (existing) {
+          resolvedContactId = existing.id;
+        } else {
+          const name = splitName(body.contactName || body.clientName || inferNameFromEmail(body.contactEmail));
+          const contact = await tx.contact.create({
+            data: {
+              firstName: name.firstName,
+              lastName: name.lastName,
+              email: body.contactEmail.toLowerCase(),
+              companyId,
+              type: ContactType.CLIENT,
+              source: ContactSource.OTHER,
+            },
+          });
+          resolvedContactId = contact.id;
+          console.log(`[EMAIL CRM] Created contact ${contact.email ?? contact.id} from opportunity creation`);
+        }
+      }
+
+      const opportunity = await tx.opportunity.create({
+        data: {
+          title,
+          clientName,
+          companyId,
+          brand: body.brand || undefined,
+          jobType: body.jobType,
+          value: body.estimatedValue !== undefined && body.estimatedValue !== "" ? String(body.estimatedValue) : undefined,
+          description: body.description || undefined,
+          source: "EMAIL",
+          stage: "ENQUIRY",
+          dateReceived: new Date(),
+          followUpDate: body.followUpDate ? new Date(body.followUpDate) : undefined,
+          contactId: resolvedContactId,
+        },
+        include: { contact: true, company: true },
+      });
+
+      await tx.emailThread.update({
+        where: { id: req.params.threadId },
+        data: {
+          linkedOpportunityId: opportunity.id,
+          linkedContactId: resolvedContactId,
+        },
+      });
+
+      return { opportunity, linked: true };
+    });
+    console.log(`[EMAIL CRM] Created opportunity ${result.opportunity.id} from thread ${req.params.threadId}`);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to create opportunity" });
+  }
+});
+
+router.get("/threads/:threadId/people", async (req: Request, res: Response): Promise<void> => {
+  const thread = await prisma.emailThread.findUnique({
+    where: { id: req.params.threadId },
+    include: {
+      account: true,
+      messages: {
+        select: {
+          fromAddress: true,
+          fromName: true,
+          toAddresses: true,
+          ccAddresses: true,
+          bccAddresses: true,
+          isFromMe: true,
+        },
+      },
+    },
+  });
+  if (!thread) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
+  const addressMap = new Map<string, { email: string; name: string; roles: string[] }>();
+  const addAddress = (email: string, name: string, role: string): void => {
+    const key = email.toLowerCase().trim();
+    if (!key || !key.includes("@")) return;
+    const existing = addressMap.get(key);
+    if (existing) {
+      if (!existing.roles.includes(role)) existing.roles.push(role);
+      if (!existing.name && name) existing.name = name;
+    } else {
+      addressMap.set(key, { email: key, name, roles: [role] });
+    }
+  };
+
+  for (const message of thread.messages) {
+    addAddress(message.fromAddress, message.fromName ?? "", "from");
+    message.toAddresses.forEach((email) => addAddress(email, "", "to"));
+    message.ccAddresses.forEach((email) => addAddress(email, "", "cc"));
+    message.bccAddresses.forEach((email) => addAddress(email, "", "bcc"));
+  }
+
+  const addresses = Array.from(addressMap.keys());
+  const contacts = addresses.length
+    ? await prisma.contact.findMany({
+        where: { email: { in: addresses, mode: "insensitive" } },
+        include: { company: true },
+      })
+    : [];
+  const contactByEmail = new Map(contacts.map((contact) => [contact.email?.toLowerCase(), contact]));
+  const accountEmail = thread.account?.emailAddress.toLowerCase();
+  const roleOrder = ["from", "to", "cc", "bcc"];
+  const people = Array.from(addressMap.values())
+    .map((person) => {
+      const contact = contactByEmail.get(person.email.toLowerCase()) ?? null;
+      return {
+        email: person.email,
+        name: contact ? `${contact.firstName}${contact.lastName ? ` ${contact.lastName}` : ""}` : person.name || inferNameFromEmail(person.email),
+        roles: person.roles,
+        inferredCompany: contact?.company?.name ?? inferCompanyFromEmail(person.email),
+        domain: person.email.split("@")[1] ?? "",
+        isMe: person.email.toLowerCase() === accountEmail,
+        existingContact: contact ? {
+          id: contact.id,
+          firstName: contact.firstName,
+          lastName: contact.lastName,
+          email: contact.email,
+          type: contact.type,
+          company: contact.company,
+        } : null,
+        isLinkedToThread: Boolean(contact && thread.linkedContactId === contact.id),
+      };
+    })
+    .sort((a, b) => {
+      const aOrder = Math.min(...a.roles.map((role) => roleOrder.indexOf(role)).filter((index) => index >= 0));
+      const bOrder = Math.min(...b.roles.map((role) => roleOrder.indexOf(role)).filter((index) => index >= 0));
+      return aOrder - bOrder;
+    });
+
+  res.json({ people });
+});
+
+router.post("/threads/:threadId/people/create-contact", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as {
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    company?: string;
+    type?: ContactType;
+    tags?: string[];
+    linkToThread?: boolean;
+  };
+  if (!body.email || !body.firstName) {
+    res.status(400).json({ error: "email and firstName required" });
+    return;
+  }
+  const existing = await prisma.contact.findFirst({
+    where: { email: { equals: body.email, mode: "insensitive" } },
+    include: { company: true },
+  });
+  if (existing) {
+    res.status(409).json({ error: "Contact already exists", contact: existing });
+    return;
+  }
+  const companyId = await findOrCreateCompany(body.company);
+  const contact = await prisma.contact.create({
+    data: {
+      firstName: body.firstName.trim(),
+      lastName: body.lastName?.trim() || null,
+      email: body.email.toLowerCase(),
+      companyId,
+      type: body.type ?? ContactType.CLIENT,
+      source: ContactSource.OTHER,
+      tags: body.tags ?? [],
+    },
+    include: { company: true },
+  });
+  if (body.linkToThread ?? true) {
+    const thread = await prisma.emailThread.findUnique({ where: { id: req.params.threadId } });
+    if (thread && !thread.linkedContactId) {
+      await prisma.emailThread.update({ where: { id: thread.id }, data: { linkedContactId: contact.id } });
+    }
+  }
+  console.log(`[EMAIL CRM] Created contact ${contact.email ?? contact.id} from thread ${req.params.threadId}`);
+  res.json(contact);
+});
+
+router.post("/threads/:threadId/people/link-contact", async (req: Request, res: Response): Promise<void> => {
+  const contactId = (req.body as { contactId?: string }).contactId;
+  if (!contactId) {
+    res.status(400).json({ error: "contactId required" });
+    return;
+  }
+  const updated = await prisma.emailThread.update({
+    where: { id: req.params.threadId },
+    data: { linkedContactId: contactId },
+    include: emailThreadCrmInclude,
+  });
+  console.log(`[EMAIL CRM] Linked contact ${contactId} to thread ${req.params.threadId}`);
+  res.json(updated);
 });
 
 router.post("/send", async (req: Request, res: Response): Promise<void> => {
