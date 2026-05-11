@@ -11,10 +11,12 @@ import {
   Settings,
   LogOut,
   MoreHorizontal,
+  PenLine,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { useDrafts } from "../store/draftStore";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -68,6 +70,7 @@ function SidebarItem({
 
 export default function AppLayout() {
   const { logout } = useAuth();
+  const { drafts, openDraft } = useDrafts();
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
   const [emailUnread, setEmailUnread] = useState(0);
@@ -100,6 +103,13 @@ export default function AppLayout() {
           <SidebarItem key={item.to} {...item} badge={item.to === "/email" ? emailUnread : undefined} />
         ))}
         <div className="flex-1" />
+        <button
+          onClick={() => openDraft().catch(() => undefined)}
+          title="Compose"
+          className="flex items-center justify-center w-full h-12 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+        >
+          <PenLine size={20} />
+        </button>
         <button
           onClick={handleLogout}
           title="Sign out"
@@ -175,6 +185,14 @@ export default function AppLayout() {
           )}
         </div>
       </nav>
+
+      <button
+        onClick={() => openDraft().catch(() => undefined)}
+        className={`md:hidden fixed bottom-20 right-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-gray-900 text-white shadow-lg ${drafts.length > 0 ? "hidden" : ""}`}
+        title="Compose"
+      >
+        <PenLine size={22} />
+      </button>
     </div>
   );
 }

@@ -28,6 +28,22 @@ type LinkTargets = {
   contactId?: string;
 };
 
+type DraftBody = {
+  to?: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject?: string;
+  bodyHtml?: string;
+  replyToThreadId?: string | null;
+  gmailThreadId?: string | null;
+  inReplyToMsgId?: string | null;
+  references?: string | null;
+  linkedOpportunityId?: string | null;
+  linkedProductionId?: string | null;
+  linkedContactId?: string | null;
+  isMinimized?: boolean;
+};
+
 function cleanSubject(subject: string): string {
   return subject.replace(/^(re|fwd?|fw):\s*/gi, "").trim() || subject;
 }
@@ -72,6 +88,12 @@ const emailThreadCrmInclude = {
   linkedProduction: true,
 } satisfies Prisma.EmailThreadInclude;
 
+const emailDraftInclude = {
+  linkedOpportunity: { select: { id: true, title: true, clientName: true, brand: true } },
+  linkedProduction: { select: { id: true, title: true, jobCode: true, clientName: true, brand: true } },
+  linkedContact: { select: { id: true, firstName: true, lastName: true, email: true } },
+} satisfies Prisma.EmailDraftInclude;
+
 type AccountBody = {
   label?: string;
   emailAddress?: string;
@@ -99,6 +121,36 @@ function intValue(value: unknown): number | undefined {
 
 function contentDispositionFilename(filename: string): string {
   return filename.replace(/"/g, "'");
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.map((item) => String(item).trim()).filter(Boolean);
+}
+
+function draftDataFromBody(body: DraftBody): Prisma.EmailDraftUncheckedUpdateInput {
+  const data: Prisma.EmailDraftUncheckedUpdateInput = {};
+  const to = stringArray(body.to);
+  const cc = stringArray(body.cc);
+  const bcc = stringArray(body.bcc);
+  if (to) data.to = { set: to };
+  if (cc) data.cc = { set: cc };
+  if (bcc) data.bcc = { set: bcc };
+  if (body.subject !== undefined) data.subject = body.subject;
+  if (body.bodyHtml !== undefined) data.bodyHtml = body.bodyHtml;
+  if (body.replyToThreadId !== undefined) data.replyToThreadId = body.replyToThreadId;
+  if (body.gmailThreadId !== undefined) data.gmailThreadId = body.gmailThreadId;
+  if (body.inReplyToMsgId !== undefined) data.inReplyToMsgId = body.inReplyToMsgId;
+  if (body.references !== undefined) data.references = body.references;
+  if (body.linkedOpportunityId !== undefined) data.linkedOpportunityId = body.linkedOpportunityId;
+  if (body.linkedProductionId !== undefined) data.linkedProductionId = body.linkedProductionId;
+  if (body.linkedContactId !== undefined) data.linkedContactId = body.linkedContactId;
+  if (body.isMinimized !== undefined) data.isMinimized = body.isMinimized;
+  return data;
+}
+
+async function getPrimaryEmailAccount() {
+  return prisma.emailAccount.findFirst({ where: { isPrimary: true, isActive: true } });
 }
 
 function redactAccount<T extends { encryptedPassword?: string | null; encryptedAccessToken?: string | null; encryptedRefreshToken?: string | null }>(account: T) {
@@ -406,6 +458,150 @@ router.get("/threads/search-link-targets", async (req: Request, res: Response): 
   }
 
   res.json(results);
+});
+
+router.get("/drafts", async (_req: Request, res: Response): Promise<void> => {
+  const account = await getPrimaryEmailAccount();
+  if (!account) {
+    res.json([]);
+    return;
+  }
+  const drafts = await prisma.emailDraft.findMany({
+    where: { accountId: account.id },
+    orderBy: { lastEditedAt: "desc" },
+    include: emailDraftInclude,
+  });
+  res.json(drafts);
+});
+
+router.post("/drafts", async (req: Request, res: Response): Promise<void> => {
+  const account = await getPrimaryEmailAccount();
+  if (!account) {
+    res.status(400).json({ error: "No email account" });
+    return;
+  }
+
+  const existingCount = await prisma.emailDraft.count({ where: { accountId: account.id } });
+  if (existingCount >= 3) {
+    res.status(400).json({ error: "Close a draft before opening another" });
+    return;
+  }
+
+  const body = req.body as DraftBody;
+  const draft = await prisma.emailDraft.create({
+    data: {
+      accountId: account.id,
+      to: stringArray(body.to) ?? [],
+      cc: stringArray(body.cc) ?? [],
+      bcc: stringArray(body.bcc) ?? [],
+      subject: body.subject ?? "",
+      bodyHtml: body.bodyHtml ?? "",
+      replyToThreadId: body.replyToThreadId ?? undefined,
+      gmailThreadId: body.gmailThreadId ?? undefined,
+      inReplyToMsgId: body.inReplyToMsgId ?? undefined,
+      references: body.references ?? undefined,
+      linkedOpportunityId: body.linkedOpportunityId ?? undefined,
+      linkedProductionId: body.linkedProductionId ?? undefined,
+      linkedContactId: body.linkedContactId ?? undefined,
+    },
+    include: emailDraftInclude,
+  });
+  console.log(`[EMAIL DRAFT] Created draft ${draft.id}`);
+  res.status(201).json(draft);
+});
+
+router.patch("/drafts/:draftId", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const data = draftDataFromBody(req.body as DraftBody);
+    const draft = await prisma.emailDraft.update({
+      where: { id: req.params.draftId },
+      data: {
+        ...data,
+        lastEditedAt: new Date(),
+      },
+      include: emailDraftInclude,
+    });
+    res.json(draft);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to update draft" });
+  }
+});
+
+router.delete("/drafts/:draftId", async (req: Request, res: Response): Promise<void> => {
+  await prisma.emailDraft.delete({ where: { id: req.params.draftId } });
+  console.log(`[EMAIL DRAFT] Deleted draft ${req.params.draftId}`);
+  res.json({ deleted: true });
+});
+
+router.post("/drafts/:draftId/send", async (req: Request, res: Response): Promise<void> => {
+  const draft = await prisma.emailDraft.findUnique({
+    where: { id: req.params.draftId },
+    include: { account: true },
+  });
+  if (!draft) {
+    res.status(404).json({ error: "Draft not found" });
+    return;
+  }
+  if (!draft.to.length) {
+    res.status(400).json({ error: "No recipients" });
+    return;
+  }
+  if (!draft.subject.trim()) {
+    res.status(400).json({ error: "No subject" });
+    return;
+  }
+
+  try {
+    if (draft.account.provider === EmailProvider.GOOGLE) {
+      const { sendGmailMessage } = await import("../services/gmailService");
+      const { syncThread } = await import("../services/gmailSyncService");
+      const sent = await sendGmailMessage(draft.account, {
+        to: draft.to,
+        cc: draft.cc,
+        bcc: draft.bcc,
+        subject: draft.subject,
+        bodyHtml: draft.bodyHtml,
+        inReplyTo: draft.inReplyToMsgId ?? undefined,
+        references: draft.references ?? undefined,
+        gmailThreadId: draft.gmailThreadId ?? undefined,
+      });
+      const localThreadId = await syncThread(draft.account, sent.gmailThreadId).catch((err: unknown) => {
+        console.error("[EMAIL DRAFT] Sent thread sync failed:", err instanceof Error ? err.message : err);
+        return null;
+      });
+      if (localThreadId && (draft.linkedOpportunityId || draft.linkedProductionId)) {
+        await prisma.emailThread.update({
+          where: { id: localThreadId },
+          data: {
+            linkedOpportunityId: draft.linkedOpportunityId,
+            linkedProductionId: draft.linkedProductionId,
+          },
+        }).catch((err: unknown) => console.error("[EMAIL DRAFT] Sent thread link failed:", err instanceof Error ? err.message : err));
+      }
+      await prisma.emailDraft.delete({ where: { id: draft.id } });
+      console.log(`[EMAIL DRAFT] Sent draft ${draft.id} as message ${sent.gmailMessageId}`);
+      res.json({ sent: true, gmailMessageId: sent.gmailMessageId, gmailThreadId: sent.gmailThreadId });
+      return;
+    }
+
+    const sentMessage = await sendEmail({
+      fromAccountId: draft.accountId,
+      to: draft.to,
+      cc: draft.cc,
+      bcc: draft.bcc,
+      subject: draft.subject,
+      bodyHtml: draft.bodyHtml,
+      threadId: draft.replyToThreadId ?? undefined,
+      inReplyTo: draft.inReplyToMsgId ?? undefined,
+      linkedOpportunityId: draft.linkedOpportunityId ?? undefined,
+      linkedProductionId: draft.linkedProductionId ?? undefined,
+    });
+    await prisma.emailDraft.delete({ where: { id: draft.id } });
+    console.log(`[EMAIL DRAFT] Sent draft ${draft.id} as message ${sentMessage.id}`);
+    res.json({ sent: true, messageId: sentMessage.id, threadId: sentMessage.threadId });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to send draft" });
+  }
 });
 
 router.get("/threads/:threadId", async (req: Request, res: Response): Promise<void> => {

@@ -1,10 +1,5 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import DOMPurify from "dompurify";
-import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Link from "@tiptap/extension-link";
-import Placeholder from "@tiptap/extension-placeholder";
-import Underline from "@tiptap/extension-underline";
 import {
   Archive,
   ArrowLeft,
@@ -14,7 +9,6 @@ import {
   Inbox,
   Link2,
   Mail,
-  MailPlus,
   MoreHorizontal,
   Paperclip,
   Plus,
@@ -27,27 +21,12 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { PreviewPanel } from "../components/files/FileBrowser";
-import type { EmailAccount, EmailAttachmentSummary, EmailMessage, EmailTemplate, EmailThread, EmailThreadsResponse, JobFile, Production } from "../lib/types";
+import type { EmailAccount, EmailAttachmentSummary, EmailMessage, EmailThread, EmailThreadsResponse, JobFile, Production } from "../lib/types";
 import { formatBytes, JOB_FOLDERS } from "../lib/types";
+import { useDrafts } from "../store/draftStore";
 
 type Folder = "inbox" | "sent" | "starred" | "unread" | "archived";
 type Filter = "all" | "unread" | "flagged";
-type ComposerDraft = {
-  to?: string;
-  subject?: string;
-  bodyHtml?: string;
-  linkedOpportunityId?: string;
-  linkedProductionId?: string;
-  attachments?: { id: string; filename: string; sizeBytes: number }[];
-};
-type ReplyState = {
-  threadId: string;
-  threadSubject: string;
-  replyTo: string[];
-  recipientEmails: string[];
-  accountId?: string;
-  isOpen: boolean;
-};
 
 type SaveAttachmentState = {
   attachment: EmailAttachmentSummary;
@@ -237,8 +216,9 @@ function escapeHtml(text: string) {
 }
 
 export default function Email() {
+  const { openDraft, openReply: openDraftReply } = useDrafts();
+  const initialComposeHandled = useRef(false);
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
-  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [threads, setThreads] = useState<EmailThread[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(new URLSearchParams(window.location.search).get("thread"));
   const [thread, setThread] = useState<EmailThread | null>(null);
@@ -246,9 +226,6 @@ export default function Email() {
   const [folder, setFolder] = useState<Folder>("inbox");
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
-  const [composeOpen, setComposeOpen] = useState(false);
-  const [composeDraft, setComposeDraft] = useState<ComposerDraft | null>(null);
-  const [replyState, setReplyState] = useState<ReplyState | null>(null);
   const [saveAttachment, setSaveAttachment] = useState<SaveAttachmentState | null>(null);
   const [previewFile, setPreviewFile] = useState<JobFile | null>(null);
   const [peopleThread, setPeopleThread] = useState<EmailThread | null>(null);
@@ -307,17 +284,29 @@ export default function Email() {
 
   useEffect(() => {
     loadAccounts().catch(console.error);
-    api.get<EmailTemplate[]>("/api/email/templates").then(setTemplates).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    if (initialComposeHandled.current) return;
+    initialComposeHandled.current = true;
     const params = new URLSearchParams(window.location.search);
     if (params.get("compose") === "draft") {
       const raw = localStorage.getItem("emailDraft");
       if (raw) {
-        setComposeDraft(JSON.parse(raw) as ComposerDraft);
+        const draft = JSON.parse(raw) as { to?: string; subject?: string; bodyHtml?: string; linkedOpportunityId?: string; linkedProductionId?: string };
         localStorage.removeItem("emailDraft");
+        openDraft({
+          to: draft.to ? [draft.to] : [],
+          subject: draft.subject,
+          bodyHtml: draft.bodyHtml,
+          linkedOpportunityId: draft.linkedOpportunityId,
+          linkedProductionId: draft.linkedProductionId,
+        }).catch(console.error);
+      } else {
+        openDraft().catch(console.error);
       }
-      setComposeOpen(true);
     }
-  }, []);
+  }, [openDraft]);
 
   useEffect(() => { loadThreads().catch(console.error); }, [activeAccountId, folder, filter]);
   useEffect(() => {
@@ -329,7 +318,6 @@ export default function Email() {
     else setThread(null);
   }, [selectedThreadId]);
 
-  const activeAccount = accounts.find((account) => account.id === activeAccountId);
   const unreadCount = threads.filter((item) => !item.isRead).length;
   const groupedThreads = useMemo(() => {
     const groups: Array<{ label: string; items: EmailThread[] }> = [];
@@ -343,20 +331,18 @@ export default function Email() {
   }, [threads]);
 
   function openReply(targetThread: EmailThread) {
-    const accountEmail = targetThread.account?.emailAddress?.toLowerCase();
-    const recipientEmails = targetThread.participants.filter((email) => email.toLowerCase() !== accountEmail);
-    const replyTo = recipientEmails.map((email) => {
-      const index = targetThread.participants.findIndex((participant) => participant === email);
-      return targetThread.participantNames?.[index] ?? email;
-    });
-    setReplyState({
-      threadId: targetThread.id,
-      threadSubject: targetThread.subject,
-      replyTo,
-      recipientEmails,
-      accountId: targetThread.accountId,
-      isOpen: true,
-    });
+    const latest = [...targetThread.messages].reverse().find((message) => !message.isFromMe) ?? targetThread.messages[targetThread.messages.length - 1];
+    openDraftReply({
+      id: targetThread.id,
+      gmailThreadId: targetThread.gmailThreadId,
+      subject: targetThread.subject,
+      participants: targetThread.participants,
+      accountEmail: targetThread.account?.emailAddress,
+      lastMessageMsgId: latest?.gmailMessageId ?? latest?.externalMessageId,
+      references: latest?.externalMessageId,
+      linkedOpportunityId: targetThread.linkedOpportunityId,
+      linkedProductionId: targetThread.linkedProductionId,
+    }).catch(console.error);
   }
 
   async function fileAttachment(attachment: EmailAttachmentSummary, productionId?: string) {
@@ -399,8 +385,8 @@ export default function Email() {
             </div>
           ))}
         </div>
-        <button onClick={() => setComposeOpen(true)} className="m-3 flex min-h-10 items-center justify-center gap-2 rounded bg-[#2c2c2a] text-sm font-medium text-white">
-          <MailPlus size={16} /> Compose
+        <button onClick={() => openDraft().catch(console.error)} className="m-3 flex min-h-10 items-center justify-center gap-2 rounded bg-[#2c2c2a] text-sm font-medium text-white">
+          <Mail size={16} /> Compose
         </button>
       </aside>
 
@@ -474,24 +460,6 @@ export default function Email() {
         )}
       </section>
 
-      <button onClick={() => setComposeOpen(true)} className="fixed bottom-20 right-4 grid h-14 w-14 place-items-center rounded-full bg-gray-900 text-white shadow-lg md:hidden">
-        <MailPlus size={22} />
-      </button>
-
-      {composeOpen && <ComposerModal accounts={accounts} templates={templates} defaultAccountId={activeAccount?.id} draft={composeDraft} onClose={() => { setComposeOpen(false); setComposeDraft(null); }} onSent={() => { setComposeOpen(false); setComposeDraft(null); loadThreads().catch(console.error); }} />}
-      <ReplyBar
-        activeThread={thread}
-        accounts={accounts}
-        replyState={replyState}
-        onOpenReply={thread ? () => openReply(thread) : undefined}
-        onClose={() => setReplyState(null)}
-        onSwitch={(threadId) => setSelectedThreadId(threadId)}
-        onSent={(threadId) => {
-          setReplyState(null);
-          loadThread(threadId).catch(console.error);
-          loadThreads().catch(console.error);
-        }}
-      />
       {saveAttachment && (
         <SaveAttachmentModal
           attachment={saveAttachment.attachment}
@@ -1147,134 +1115,6 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, def
   );
 }
 
-function ReplyBar({ activeThread, accounts, replyState, onOpenReply, onClose, onSwitch, onSent }: { activeThread: EmailThread | null; accounts: EmailAccount[]; replyState: ReplyState | null; onOpenReply?: () => void; onClose: () => void; onSwitch: (threadId: string) => void; onSent: (threadId: string) => void }) {
-  const [fromAccountId, setFromAccountId] = useState(replyState?.accountId || accounts[0]?.id || "");
-  const [fromVisible, setFromVisible] = useState(false);
-  const [ccVisible, setCcVisible] = useState(false);
-  const [signatureVisible, setSignatureVisible] = useState(() => window.innerWidth >= 768);
-  const [sending, setSending] = useState(false);
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const [error, setError] = useState("");
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Underline,
-      Link,
-      Placeholder.configure({ placeholder: "Write a reply..." }),
-    ],
-    content: "",
-  });
-
-  useEffect(() => {
-    if (replyState?.accountId) setFromAccountId(replyState.accountId);
-  }, [replyState?.accountId]);
-
-  async function sendReply() {
-    if (!editor || !replyState) return;
-    setSending(true);
-    setError("");
-    try {
-      await api.post(`/api/email/threads/${replyState.threadId}/reply`, { fromAccountId, bodyHtml: editor.getHTML(), replyAll: false });
-      editor.commands.clearContent();
-      onSent(replyState.threadId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send reply");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  function discard() {
-    const bodyIsEmpty = !editor || editor.getText().trim().length === 0;
-    if (!bodyIsEmpty && !confirmDiscard) {
-      setConfirmDiscard(true);
-      return;
-    }
-    editor?.commands.clearContent();
-    setConfirmDiscard(false);
-    onClose();
-  }
-
-  if (!replyState) {
-    const lastNonMe = activeThread ? [...activeThread.messages].reverse().find((message) => !message.isFromMe) : null;
-    return (
-      <div className={`${activeThread ? "block" : "hidden"} fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white p-3 md:left-[520px]`}>
-        <button onClick={onOpenReply} className="flex min-h-12 w-full items-center gap-2 rounded-lg border border-gray-200 px-3 text-left text-sm text-gray-500">
-          <Reply size={16} /> Reply to {lastNonMe?.resolvedFromName || lastNonMe?.fromName || lastNonMe?.fromAddress || "sender"}...
-        </button>
-      </div>
-    );
-  }
-
-  const replyingElsewhere = activeThread?.id !== replyState.threadId;
-
-  return (
-    <div className="fixed inset-x-0 bottom-0 z-50 max-h-screen overflow-auto border-t border-gray-200 bg-white shadow-2xl md:left-[520px] md:max-h-[60vh]">
-      {replyingElsewhere && (
-        <div className="flex min-h-8 items-center gap-2 bg-[#FFF8E7] px-3 text-xs text-gray-700">
-          <span className="min-w-0 flex-1 truncate">↩ Replying to: {replyState.threadSubject}</span>
-          <button onClick={() => onSwitch(replyState.threadId)} className="min-h-8 text-gray-900 underline">Switch to that thread</button>
-          <button onClick={discard} className="min-h-8 text-gray-900 underline">Close reply</button>
-        </div>
-      )}
-      <div className="max-h-[90vh] overflow-auto p-3 md:max-h-[60vh]">
-        <div className="mb-2 flex min-h-9 flex-wrap items-center gap-2 text-xs">
-          <span className="text-gray-400">To:</span>
-          {replyState.replyTo.map((name, index) => (
-            <span key={`${name}-${index}`} title={replyState.recipientEmails[index]} className="rounded-full bg-gray-100 px-2 py-1 text-gray-700">{name} ×</span>
-          ))}
-          {accounts.length > 1 && (
-            <button onClick={() => setFromVisible((current) => !current)} className="ml-auto min-h-8 text-xs text-gray-500">From: {accounts.find((account) => account.id === fromAccountId)?.label ?? "account"}</button>
-          )}
-        </div>
-        {fromVisible && (
-          <select value={fromAccountId} onChange={(event) => setFromAccountId(event.target.value)} className="mb-2 min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm md:max-w-xs">
-            {accounts.map((account) => <option key={account.id} value={account.id}>{account.emailAddress}</option>)}
-          </select>
-        )}
-        {ccVisible && <input className="mb-2 min-h-9 w-full border-b border-gray-100 text-sm outline-none" placeholder="CC" />}
-        <div className="rounded-lg border border-gray-200">
-          <div className="flex h-8 items-center gap-1 border-b border-gray-100 px-2 text-xs text-gray-600">
-            <EditorButton active={editor?.isActive("bold")} onClick={() => editor?.chain().focus().toggleBold().run()}>B</EditorButton>
-            <EditorButton active={editor?.isActive("italic")} onClick={() => editor?.chain().focus().toggleItalic().run()}><span className="italic">I</span></EditorButton>
-            <EditorButton active={editor?.isActive("underline")} onClick={() => editor?.chain().focus().toggleUnderline().run()}><span className="underline">U</span></EditorButton>
-            <span className="mx-1 h-4 w-px bg-gray-200" />
-            <EditorButton active={editor?.isActive("link")} onClick={() => {
-              const href = window.prompt("Link URL");
-              if (href) editor?.chain().focus().setLink({ href }).run();
-            }}>Link</EditorButton>
-            <span className="mx-1 h-4 w-px bg-gray-200" />
-            <EditorButton active={editor?.isActive("bulletList")} onClick={() => editor?.chain().focus().toggleBulletList().run()}>• List</EditorButton>
-            <EditorButton active={editor?.isActive("orderedList")} onClick={() => editor?.chain().focus().toggleOrderedList().run()}>1. List</EditorButton>
-          </div>
-          <EditorContent editor={editor} className="min-h-[100px] p-3 text-sm outline-none [&_.ProseMirror]:min-h-[100px] [&_.ProseMirror]:outline-none" />
-          {signatureVisible && (
-            <div className="border-t border-gray-100 p-3 text-xs text-gray-400">
-              <div className="flex"><span>--</span><button onClick={() => setSignatureVisible(false)} className="ml-auto min-h-6 text-gray-400 underline">Hide</button></div>
-              Conor | unlimited.bond
-            </div>
-          )}
-        </div>
-        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-        <div className="mt-2 flex h-10 items-center gap-2">
-          {confirmDiscard ? (
-            <span className="flex items-center gap-2 text-xs text-gray-600">Discard this reply? <button onClick={() => setConfirmDiscard(false)} className="min-h-8 underline">Keep editing</button><button onClick={discard} className="min-h-8 text-red-600 underline">Discard</button></span>
-          ) : (
-            <button onClick={discard} className="min-h-10 px-2 text-sm text-gray-500">Discard</button>
-          )}
-          <button onClick={() => setCcVisible((current) => !current)} className="ml-auto min-h-10 px-2 text-xs text-gray-500">CC</button>
-          <button className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-500"><Paperclip size={16} /></button>
-          <button onClick={sendReply} disabled={sending || !fromAccountId} className="flex min-h-10 items-center gap-1 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-40">{sending ? "Sending..." : "Send →"}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EditorButton({ active, onClick, children }: { active?: boolean; onClick: () => void; children: ReactNode }) {
-  return <button type="button" onClick={onClick} className={`min-h-8 rounded px-2 ${active ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-100"}`}>{children}</button>;
-}
-
 function SaveAttachmentModal({ attachment, productionId: initialProductionId, onClose, onSaved }: { attachment: EmailAttachmentSummary; productionId?: string; onClose: () => void; onSaved: (file: JobFile) => void }) {
   const [productions, setProductions] = useState<Production[]>([]);
   const [productionId, setProductionId] = useState(initialProductionId ?? "");
@@ -1341,115 +1181,5 @@ function SaveAttachmentModal({ attachment, productionId: initialProductionId, on
         </div>
       </div>
     </div>
-  );
-}
-
-function ComposerModal({ accounts, templates, defaultAccountId, draft, onClose, onSent }: { accounts: EmailAccount[]; templates: EmailTemplate[]; defaultAccountId?: string; draft?: ComposerDraft | null; onClose: () => void; onSent: () => void }) {
-  const [fromAccountId, setFromAccountId] = useState(defaultAccountId || accounts[0]?.id || "");
-  const [to, setTo] = useState(draft?.to ?? "");
-  const [ccVisible, setCcVisible] = useState(false);
-  const [bccVisible, setBccVisible] = useState(false);
-  const [cc, setCc] = useState("");
-  const [bcc, setBcc] = useState("");
-  const [subject, setSubject] = useState(draft?.subject ?? "");
-  const [bodyHtml, setBodyHtml] = useState(draft?.bodyHtml ?? "");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleSend(e: FormEvent) {
-    e.preventDefault();
-    setSending(true);
-    setError("");
-    try {
-      await api.post("/api/email/send", {
-        fromAccountId,
-        to: to.split(",").map((email) => email.trim()).filter(Boolean),
-        cc: cc.split(",").map((email) => email.trim()).filter(Boolean),
-        bcc: bcc.split(",").map((email) => email.trim()).filter(Boolean),
-        subject,
-        bodyHtml,
-        linkedOpportunityId: draft?.linkedOpportunityId,
-        linkedProductionId: draft?.linkedProductionId,
-      });
-      onSent();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  function applyTemplate(templateId: string) {
-    const template = templates.find((item) => item.id === templateId);
-    if (!template) return;
-    if (bodyHtml && !window.confirm("Replace the current message body?")) return;
-    setSubject(template.subject);
-    setBodyHtml(template.bodyHtml);
-    setCc(template.defaultCc ?? "");
-    setBcc(template.defaultBcc ?? "");
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/25 md:items-center md:justify-center">
-      <form onSubmit={handleSend} className="flex max-h-[90vh] w-full flex-col rounded-t-2xl bg-white shadow-xl md:w-[680px] md:rounded-2xl">
-        <div className="flex min-h-12 items-center border-b border-gray-100 px-4">
-          <h2 className="text-sm font-medium text-gray-900">New message</h2>
-          <button type="button" onClick={onClose} className="ml-auto grid min-h-11 min-w-11 place-items-center text-gray-500"><X size={17} /></button>
-        </div>
-        <div className="flex-1 space-y-2 overflow-auto p-4">
-          <ComposerField label="From">
-            <select value={fromAccountId} onChange={(event) => setFromAccountId(event.target.value)} className="min-h-9 w-full border-0 bg-transparent text-sm outline-none">
-              {accounts.map((account) => <option key={account.id} value={account.id}>{account.emailAddress}</option>)}
-            </select>
-          </ComposerField>
-          <ComposerField label="To"><input value={to} onChange={(event) => setTo(event.target.value)} className="min-h-9 w-full border-0 bg-transparent text-sm outline-none" placeholder="name@example.com" /></ComposerField>
-          <div className="flex gap-3 text-xs text-blue-600">
-            <button type="button" onClick={() => setCcVisible(!ccVisible)} className="min-h-8">CC</button>
-            <button type="button" onClick={() => setBccVisible(!bccVisible)} className="min-h-8">BCC</button>
-            <select onChange={(event) => applyTemplate(event.target.value)} className="ml-auto min-h-8 rounded border border-gray-200 px-2 text-gray-600">
-              <option value="">Use template</option>
-              {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-            </select>
-          </div>
-          {ccVisible && <ComposerField label="CC"><input value={cc} onChange={(event) => setCc(event.target.value)} className="min-h-9 w-full border-0 bg-transparent text-sm outline-none" /></ComposerField>}
-          {bccVisible && <ComposerField label="BCC"><input value={bcc} onChange={(event) => setBcc(event.target.value)} className="min-h-9 w-full border-0 bg-transparent text-sm outline-none" /></ComposerField>}
-          <ComposerField label="Subject"><input value={subject} onChange={(event) => setSubject(event.target.value)} className="min-h-9 w-full border-0 bg-transparent text-sm outline-none" /></ComposerField>
-          <div className="rounded-lg border border-gray-200">
-            <div className="flex min-h-9 items-center gap-2 border-b border-gray-100 px-2 text-xs text-gray-500">
-              <button type="button" className="min-h-8 px-2 font-bold">B</button>
-              <button type="button" className="min-h-8 px-2 italic">I</button>
-              <button type="button" className="min-h-8 px-2 underline">U</button>
-              <button type="button" className="min-h-8 px-2">• List</button>
-            </div>
-            <textarea value={bodyHtml} onChange={(event) => setBodyHtml(event.target.value)} className="min-h-[200px] w-full resize-none border-0 p-3 text-sm outline-none" placeholder="Write your message..." />
-          </div>
-          <div className="rounded-lg bg-gray-50 p-3 text-xs text-gray-500">-- <br />Conor | unlimited.bond</div>
-          {draft?.attachments?.length ? (
-            <div className="flex flex-wrap gap-2">
-              {draft.attachments.map((attachment) => (
-                <span key={attachment.id} className="inline-flex min-h-9 items-center gap-2 rounded-full bg-gray-100 px-3 text-xs text-gray-700">
-                  <Paperclip size={13} /> {attachment.filename} <span className="text-gray-400">{formatBytes(attachment.sizeBytes)}</span>
-                </span>
-              ))}
-            </div>
-          ) : null}
-          {error && <p className="text-sm text-red-600">{error}</p>}
-        </div>
-        <footer className="flex min-h-14 items-center gap-2 border-t border-gray-100 px-4">
-          <button type="button" onClick={onClose} className="min-h-11 px-3 text-sm text-gray-500">Discard</button>
-          <button type="button" className="ml-auto min-h-11 px-3 text-sm text-gray-500">Save draft</button>
-          <button disabled={sending || !fromAccountId || !to || !subject} className="min-h-11 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-40">{sending ? "Sending..." : "Send"}</button>
-        </footer>
-      </form>
-    </div>
-  );
-}
-
-function ComposerField({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="grid min-h-9 grid-cols-[64px_1fr] items-center border-b border-gray-100 text-sm">
-      <span className="text-xs text-gray-500">{label}</span>
-      {children}
-    </label>
   );
 }

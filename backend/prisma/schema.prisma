@@ -224,6 +224,7 @@ model Contact {
   crewMembers     CrewMember[]
   productionDates ProductionDatePerson[]
   emailThreads    EmailThread[]
+  emailDrafts     EmailDraft[]
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
 
@@ -256,6 +257,7 @@ model Opportunity {
   activityNotes  OpportunityNote[]
   tasks          OpportunityTask[]
   emailThreads   EmailThread[]
+  emailDrafts    EmailDraft[]
   calendarEvents CalendarEvent[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
@@ -314,6 +316,7 @@ model Production {
   budgets                Budget[]
   jobFiles               JobFile[]
   emailThreads           EmailThread[]
+  emailDrafts            EmailDraft[]
   receiptCaptures        ReceiptCapture[]
   calendarEvents         CalendarEvent[]
   createdAt              DateTime               @default(now())
@@ -690,10 +693,43 @@ model EmailAccount {
   lastSyncedAt          DateTime?
   gmailHistoryId        String?
   threads               EmailThread[]
+  drafts                EmailDraft[]
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 
   @@map("pms_email_accounts")
+}
+
+model EmailDraft {
+  id                  String       @id @default(uuid())
+  accountId           String
+  account             EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  to                  String[]     @default([])
+  cc                  String[]     @default([])
+  bcc                 String[]     @default([])
+  subject             String       @default("")
+  bodyHtml            String       @default("")
+  replyToThreadId     String?
+  gmailThreadId       String?
+  inReplyToMsgId      String?
+  references          String?
+  linkedOpportunityId String?
+  linkedOpportunity   Opportunity? @relation(fields: [linkedOpportunityId], references: [id], onDelete: SetNull)
+  linkedProductionId  String?
+  linkedProduction    Production?  @relation(fields: [linkedProductionId], references: [id], onDelete: SetNull)
+  linkedContactId     String?
+  linkedContact       Contact?     @relation(fields: [linkedContactId], references: [id], onDelete: SetNull)
+  isMinimized         Boolean      @default(false)
+  lastEditedAt        DateTime     @default(now())
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@index([accountId, lastEditedAt])
+  @@index([replyToThreadId])
+  @@index([linkedOpportunityId])
+  @@index([linkedProductionId])
+  @@index([linkedContactId])
+  @@map("pms_email_drafts")
 }
 
 model EmailThread {

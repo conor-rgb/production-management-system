@@ -239,6 +239,9 @@ export interface EmailMessage {
   id: string;
   threadId: string;
   externalMessageId: string;
+  gmailMessageId?: string;
+  gmailThreadId?: string;
+  labelIds?: string[];
   fromAddress: string;
   from?: string;
   fromName?: string;
@@ -277,6 +280,8 @@ export interface EmailThread {
   accountId?: string;
   account?: EmailAccount;
   externalThreadId: string;
+  gmailThreadId?: string;
+  snippet?: string;
   subject: string;
   participants: string[];
   lastMessageAt: string;
