@@ -1,119 +1,92 @@
-# Budget Cost Line Model Handover — 2026-05-11
+# Budget Visual Status System Handover — 2026-05-11
 
 ## Built This Session
 
-Targeted budget cost-line model fixes only. No email, calendar, files UI, production UI, opportunity UI, or dashboard UI changes were made intentionally.
+Targeted frontend-only budget line item visual status system. Backend, schema, migrations, email, files, receipts, calendar, production, opportunity, and dashboard modules were not changed.
 
-## Backend
+## Budget Line Item States
 
-### Schema
-- Added `SubCostLineType` enum:
-  - `PO`
-  - `BILL`
-  - `RECEIPT`
-- Added `lineType SubCostLineType @default(PO)` to `SubCost`.
-- Migration applied:
-  - `20260511133000_sub_cost_line_type`
-- The generated `DROP TABLE "pms_sessions"` was removed from the migration before apply.
-- Existing receipt-linked cost lines were updated to `RECEIPT`, `PAID`, `isAgreed=true`, `isInvoiced=true`, `isPaid=true`.
+Added pure frontend state derivation in `frontend/src/components/budgets/BudgetView.tsx`.
 
-### Budget Service
-- Updated actuals calculation so every cost line contributes to parent actuals immediately, regardless of lifecycle status.
-- Parent `actualTotal` now equals the sum of all cost-line `amount` values.
-- Parent `variance` continues to represent remaining budget:
-  - `estimatedTotal - actualTotal`
+Every parent line item now derives exactly one state on render:
+- `EMPTY`: no cost lines and not closed.
+- `COMMITTED`: has at least one PO and no Bill yet.
+- `INVOICED`: has at least one Bill and not all paid.
+- `PAID`: all cost lines are paid.
+- `CLOSED`: parent `isClosed=true`.
 
-### Budget Routes
-- `POST /api/budgets/lines/:lineItemId/subcosts` now accepts `lineType`.
-- Lifecycle defaults:
-  - `PO`: `isAgreed=false`, `isInvoiced=false`, `isPaid=false`, `status=PENDING`
-  - `BILL`: `isInvoiced=true`, `isAgreed=false`, `isPaid=false`, `status=INVOICED`
-  - `RECEIPT`: `isAgreed=true`, `isInvoiced=true`, `isPaid=true`, `status=PAID`
-- `PATCH /api/budgets/subcosts/:subCostId` accepts `lineType`.
-- Changing a cost line to `BILL` auto-sets invoiced.
-- Changing a cost line to `RECEIPT` auto-sets agreed, invoiced, and paid.
-- `DELETE /api/budgets/subcosts/:subCostId` now returns the updated revision instead of forcing the frontend to reload.
+State is never stored in the database.
 
-### Receipt Integration
-- Receipt assignment now creates `SubCost` records with `lineType=RECEIPT`.
-- Receipt-created cost lines are auto-agreed, auto-invoiced, and auto-paid.
+## Parent Row Visuals
 
-## Frontend Budget Table
+Internal view parent rows now show:
+- 3px left border based on derived state.
+- Light tinted background based on derived state.
+- Inline status badge beside the description:
+  - `no cost lines`
+  - `PO raised`
+  - `bill received`
+  - `all paid`
+  - `closed`
+- Closed rows use gray styling, opacity `0.65`, muted description text, and read-only inline cells.
+- Closed rows hide `+ PO`, `+ BILL`, and `+ RECEIPT` actions.
+- CLO remains toggleable so a closed row can be reopened.
 
-### Terminology
-- User-facing budget table text now uses:
-  - `PO`
-  - `Bill`
-  - `Receipt`
-  - `Cost line`
-- Removed user-facing “sub-cost” wording from the budget table.
+Client view remains clean:
+- no state borders
+- no status badges
+- no state summary dots
 
-### Parent Rows
-- Parent line items now behave as estimated budget pots.
-- Parent rows show:
-  - Estimated
-  - Actuals
-  - Remaining
-  - three small status dots
-  - CLO only
-- Removed parent AGR / INV / PAID cells.
-- CLO is manually toggleable and uses the tooltip:
-  - `Close this line when fully settled`
-- Status dots:
-  - blue: has PO cost line
-  - amber: has Bill cost line
-  - green: all cost lines paid
-  - muted gray: not present
+## Cost Line Visibility
 
-### Cost Line Rows
-- Cost lines render as indented rows directly beneath parent lines.
-- Cost line rows include:
-  - connector or camera icon for receipt-captured rows
-  - tappable `PO` / `BILL` / `RECEIPT` type pill
-  - description
-  - supplier
-  - amount ex-VAT in Actuals
-  - AGR
-  - INV
-  - PAID
-  - invoice file indicator
-  - proof-of-payment indicator
-  - delete
-- VAT and gross amount are no longer displayed in the table.
-- TYPE pill colors:
-  - PO: blue
-  - BILL: amber
-  - RECEIPT: green
-- TYPE pill dropdown changes `lineType` and lets the backend apply lifecycle defaults.
+Cost lines no longer expand globally by default.
 
-### Adding Cost Lines
-- Parent row hover actions now show:
-  - `+ PO`
-  - `+ BILL`
-  - `+ RECEIPT`
-  - duplicate
-  - delete
-- Each add button opens an inline cost-line form preselected to that type.
-- Empty parent rows show:
-  - `No cost lines yet — [+ PO] [+ BILL] [+ RECEIPT]`
-- Saving a cost line posts `{ lineType, description, supplierName, amount }`.
+Default behavior:
+- `EMPTY`: collapsed, hover shows the empty prompt row.
+- `COMMITTED`: auto-expanded.
+- `INVOICED`: auto-expanded.
+- `PAID`: collapsed.
+- `CLOSED`: collapsed unless toggled.
 
-### Remaining / Zero Styling
-- Remaining color logic:
-  - positive: green
-  - under 20% of estimated: amber
-  - zero: muted gray
-  - negative: red
-- Zero monetary/numeric cells remain muted.
+Chevron behavior:
+- Chevron appears left of the code for rows with cost lines, or on hover.
+- Clicking chevron toggles expansion with `event.stopPropagation()`.
+- Cost line rows keep their plain `#fafaf8` background and no parent state border.
+
+## Section Header Summary
+
+Section headers now show up to 8 small state dots between the section name and totals:
+- blue: committed
+- amber: empty or invoiced
+- green: paid
+- gray: closed
+- if more than 8 parent lines exist, a `+N` label appears.
+
+The section `...` button still stops propagation so it does not collapse the section.
+
+## Summary Bar Counts
+
+Added a secondary state-health row under the summary bar metrics.
+
+It conditionally shows:
+- amber warning count for empty lines
+- blue PO outstanding count for committed lines
+- amber bills-to-pay count for invoiced lines
+- gray closed count
+- green `All lines settled ✓` when there are no visible issue counts
+
+## Read-Only Closed Behavior
+
+Closed parent rows:
+- are visually faded
+- keep estimated / actuals / remaining visible
+- prevent inline edits to parent cells
+- hide cost-line add actions
+- pass the faded opacity to visible cost lines beneath them
+- can be reopened through the CLO toggle
 
 ## Verification
 
-- Prisma migration applied:
-  - `npx prisma migrate deploy`
-- Prisma Client regenerated:
-  - `npx prisma generate`
-- Backend build passed:
-  - `cd backend && npm run build`
 - Frontend build passed:
   - `cd frontend && npm run build`
 - Frontend bundle copied to:
@@ -122,27 +95,27 @@ Targeted budget cost-line model fixes only. No email, calendar, files UI, produc
   - `pm2 reload 0 --update-env`
 - Health check passed:
   - `curl http://localhost:3000/api/health`
-- Existing receipt-linked cost lines were corrected to `RECEIPT`.
 
 ## Known Issues / Technical Debt
 
-- Browser/manual interaction testing is still needed for the exact hover/dropdown workflow.
-- Section `...` menu is still not a full contextual menu. It stops collapse propagation, but Add PO/Bill/Receipt via section menu is not fully implemented.
-- File picker integration for invoice and proof-of-payment icons is still visual-only in this budget table.
-- Mobile bottom-sheet budget editor is not fully implemented yet.
-- PM2 error log still contains old historical Prisma `BudgetRevision.version` errors from before the earlier Prisma client regeneration; current health check is OK.
+- Browser/manual interaction testing still needs to be run against a real production budget.
+- Section `...` menu is still not a full contextual menu; it stops collapse propagation but does not yet expose Add PO/Bill/Receipt.
+- Mobile bottom-sheet budget editor remains incomplete from earlier budget work.
+- File picker integration for invoice/proof icons remains visual-only.
+- PM2 error log still contains old historical Prisma `BudgetRevision.version` entries from previous sessions; current health check is OK.
 
 ## Exact Next Step
 
-Run the requested browser smoke test:
+Run the requested visual smoke test in browser:
 1. Open a production budget.
-2. Hover parent line A.1 and confirm `+ PO`, `+ BILL`, `+ RECEIPT` appear.
-3. Add a PO for `Kate Martin fee`, supplier `Kate Martin`, amount `500`.
-4. Confirm PO row is blue and parent Actuals/Remaining update.
-5. Change the PO type pill to BILL and confirm INV becomes checked.
-6. Add a Receipt for amount `180` and confirm the receipt row is green with AGR/INV/PAID checked.
-7. Confirm no VAT amount appears in the table.
-8. Toggle parent CLO.
-9. Confirm positive remaining is green and zero values are muted.
+2. Confirm an empty line, such as Camera kit with no cost lines, shows amber border and `no cost lines`.
+3. Add a PO and confirm blue border plus `PO raised`.
+4. Change PO to Bill and confirm amber border plus `bill received`.
+5. Toggle CLO on another line and confirm it fades with `closed`.
+6. Confirm empty and paid lines start collapsed.
+7. Confirm committed and invoiced lines auto-expand.
+8. Confirm section header dots match line states.
+9. Confirm summary bar state counts update.
+10. Switch to Client view and confirm borders, badges, and state dots are hidden.
 
 Then continue the deeper project/budget production management pass before Phase 8 FreeAgent automation.
