@@ -13,12 +13,14 @@ Changed in `frontend/src/components/budgets/BudgetView.tsx`:
   - `Paid ✓`
 - Receipt cost lines show locked `Paid ✓`.
 - Actuals column now only shows the cost amount.
+- Paid Bill rows now turn green.
+- Clicking `Paid ✓` on a Bill toggles it back to unpaid and returns the row to blue.
 
 Verification:
 - Frontend build passed.
 - Frontend copied to `/var/www/agent`.
 - PM2 reloaded.
-- Health check passed at `2026-05-11T12:46:05.082Z`.
+- Health check passed at `2026-05-11T12:53:12.601Z`.
 
 Exact visual test:
 1. Open a budget with PO, Bill, and Receipt cost lines.
@@ -26,6 +28,8 @@ Exact visual test:
 3. Confirm Bill rows show one paid toggle.
 4. Confirm Receipt rows show `Paid ✓`.
 5. Confirm the Actuals column is no longer crowded by three status ticks.
+6. Toggle a Bill paid and confirm the cost line turns green.
+7. Toggle it unpaid and confirm it returns to blue.
 
 ---
 

@@ -896,7 +896,16 @@ function CostLineTypePill({ lineType, onChange }: { lineType: SubCostLineType; o
 }
 
 function SubCostRow({ subCost, closed, onRevision, onError }: { subCost: SubCost; closed: boolean; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
-  const background = subCost.lineType === "RECEIPT" && subCost.freeAgentTransactionId ? "#dcfce7" : COST_LINE_BACKGROUNDS[subCost.lineType];
+  const background = subCost.lineType === "BILL" && subCost.isPaid
+    ? "#f0fdf4"
+    : subCost.lineType === "RECEIPT" && subCost.freeAgentTransactionId
+      ? "#dcfce7"
+      : COST_LINE_BACKGROUNDS[subCost.lineType];
+  const amountClass = subCost.lineType === "PO"
+    ? "text-[#8b5cf6]"
+    : subCost.lineType === "BILL" && !subCost.isPaid
+      ? "text-[#3b82f6]"
+      : "text-[#16a34a]";
   const reference = subCost.lineType === "PO" ? subCost.poNumber : subCost.lineType === "BILL" ? subCost.invoiceNumber : null;
 
   async function patch(patchData: Partial<SubCost>) {
@@ -933,7 +942,7 @@ function SubCostRow({ subCost, closed, onRevision, onError }: { subCost: SubCost
       </div>
       <div className="col-span-7" />
       <div className="flex min-h-[32px] items-center justify-end gap-1 px-2 text-right tabular-nums">
-        <EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={subCost.lineType === "PO" ? "text-[#8b5cf6]" : subCost.lineType === "BILL" ? "text-[#3b82f6]" : "text-[#16a34a]"} />
+        <EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={amountClass} />
       </div>
       <CostLineLifecycleCell subCost={subCost} onPatch={patch} />
       <div className="flex min-h-[30px] items-center justify-end gap-1 px-1">
