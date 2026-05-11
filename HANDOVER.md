@@ -1,192 +1,160 @@
-# Budget Module Rebuild Handover — 2026-05-11
+# Budget UI Fix Handover — 2026-05-11
 
 ## Built This Session
 
-Replaced the old AICP/PO/accrual budget module with a new commercial production estimate and actuals system.
+Focused budget UI and interaction rebuild only. No email, files, receipts, calendar, production, or opportunity logic was intentionally changed.
 
-### Backend Schema
-- Removed the active old budget schema:
-  - `LineItemInvoice`
-  - `PurchaseOrder`
-  - old AICP catalog tables
-  - old budget line item financial columns
-- Added the new budget schema:
-  - `Budget`
-  - `BudgetRevision`
-  - `BudgetSection`
-  - `BudgetLineItem`
-  - `SubCost`
-  - `AdvanceInvoice`
-  - `SectionTemplate`
-- Added enums:
-  - `BudgetStatus`
-  - `RevisionStatus`
-  - `SubCostStatus`
-  - `AdvanceCalcType`
-- Added `Production.actualSpend` and `Production.variance` for synced budget financials.
-- Kept `JobFile.linkedBudgetLineId` and `ReceiptCapture.lineItemId` connected to the new `BudgetLineItem`.
-- Added `JobFile` relations for `SubCost` invoice files and proof-of-payment files.
-- Migration applied:
-  - `20260511120000_budget_rebuild`
-  - The generated unrelated `DROP TABLE "pms_sessions"` was removed before deployment.
-- Prisma Client regenerated successfully.
+### Budget Table
+- Rebuilt `frontend/src/components/budgets/BudgetView.tsx` around the requested parent/sub-cost model.
+- Parent line items now render as estimated budget pots:
+  - Estimated
+  - Actuals from sub-costs
+  - Remaining
+  - AGR / CLO / INV / PAID status columns on the parent row only
+- Sub-costs now render as indented rows directly in the main table beneath their parent line item.
+- Sub-cost rows show:
+  - description
+  - supplier
+  - flat amount ex-VAT in the Actuals column
+  - VAT amount if present
+  - invoice file indicator
+  - proof-of-payment indicator
+  - delete action
+- Sub-cost rows deliberately do not show parent-only columns such as rate calculations or AGR/CLO/INV/PAID.
 
-### Backend Services
-- Replaced `backend/src/services/budgetService.ts`.
-- New calculations:
-  - Line estimate: `(prepTravelDays + shootDays) x rate x multiplier + overtime`, with optional agency fee.
-  - Section totals: estimated, actual, variance, remaining, agreed/invoiced/paid/closed counts.
-  - Revision totals: subtotal, production fee, insurance, grand total, actuals, variance, secondary currency conversion, advance calculations.
-  - Actuals from `SubCost` records with statuses `AGREED`, `INVOICED`, or `PAID`.
-- Added budget creation for production and opportunity records.
-- Added revision deep-copy flow.
-- Added template application flow that replaces revision sections with template sections and zero-rate checklist line items.
-- Added production total syncing from the new budget totals.
-- Added opportunity-to-production budget cloning for Won opportunities.
-- Added default section template seeding on startup:
+### Visual Layout
+- Added the requested top navigation:
+  - back button with job/client label
+  - revision selector
+  - status pill
+  - Internal / Client segmented toggle
+  - PDF export icon
+- Added action bar:
+  - Unselect all
+  - Print estimate
+  - Email estimate
+  - Revision history
+  - Add section
+  - Add line
+  - Templates
+  - Cover page
+  - Advances
+- Rebuilt the summary bar with five evenly distributed metrics:
+  - Subtotal
+  - Production fee
+  - Insurance
+  - Grand total
+  - Advance due
+- Replaced Variance in the main requested table view with Remaining.
+- Added spreadsheet-style column headers for internal and client views.
+- Added dark section headers with:
+  - letter badge
+  - section name
+  - estimated total
+  - remaining pill
+  - collapse chevron
+  - menu icon
+- Added compact section total rows.
+- Added compact empty section row:
+  - `No items — Browse templates or + Add line`
+
+### Interactions
+- Inline editing works for budget line cells:
+  - description
+  - notes
+  - prep / shoot / qty / rate / multiplier / overtime / agency fee
+  - unit via custom floating dropdown
+- Numeric edits update the revision returned by the API so row totals, section totals, and summary totals refresh immediately.
+- AGR and CLO are manually toggleable on parent rows.
+- INV and PAID are read-only visual status columns derived from sub-cost file/proof state in the frontend.
+- Parent line row hover actions:
+  - add sub-cost
+  - duplicate
+  - delete
+- Add sub-cost inserts a blank indented row under the parent and saves to:
+  - `POST /api/budgets/lines/:lineItemId/subcosts`
+- Section headers collapse/expand their line items and sub-costs.
+- Cover page and advance invoice panels remain available from the action bar.
+
+### Template Picker
+- Empty revisions now show a clean starter picker instead of an empty/broken table:
   - Photo Shoot
   - Motion / Video
   - Event
+  - Start blank
+- Template cards are large bordered cards with icon, name, and section count.
+- Applying a template calls the existing template endpoint and renders the table once sections are created.
+- Start blank keeps the revision empty so sections can be added manually.
 
-### Backend Routes
-- Replaced `backend/src/routes/budgets.ts` under `/api/budgets`.
-- Implemented endpoints for:
-  - production/opportunity budget get-or-create
-  - budget-level field updates
-  - revision list/create/update/read
-  - section add/update/delete/reorder/template apply
-  - line item create/update/delete/duplicate/reorder/sub-item
-  - sub-cost create/update/delete/status update
-  - advance invoice create/update/delete/list
-  - section templates list/create/delete
-  - PDF export
-- Removed active `/api/catalog` mount from the app.
-- Left `/api/catalog` as a compile-safe legacy route returning `410 Gone`.
-
-### PDF Export
-- Rebuilt `backend/src/services/budgetPdf.ts` using `pdfkit`.
-- Client PDF now uses:
-  - cover page
-  - project details
-  - firm bid summary
-  - comments
-  - confirmation signature blocks
-  - detailed section pages
-  - final summary
-- Internal PDF adds internal columns and watermark.
-- Production budgets still auto-file PDFs into the production `Estimates/` folder.
-- Opportunity budget PDFs return generated PDF metadata/base64 because opportunities do not have a production file folder.
-
-### Non-Budget Integrations Updated
-- Receipts now create `SubCost` records instead of `LineItemInvoice`.
-  - Receipt assignment uses the net ex-VAT parsed amount first.
-  - Receipt files still link to the selected budget line.
-  - Production totals are synced after receipt assignment.
-- File preview budget-line linking now creates a receipt `SubCost` instead of posting to the removed invoice endpoint.
-- Production and Dashboard financial summaries now read `estimatedTotal`, `actualTotal`, production fee, and insurance from the new budget shape.
-- Opportunity list budget total enrichment now uses the new `grandTotal`.
-- Settings startup seeding now calls `seedSectionTemplates()` instead of the removed catalog seed.
-
-### Frontend
-- Replaced `frontend/src/components/budgets/BudgetView.tsx`.
-- New full-screen spreadsheet budget UI includes:
-  - top navigation with revision selector, status pill, internal/client toggle, PDF export
-  - action bar
-  - pinned summary bar with subtotal, production fee, insurance, grand total, advance due
-  - template picker for empty revisions
-  - internal spreadsheet columns for notes, prep/travel, shoot, qty, rate, multiplier, unit, overtime, agency fee, estimated, actuals, variance, statuses
-  - client spreadsheet columns for description, client notes, qty, rate, multiplier, unit, budget
-  - dark section headers
-  - inline editing on cells with blur-save
-  - line duplication/deletion
-  - sub-items
-  - sub-cost panel per line item
-  - cover page panel
-  - advance invoice panel
-  - section template panel
-- Updated frontend budget types in `frontend/src/lib/types.ts`.
-- Replaced Settings item catalog display with a read-only Budget Templates section showing seeded templates and their sections.
-- Updated file browser receipt budget-line linking to post `SubCost` records.
-
-## Decisions Made
-
-- Existing AICP catalog tables were removed from active schema because the new brief replaces the catalog with production section templates.
-- `SectionTemplate.sections` stores the template sections and default line item checklist as JSON so templates can vary freely by job type.
-- `SubCost` is the single actuals model for invoices, receipts, expenses, and proof-of-payment links.
-- The old production PO sequence remains removed from active budget behavior. Future PO behavior should be rebuilt as a sub-cost workflow if needed.
-- Opportunity PDFs cannot auto-file until the opportunity becomes a production, because the filesystem is production-folder based.
-- The new frontend is a functional spreadsheet-first rebuild, but not every requested polish detail is complete yet.
+### Template Database
+- Cleared the old template records from `pms_section_templates`.
+- Reseeded exactly three templates:
+  - Photo Shoot: 11 sections
+  - Motion / Video: 13 sections
+  - Event: 10 sections
+- Verified the database contains the requested section names only.
 
 ## Current State By Module
 
 ### Budgets
-- New schema, services, routes, PDF export, templates, frontend table, sub-costs, advances, and cover fields are deployed.
-- Existing old budget data was structurally migrated where columns overlapped, but old PO/invoice/catalog data was dropped by design.
-- Default templates are seeded in the database.
+- Main budget UI is deployed and now follows the parent pot + inline sub-cost row model.
+- The old panel-style sub-cost UI was removed from the active table flow.
+- The table is still built on the existing backend budget routes from the Phase 7 rebuild.
+- No schema changes were made in this session.
 
-### Receipts
-- Receipt capture still works.
-- Assignment now creates a paid `SubCost`.
-- Receipt-created actuals contribute to line actuals and production totals through the new service.
+### Backend
+- No backend route or schema changes were required for this UI pass.
+- Prisma Client was regenerated because PM2 logs showed the old generated client still looking for the removed `BudgetRevision.version` column.
+- Backend was rebuilt and PM2 reloaded after regeneration.
 
-### Files
-- File browser still links files to budget lines.
-- Receipt files linked to a budget line now create a `SubCost`.
-- Mail attachment and preview behavior remains unchanged.
+### Templates
+- `seedSectionTemplates()` already matched the required Photo / Motion / Event section names.
+- Runtime database templates were deleted and reseeded from the current compiled service.
 
-### Productions
-- Production list/detail financials now calculate from new budget totals.
-- Production value, actual spend, and variance can be synced from the new budget.
-
-### Opportunities
-- Opportunity list shows new budget grand total where available.
-- Won opportunity flow still clones the opportunity budget into the new production budget shape.
-
-### Settings
-- Budget Templates section shows the seeded templates.
-- Full custom template editor is not yet built.
+### Other Modules
+- Email, files, calendar, receipts, productions, and opportunities were not changed.
 
 ## Verification
 
-- Prisma schema validated.
-- Migration applied successfully:
-  - `20260511120000_budget_rebuild`
-- Prisma Client regenerated.
-- Backend build passes:
-  - `cd backend && npm run build`
-- Frontend build passes:
+- Frontend build passed:
   - `cd frontend && npm run build`
-- Frontend bundle copied to `/var/www/agent`.
+- Frontend bundle copied to:
+  - `/var/www/agent`
+- Backend build passed:
+  - `cd backend && npm run build`
+- Prisma Client regenerated:
+  - `cd backend && npx prisma generate`
 - PM2 reloaded:
   - `pm2 reload 0 --update-env`
-- Health check passes:
+- Health check passed:
   - `curl http://localhost:3000/api/health`
-- Section template seed verified:
-  - `3` templates in `pms_section_templates`.
+  - Response: `{"status":"ok", ...}`
+- Template seed verified directly from Prisma:
+  - Event: 10 requested sections
+  - Motion / Video: 13 requested sections
+  - Photo Shoot: 11 requested sections
 
 ## Known Issues / Technical Debt
 
-- The frontend budget table is functional but still needs deeper spreadsheet polish:
-  - true tab-to-next-cell navigation
-  - enter-to-next-row behavior
-  - drag reorder
-  - section manager modal
-  - mobile bottom-sheet detail editor
-  - inline save flash and toast refinements
-- Settings has a read-only template list, not the full custom template manager.
-- PDF layout matches the requested commercial structure at a first-pass level; it should be visually reviewed against the JHP sheet before client use.
-- Opportunity PDF export returns generated data rather than filing to disk because opportunities have no job folder.
-- Browser screenshot testing at 390px was not run; TypeScript production builds passed.
-- Existing PM2 logs still contain earlier pre-reload Prisma errors about the removed `BudgetRevision.version` column. Those were from the old running process after migration and before reload.
-- Google Calendar still logs existing scope warnings from the prior calendar phase; unrelated to this budget rebuild.
+- Browser interaction testing was not run with Playwright; verification was build/deploy/API-level.
+- The table is horizontally scrollable on smaller widths. The requested mobile bottom-sheet editor is not fully implemented yet.
+- Tab-to-next-cell and Enter-to-next-row behavior is partially scaffolded in the inline editor but should be hardened with browser testing.
+- Sub-cost delete currently refreshes the page after delete instead of applying the returned revision, because the current delete endpoint returns 204.
+- Invoice file and proof-of-payment attachment buttons are visual indicators only in this pass; full file picker integration remains future work.
+- Section header menu is visual only in this pass; Add line is available from row/action controls.
+- The PM2 error log still contains old pre-regeneration Prisma `BudgetRevision.version` errors. After regenerating Prisma Client, rebuilding, and reloading, health is OK.
 
 ## Exact Next Step
 
-Before Phase 8, do one focused budget hardening pass:
-1. Open one production budget and one opportunity budget in the browser.
-2. Apply each seeded template once and verify sections/line items appear.
-3. Edit rate/qty/multiplier/prep/shoot cells and confirm estimated totals update.
-4. Add a sub-cost and confirm actuals, variance, section totals, summary totals, and production summary update.
-5. Export client and internal PDFs and compare visually against the JHP reference.
+Open a real opportunity budget in the browser and run the requested manual smoke test:
+1. New opportunity → open budget → template picker appears.
+2. Select Photo Shoot → correct sections appear.
+3. Add or edit a line in section B with rate `1000`, shoot days `2`, multiplier `1`.
+4. Confirm Estimated shows `£2,000.00`.
+5. Add sub-cost `Kate invoice`, supplier `Kate Martin`, amount `800`.
+6. Confirm parent Actuals show `£800.00` and Remaining shows `£1,200.00`.
+7. Add another sub-cost `300` and confirm Actuals `£1,100.00`, Remaining `£900.00`.
+8. Toggle AGR and confirm the parent status changes.
+9. Export client and internal PDFs and visually review output.
 
-Then proceed to Phase 8 FreeAgent + Automations.
+After that, continue the deeper estimate/budget rebuild pass before Phase 8 FreeAgent automation.

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, Copy, Download, FileText, MoreHorizontal, Plus, ReceiptText, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Download, MoreHorizontal, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { api } from "../../lib/api";
 import type {
   AdvanceCalcType,
@@ -11,7 +11,6 @@ import type {
   BudgetSection,
   SectionTemplate,
   SubCost,
-  SubCostStatus,
 } from "../../lib/types";
 
 type Entity = { type: "production" | "opportunity"; id: string; label?: string; data?: unknown };
@@ -19,6 +18,7 @@ type ViewMode = "internal" | "client";
 type Panel = "cover" | "advances" | "templates" | null;
 type LineMutationResponse = { line: BudgetLineItem; revision: BudgetRevision | null };
 type SubCostMutationResponse = { subCost: SubCost; revision: BudgetRevision | null };
+type EditableKind = "text" | "number" | "money" | "percent";
 
 const UNITS = ["Days", "Flat Fee", "Cars", "Drives", "Weeks", "Hours", "Items", "People", "Other"];
 const STATUS_LABELS: Record<string, string> = {
@@ -32,23 +32,42 @@ const STATUS_LABELS: Record<string, string> = {
   SUPERSEDED: "Superseded",
 };
 
+const internalColumns = "28px 52px minmax(160px,1fr) 130px 110px 52px 52px 44px 80px 44px 64px 64px 56px 56px 92px 80px 84px 32px 32px 32px 32px 92px";
+const clientColumns = "52px minmax(160px,1fr) 130px 44px 80px 44px 64px 92px 92px";
+
 function money(value: number | null | undefined) {
   return `£${Number(value ?? 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function zeroClass(value: number | null | undefined) {
-  return Number(value ?? 0) === 0 ? "text-gray-300" : "text-gray-900";
-}
-
-function varianceClass(value: number | null | undefined) {
-  const n = Number(value ?? 0);
-  if (n < 0) return "text-red-600";
-  if (n === 0) return "text-gray-400";
-  return "text-emerald-700";
+function numeric(value: number | null | undefined) {
+  if (value === null || value === undefined || value === 0) return "";
+  return Number(value).toLocaleString("en-GB", { maximumFractionDigits: 2 });
 }
 
 function percentLabel(value: number | null | undefined) {
   return `${Number(value ?? 0).toLocaleString("en-GB", { maximumFractionDigits: 2 })}%`;
+}
+
+function moneyClass(value: number | null | undefined) {
+  return Number(value ?? 0) === 0 ? "text-[#c8c8c4]" : "text-[#1a1a1f]";
+}
+
+function remainingClass(value: number | null | undefined) {
+  return Number(value ?? 0) < 0 ? "text-red-600" : "text-emerald-700";
+}
+
+function remainingPillClass(remaining: number, estimated: number) {
+  if (remaining < 0) return "bg-red-500 text-white";
+  if (estimated > 0 && remaining / estimated <= 0.2) return "bg-amber-500 text-white";
+  return "bg-emerald-500 text-white";
+}
+
+function gridStyle(mode: ViewMode): CSSProperties {
+  return { gridTemplateColumns: mode === "internal" ? internalColumns : clientColumns };
+}
+
+function statusSymbol(active: boolean) {
+  return active ? <span className="font-semibold text-green-600">✓</span> : <span className="text-[#c8c8c4]">○</span>;
 }
 
 export default function BudgetView({ entity, onBack }: { entity: Entity; onBack: () => void }) {
@@ -58,9 +77,10 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
   const [templates, setTemplates] = useState<SectionTemplate[]>([]);
   const [mode, setMode] = useState<ViewMode>("internal");
   const [panel, setPanel] = useState<Panel>(null);
-  const [expandedSubCosts, setExpandedSubCosts] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [addingSubCostFor, setAddingSubCostFor] = useState<string | null>(null);
+  const [blankStarted, setBlankStarted] = useState(false);
 
   async function load() {
     const loaded = entity.type === "production"
@@ -111,15 +131,14 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
     if (response.revision) setRevision(response.revision);
   }
 
-  async function addSubItem(line: BudgetLineItem) {
-    const response = await api.post<LineMutationResponse>(`/api/budgets/lines/${line.id}/sub-item`, {
-      description: "Sub-item",
-      qty: 1,
-      rate: 0,
-      multiplier: 1,
-      unit: "Flat Fee",
-    });
-    if (response.revision) setRevision(response.revision);
+  async function addSection() {
+    if (!revision) return;
+    const code = window.prompt("Section code");
+    const name = window.prompt("Section name");
+    if (!code || !name) return;
+    await api.post(`/api/budgets/revisions/${revision.id}/sections`, { code, name });
+    await openRevision(revision.id);
+    setBlankStarted(true);
   }
 
   async function duplicateLine(line: BudgetLineItem) {
@@ -133,26 +152,18 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
     await load();
   }
 
-  async function addSection() {
-    if (!revision) return;
-    const code = window.prompt("Section code");
-    const name = window.prompt("Section name");
-    if (!code || !name) return;
-    await api.post(`/api/budgets/revisions/${revision.id}/sections`, { code, name });
-    await openRevision(revision.id);
-  }
-
   async function applyTemplate(templateId: string) {
-    if (!revision || !window.confirm("Apply this template? Existing sections in this revision will be replaced.")) return;
+    if (!revision) return;
     const updated = await api.post<BudgetRevision>(`/api/budgets/revisions/${revision.id}/apply-template`, { templateId });
     setRevision(updated);
+    setBlankStarted(false);
     setPanel(null);
   }
 
   async function exportPdf(exportMode: "client" | "internal") {
     if (!revision) return;
     await api.post(`/api/budgets/revisions/${revision.id}/export-pdf`, { mode: exportMode });
-    setToast("PDF exported to Estimates.");
+    setToast("PDF exported.");
   }
 
   const firstAdvance = useMemo(() => {
@@ -168,56 +179,70 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
     return <div className="flex min-h-screen items-center justify-center text-sm text-gray-500">Loading budget...</div>;
   }
 
-  const hasSections = revision.sections.length > 0;
+  const showTemplatePicker = revision.sections.length === 0 && !blankStarted;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white text-gray-900">
+    <div className="fixed inset-0 z-50 flex flex-col bg-white text-[#1a1a1f]">
       {toast && (
-        <button onClick={() => setToast(null)} className="fixed right-4 top-4 z-[60] rounded-md bg-gray-900 px-3 py-2 text-xs text-white shadow-lg">
+        <button onClick={() => setToast(null)} className="fixed bottom-4 right-4 z-[70] rounded-md bg-[#1a1a1f] px-3 py-2 text-xs text-white shadow-lg">
           {toast}
         </button>
       )}
 
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-gray-200 px-3">
-        <button onClick={onBack} className="flex min-h-11 items-center gap-1 text-sm text-gray-700">
-          <ArrowLeft size={16} /> {entityLabel}
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[#e8e8e4] bg-white px-3">
+        <button onClick={onBack} className="flex min-h-11 items-center gap-1 text-[13px] text-gray-700">
+          <ArrowLeft size={15} /> {entityLabel}
         </button>
-        <select value={revision.id} onChange={(e) => openRevision(e.target.value).catch(console.error)} className="mx-auto h-9 max-w-[220px] rounded-md border border-gray-200 bg-white px-2 text-sm">
+        <select value={revision.id} onChange={(e) => openRevision(e.target.value).catch(console.error)} className="mx-auto h-8 max-w-[220px] rounded-full border border-[#e8e8e4] bg-white px-3 text-xs">
           {revisions.map((item) => <option key={item.id} value={item.id}>{item.label} — {STATUS_LABELS[item.status]}</option>)}
         </select>
-        <button onClick={() => patchBudget({ status: budget.status === "DRAFT" ? "SENT" : budget.status }).catch(console.error)} className="hidden rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white sm:block">
+        <button onClick={() => patchBudget({ status: budget.status === "DRAFT" ? "SENT" : budget.status }).catch(console.error)} className="hidden rounded-full bg-[#1a1a1f] px-3 py-1 text-[11px] font-medium text-white sm:block">
           {STATUS_LABELS[budget.status]}
         </button>
-        <div className="flex rounded-full bg-gray-100 p-1 text-xs">
-          <button onClick={() => setMode("internal")} className={`min-h-8 rounded-full px-3 ${mode === "internal" ? "bg-gray-900 text-white" : "text-gray-600"}`}>Internal</button>
-          <button onClick={() => setMode("client")} className={`min-h-8 rounded-full px-3 ${mode === "client" ? "bg-gray-900 text-white" : "text-gray-600"}`}>Client</button>
+        <div className="flex rounded-full bg-[#f5f5f3] p-0.5 text-[11px]">
+          <button onClick={() => setMode("internal")} className={`min-h-8 rounded-full px-3 ${mode === "internal" ? "bg-[#1a1a1f] text-white" : "text-gray-500"}`}>Internal</button>
+          <button onClick={() => setMode("client")} className={`min-h-8 rounded-full px-3 ${mode === "client" ? "bg-[#1a1a1f] text-white" : "text-gray-500"}`}>Client</button>
         </div>
-        <button onClick={() => exportPdf(mode).catch((err: Error) => setToast(err.message))} className="grid h-9 w-9 place-items-center rounded-md bg-gray-900 text-white" title="Export PDF">
-          <Download size={16} />
+        <button onClick={() => exportPdf(mode).catch((err: Error) => setToast(err.message))} className="grid h-9 w-9 place-items-center rounded-md bg-[#1a1a1f] text-white" title="Export PDF">
+          <Download size={15} />
         </button>
       </header>
 
-      <div className="flex h-9 shrink-0 items-center gap-4 border-b border-gray-100 px-3 text-xs">
-        <button onClick={() => setSelectedIds(new Set())} className="text-gray-500">Unselect all</button>
-        <button onClick={() => exportPdf("client").catch(console.error)} className="text-gray-700">Print estimate</button>
-        <button onClick={() => exportPdf("client").catch(console.error)} className="text-gray-700">Email estimate</button>
-        <button onClick={() => createRevision(budget.id, load).catch(console.error)} className="text-gray-700">Revision history</button>
-        <button onClick={addSection} className="text-gray-700">+ Add section</button>
-        <button onClick={() => setPanel("templates")} className="text-gray-700">Templates</button>
-        <button onClick={() => setPanel("cover")} className="ml-auto text-gray-700">Cover page</button>
-        <button onClick={() => setPanel("advances")} className="text-gray-700">Advances</button>
+      <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#e8e8e4] bg-[#f8f8f6] px-3 text-[11px] text-gray-500">
+        <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
+          <button onClick={() => setSelectedIds(new Set())} className="whitespace-nowrap hover:text-[#1a1a1f]">Unselect all</button>
+          <span>·</span>
+          <button onClick={() => exportPdf("client").catch(console.error)} className="whitespace-nowrap hover:text-[#1a1a1f]">Print estimate</button>
+          <span>·</span>
+          <button onClick={() => exportPdf("client").catch(console.error)} className="whitespace-nowrap hover:text-[#1a1a1f]">Email estimate</button>
+          <span>·</span>
+          <button onClick={() => createRevision(budget.id, load).catch(console.error)} className="whitespace-nowrap hover:text-[#1a1a1f]">Revision history</button>
+        </div>
+        <div className="ml-4 flex min-w-max items-center gap-2">
+          <button onClick={addSection} className="hover:text-[#1a1a1f]">+ Add section</button>
+          <span>·</span>
+          <button onClick={() => revision.sections[0] && addLine(revision.sections[0]).catch(console.error)} className="hover:text-[#1a1a1f]">+ Add line</button>
+          <span>·</span>
+          <button onClick={() => setPanel("templates")} className="hover:text-[#1a1a1f]">Templates</button>
+          <span>·</span>
+          <button onClick={() => setPanel("cover")} className="hover:text-[#1a1a1f]">Cover page</button>
+          <span>·</span>
+          <button onClick={() => setPanel("advances")} className="hover:text-[#1a1a1f]">Advances</button>
+        </div>
       </div>
 
-      <SummaryBar budget={budget} revision={revision} firstAdvance={firstAdvance} onRevisionPatch={patchRevision} />
+      <SummaryBar revision={revision} firstAdvance={firstAdvance} onRevisionPatch={patchRevision} />
 
       <main className="min-h-0 flex-1 overflow-auto">
-        {!hasSections ? (
-          <TemplatePicker templates={templates} onApply={applyTemplate} />
+        {showTemplatePicker ? (
+          <TemplatePicker templates={templates} onApply={applyTemplate} onBlank={() => setBlankStarted(true)} />
         ) : (
           <BudgetTable
             revision={revision}
             mode={mode}
             selectedIds={selectedIds}
+            addingSubCostFor={addingSubCostFor}
+            onSetAddingSubCost={setAddingSubCostFor}
             onToggleSelected={(id) => {
               const next = new Set(selectedIds);
               if (next.has(id)) next.delete(id); else next.add(id);
@@ -225,13 +250,11 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
             }}
             onSaveLine={saveLine}
             onAddLine={addLine}
-            onAddSubItem={addSubItem}
             onDuplicate={duplicateLine}
             onDelete={deleteLine}
-            expandedSubCosts={expandedSubCosts}
-            onToggleSubCosts={(id) => setExpandedSubCosts(expandedSubCosts === id ? null : id)}
             onRevision={(next) => setRevision(next)}
             onError={(message) => setToast(message)}
+            onOpenTemplates={() => setPanel("templates")}
           />
         )}
       </main>
@@ -248,43 +271,37 @@ async function createRevision(budgetId: string, onDone: () => Promise<void>) {
   await onDone();
 }
 
-function SummaryBar({ budget, revision, firstAdvance, onRevisionPatch }: {
-  budget: Budget;
+function SummaryBar({ revision, firstAdvance, onRevisionPatch }: {
   revision: BudgetRevision;
   firstAdvance: number | null;
   onRevisionPatch: (patch: Partial<BudgetRevision>) => Promise<void>;
 }) {
   const totals = revision.totals;
   return (
-    <div className="grid min-h-14 shrink-0 grid-cols-2 gap-3 border-b border-gray-200 bg-white px-4 py-2 text-xs md:grid-cols-5">
+    <div className="grid min-h-14 shrink-0 grid-cols-2 border-b border-t border-[#e8e8e4] bg-white px-4 py-2 md:grid-cols-5">
       <Metric label="Subtotal" value={money(totals.subtotal)} />
-      <EditableMetric label={`Production fee ${percentLabel(revision.productionFeePercent)}`} value={money(totals.productionFee)} onSubmit={(value) => onRevisionPatch({ productionFeePercent: value })} />
-      <EditableMetric label={`Insurance ${percentLabel(revision.insurancePercent)}`} value={money(totals.insurance)} onSubmit={(value) => onRevisionPatch({ insurancePercent: value })} />
-      <Metric label="Grand total" value={money(totals.grandTotal)} strong />
+      <EditableMetric label={`Production fee ${percentLabel(revision.productionFeePercent)}`} value={money(totals.productionFee)} current={revision.productionFeePercent} onSubmit={(value) => onRevisionPatch({ productionFeePercent: value })} />
+      <EditableMetric label={`Insurance ${percentLabel(revision.insurancePercent)}`} value={money(totals.insurance)} current={revision.insurancePercent} onSubmit={(value) => onRevisionPatch({ insurancePercent: value })} />
+      <Metric label="Grand total" value={money(totals.grandTotal)} grand />
       <Metric label="Advance due" value={firstAdvance !== null ? money(firstAdvance) : "None"} />
-      {budget.currencySecondary && totals.currencyConverted && (
-        <div className="col-span-2 text-right text-xs text-gray-500 md:col-span-5">
-          {budget.currencySecondary}: {totals.currencyConverted.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} @ {budget.currencyRate}
-        </div>
-      )}
     </div>
   );
 }
 
-function Metric({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+function Metric({ label, value, grand = false }: { label: string; value: string; grand?: boolean }) {
   return (
-    <div>
-      <p className="text-[10px] uppercase tracking-wide text-gray-400">{label}</p>
-      <p className={`tabular-nums ${strong ? "text-lg font-semibold" : "text-sm font-medium"}`}>{value}</p>
+    <div className="min-w-0">
+      <p className="truncate text-[10px] uppercase tracking-[0.5px] text-[#aaa]">{label}</p>
+      <p className={`tabular-nums ${grand ? "text-xl font-semibold text-[#1a1a1f]" : "text-base font-medium text-[#1a1a1f]"}`}>{value}</p>
     </div>
   );
 }
 
-function EditableMetric({ label, value, onSubmit }: { label: string; value: string; onSubmit: (value: number) => Promise<void> }) {
+function EditableMetric({ label, value, current, onSubmit }: { label: string; value: string; current: number; onSubmit: (value: number) => Promise<void> }) {
   return (
     <button
       onClick={() => {
-        const next = window.prompt("Percentage", label.match(/([\d.]+)%/)?.[1] ?? "0");
+        const next = window.prompt("Percentage", String(current));
         if (next !== null) onSubmit(Number(next)).catch(console.error);
       }}
       className="text-left"
@@ -298,314 +315,423 @@ function BudgetTable(props: {
   revision: BudgetRevision;
   mode: ViewMode;
   selectedIds: Set<string>;
+  addingSubCostFor: string | null;
+  onSetAddingSubCost: (lineId: string | null) => void;
   onToggleSelected: (id: string) => void;
   onSaveLine: (line: BudgetLineItem, patch: Partial<BudgetLineItem>) => Promise<void>;
   onAddLine: (section: BudgetSection) => Promise<void>;
-  onAddSubItem: (line: BudgetLineItem) => Promise<void>;
   onDuplicate: (line: BudgetLineItem) => Promise<void>;
   onDelete: (line: BudgetLineItem) => Promise<void>;
-  expandedSubCosts: string | null;
-  onToggleSubCosts: (lineId: string) => void;
   onRevision: (revision: BudgetRevision) => void;
   onError: (message: string) => void;
+  onOpenTemplates: () => void;
 }) {
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [collapsedSubCosts, setCollapsedSubCosts] = useState<Set<string>>(new Set());
   const internal = props.mode === "internal";
-  const grid = internal
-    ? "grid-cols-[28px_56px_minmax(180px,1fr)_160px_140px_72px_64px_52px_88px_52px_72px_72px_64px_64px_100px_90px_90px_36px_36px_36px_36px_112px]"
-    : "grid-cols-[56px_minmax(180px,1fr)_180px_52px_88px_52px_72px_110px_112px]";
 
   return (
     <div className="min-w-max">
-      <div className={`sticky top-0 z-10 grid h-7 ${grid} border-b border-gray-300 bg-[#f8f8f6] text-[10px] uppercase tracking-wide text-gray-500`}>
+      <div className="sticky top-0 z-20 grid h-7 border-b border-[#e8e8e4] bg-[#f8f8f6] text-[10px] uppercase tracking-[0.5px] text-[#aaa]" style={gridStyle(props.mode)}>
         {internal && <HeaderCell />}
         <HeaderCell>Code</HeaderCell>
         <HeaderCell>Description</HeaderCell>
         <HeaderCell>Client notes</HeaderCell>
         {internal && <HeaderCell>Int. notes</HeaderCell>}
-        {internal && <HeaderCell right>Prep/trvl</HeaderCell>}
+        {internal && <HeaderCell right>Prep</HeaderCell>}
         {internal && <HeaderCell right>Shoot</HeaderCell>}
         <HeaderCell right>Qty</HeaderCell>
         <HeaderCell right>Rate</HeaderCell>
         <HeaderCell right>X</HeaderCell>
         <HeaderCell>Unit</HeaderCell>
-        {internal && <HeaderCell right>O/T rate</HeaderCell>}
-        {internal && <HeaderCell right>O/T hrs</HeaderCell>}
-        {internal && <HeaderCell right>Agency%</HeaderCell>}
+        {internal && <HeaderCell right>OT£</HeaderCell>}
+        {internal && <HeaderCell right>OT hrs</HeaderCell>}
+        {internal && <HeaderCell right>Agy%</HeaderCell>}
         <HeaderCell right>{internal ? "Estimated" : "Budget"}</HeaderCell>
         {internal && <HeaderCell right>Actuals</HeaderCell>}
-        {internal && <HeaderCell right>Variance</HeaderCell>}
-        {internal && <HeaderCell center>AGR</HeaderCell>}
-        {internal && <HeaderCell center>CLO</HeaderCell>}
-        {internal && <HeaderCell center>INV</HeaderCell>}
-        {internal && <HeaderCell center>PAID</HeaderCell>}
+        {internal && <HeaderCell right>Remaining</HeaderCell>}
+        {internal && <HeaderCell center title="Supplier agreed to rate">AGR</HeaderCell>}
+        {internal && <HeaderCell center title="Line item closed">CLO</HeaderCell>}
+        {internal && <HeaderCell center title="Invoice received">INV</HeaderCell>}
+        {internal && <HeaderCell center title="All costs paid">PAID</HeaderCell>}
         <HeaderCell />
       </div>
 
-      {props.revision.sections.filter((section) => section.isVisible).map((section) => (
-        <SectionBlock key={section.id} section={section} grid={grid} internal={internal} {...props} />
-      ))}
+      {props.revision.sections.filter((section) => section.isVisible).map((section) => {
+        const collapsed = collapsedSections.has(section.id);
+        return (
+          <SectionBlock
+            key={section.id}
+            section={section}
+            collapsed={collapsed}
+            subCostsCollapsed={collapsedSubCosts}
+            onToggleSection={() => {
+              const next = new Set(collapsedSections);
+              if (next.has(section.id)) next.delete(section.id); else next.add(section.id);
+              setCollapsedSections(next);
+            }}
+            onToggleSubCosts={(lineId) => {
+              const next = new Set(collapsedSubCosts);
+              if (next.has(lineId)) next.delete(lineId); else next.add(lineId);
+              setCollapsedSubCosts(next);
+            }}
+            internal={internal}
+            {...props}
+          />
+        );
+      })}
     </div>
   );
 }
 
-function HeaderCell({ children, right, center }: { children?: React.ReactNode; right?: boolean; center?: boolean }) {
-  return <div className={`flex items-center px-2 ${right ? "justify-end" : center ? "justify-center" : ""}`}>{children}</div>;
+function HeaderCell({ children, right, center, title }: { children?: ReactNode; right?: boolean; center?: boolean; title?: string }) {
+  return <div title={title} className={`flex items-center px-2 ${right ? "justify-end text-right" : center ? "justify-center" : ""}`}>{children}</div>;
 }
 
-function SectionBlock({ section, grid, internal, ...props }: {
+function SectionBlock({ section, collapsed, subCostsCollapsed, onToggleSection, onToggleSubCosts, internal, ...props }: {
   section: BudgetSection;
-  grid: string;
+  collapsed: boolean;
+  subCostsCollapsed: Set<string>;
+  onToggleSection: () => void;
+  onToggleSubCosts: (lineId: string) => void;
   internal: boolean;
 } & Omit<Parameters<typeof BudgetTable>[0], "mode">) {
   const sectionTotal = props.revision.totals.sectionTotals.find((item) => item.sectionId === section.id);
+  const estimated = sectionTotal?.estimatedTotal ?? 0;
+  const actual = sectionTotal?.actualTotal ?? 0;
   const remaining = sectionTotal?.remainingBudget ?? 0;
+  const topLevelLines = section.lineItems.filter((line) => !line.parentId);
+
   return (
     <section>
-      <div className={`grid h-9 ${grid} bg-[#1a1a1f] text-white`}>
+      <button onClick={onToggleSection} className="grid h-9 w-full bg-[#1a1a1f] text-left text-white" style={gridStyle(internal ? "internal" : "client")}>
         {internal && <div />}
-        <div className="col-span-2 flex items-center gap-2 px-2">
-          <span className="grid h-5 min-w-6 place-items-center rounded bg-white/15 px-1 text-[11px] font-semibold">{section.code}</span>
-          <span className="text-xs font-semibold uppercase">{section.name}</span>
+        <div className="col-span-3 flex items-center gap-2 px-2">
+          <span className="grid h-5 w-5 place-items-center rounded-[3px] bg-white/15 text-[10px] font-medium">{section.code}</span>
+          <span className="text-xs font-medium uppercase">{section.name}</span>
+          {collapsed ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
         </div>
-        <div className="col-span-full flex items-center justify-end gap-3 px-3 text-xs">
-          <span>{money(sectionTotal?.estimatedTotal)}</span>
-          {internal && <span className={`rounded-full bg-white px-2 py-0.5 ${varianceClass(remaining)}`}>remaining {money(remaining)}</span>}
-          <button onClick={() => props.onAddLine(section).catch(console.error)} className="grid h-8 w-8 place-items-center rounded hover:bg-white/10"><Plus size={14} /></button>
-          <button className="grid h-8 w-8 place-items-center rounded hover:bg-white/10"><MoreHorizontal size={14} /></button>
+        <div className="col-span-full flex items-center justify-end gap-3 px-2 text-xs">
+          <span className="font-medium tabular-nums">{money(estimated)}</span>
+          {internal && <span className={`rounded-full px-2 py-0.5 text-[10px] ${remainingPillClass(remaining, estimated)}`}>Remaining {money(remaining)}</span>}
+          <button
+            onClick={(event) => { event.stopPropagation(); props.onAddLine(section).catch(console.error); }}
+            className="grid h-8 w-8 place-items-center rounded hover:bg-white/10"
+            title="Add line"
+          >
+            <Plus size={14} />
+          </button>
+          <span className="grid h-8 w-8 place-items-center text-base"><MoreHorizontal size={15} /></span>
         </div>
-      </div>
-      {section.lineItems.filter((line) => !line.parentId).map((line) => (
-        <LineRow key={line.id} line={line} grid={grid} internal={internal} {...props} />
+      </button>
+
+      {!collapsed && topLevelLines.length === 0 && (
+        <div className="flex h-9 items-center justify-center gap-2 bg-[#fafaf8] text-[11px] text-gray-500">
+          <span>No items —</span>
+          <button onClick={props.onOpenTemplates} className="text-[#1a1a1f] underline">Browse templates</button>
+          <span>or</span>
+          <button onClick={() => props.onAddLine(section).catch(console.error)} className="text-[#1a1a1f] underline">+ Add line</button>
+        </div>
+      )}
+
+      {!collapsed && topLevelLines.map((line) => (
+        <ParentLineRow
+          key={line.id}
+          line={line}
+          internal={internal}
+          subCostsCollapsed={subCostsCollapsed.has(line.id)}
+          onToggleSubCosts={() => onToggleSubCosts(line.id)}
+          {...props}
+        />
       ))}
-      {sectionTotal && sectionTotal.estimatedTotal !== 0 && (
-        <div className={`grid h-7 ${grid} bg-[#f8f8f6] text-[11px] italic text-gray-500`}>
-          {internal && <div />}
-          <div className="col-span-2 flex items-center px-2">Section total</div>
-          <div className="col-span-full grid grid-cols-3 items-center gap-6 px-3 text-right not-italic tabular-nums">
-            <span>{money(sectionTotal.estimatedTotal)}</span>
-            {internal && <span>{money(sectionTotal.actualTotal)}</span>}
-            {internal && <span className={varianceClass(sectionTotal.variance)}>{money(sectionTotal.variance)}</span>}
-          </div>
+
+      {internal && sectionTotal && estimated !== 0 && (
+        <div className="grid h-[26px] bg-[#f8f8f6] text-[11px] text-gray-500" style={gridStyle("internal")}>
+          <div />
+          <div />
+          <div className="flex items-center px-2 italic">Section total</div>
+          <div className="col-span-11" />
+          <div className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(estimated)}</div>
+          <div className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(actual)}</div>
+          <div className={`flex items-center justify-end px-2 font-medium not-italic tabular-nums ${remainingClass(remaining)}`}>{money(remaining)}</div>
         </div>
       )}
     </section>
   );
 }
 
-function LineRow({ line, grid, internal, ...props }: {
+function ParentLineRow({ line, internal, subCostsCollapsed, onToggleSubCosts, ...props }: {
   line: BudgetLineItem;
-  grid: string;
   internal: boolean;
+  subCostsCollapsed: boolean;
+  onToggleSubCosts: () => void;
 } & Omit<Parameters<typeof BudgetTable>[0], "revision" | "mode">) {
-  const invoiced = line.subCosts.some((item) => item.status === "INVOICED" || item.status === "PAID");
-  const paid = line.subCosts.length > 0 && line.subCosts.every((item) => item.status === "PAID");
-  const rowClass = line.isSubItem ? "bg-[#fcfcfa] text-xs" : "bg-white text-xs";
+  const hasSubCosts = line.subCosts.length > 0;
+  const actualClass = hasSubCosts ? "text-blue-600" : moneyClass(line.actualTotal);
+  const inv = line.subCosts.some((subCost) => Boolean(subCost.invoiceFileId));
+  const paid = line.subCosts.length > 0 && line.subCosts.every((subCost) => Boolean(subCost.proofOfPayment));
 
   return (
     <>
-      <div className={`group grid min-h-9 ${grid} border-b border-gray-100 ${rowClass} hover:bg-gray-50`}>
+      <div className="group grid min-h-[34px] border-b border-[#ebebea] bg-white text-xs hover:bg-[#f5f5f3]" style={gridStyle(internal ? "internal" : "client")}>
         {internal && (
-          <button onClick={() => props.onToggleSelected(line.id)} className="grid min-h-9 place-items-center">
-            <span className={`h-3.5 w-3.5 rounded border ${props.selectedIds.has(line.id) ? "border-gray-900 bg-gray-900" : "border-gray-300"}`} />
+          <button onClick={() => props.onToggleSelected(line.id)} className="grid min-h-[34px] place-items-center opacity-0 group-hover:opacity-100">
+            <span className={`h-3.5 w-3.5 rounded border ${props.selectedIds.has(line.id) ? "border-[#1a1a1f] bg-[#1a1a1f]" : "border-gray-300"}`} />
           </button>
         )}
-        <Cell>{line.lineCode}</Cell>
-        <Cell>
-          <div className="flex items-center gap-1">
-            {line.isSubItem && <span className="text-gray-400">└</span>}
-            <EditableText value={line.description} className={line.estimatedTotal === 0 ? "font-normal text-gray-400" : "font-medium text-gray-900"} onSave={(description) => props.onSaveLine(line, { description })} />
-          </div>
-        </Cell>
-        <Cell><EditableText value={line.clientNotes ?? ""} muted onSave={(clientNotes) => props.onSaveLine(line, { clientNotes })} /></Cell>
-        {internal && <Cell><EditableText value={line.internalNotes ?? ""} muted onSave={(internalNotes) => props.onSaveLine(line, { internalNotes })} /></Cell>}
-        {internal && <NumberCell value={line.prepTravelDays} onSave={(prepTravelDays) => props.onSaveLine(line, { prepTravelDays })} />}
-        {internal && <NumberCell value={line.shootDays} onSave={(shootDays) => props.onSaveLine(line, { shootDays })} />}
-        <NumberCell value={line.qty} onSave={(qty) => props.onSaveLine(line, { qty: qty ?? 0 })} />
-        <MoneyEditCell value={line.rate} onSave={(rate) => props.onSaveLine(line, { rate: rate ?? 0 })} />
-        <NumberCell value={line.multiplier} onSave={(multiplier) => props.onSaveLine(line, { multiplier: multiplier ?? 1 })} />
-        <Cell><UnitSelect value={line.unit} onSave={(unit) => props.onSaveLine(line, { unit })} /></Cell>
-        {internal && <MoneyEditCell value={line.otRate} onSave={(otRate) => props.onSaveLine(line, { otRate })} />}
-        {internal && <NumberCell value={line.otHours} onSave={(otHours) => props.onSaveLine(line, { otHours })} />}
-        {internal && <NumberCell value={line.agencyFeePercent} suffix onSave={(agencyFeePercent) => props.onSaveLine(line, { agencyFeePercent })} />}
-        <Cell right className={`font-medium tabular-nums ${zeroClass(line.estimatedTotal)}`}>{money(line.estimatedTotal)}</Cell>
-        {internal && <button onClick={() => props.onToggleSubCosts(line.id)} className={`px-2 text-right tabular-nums ${zeroClass(line.actualTotal)}`}>{money(line.actualTotal)}</button>}
-        {internal && <Cell right className={`font-medium tabular-nums ${varianceClass(line.variance)}`}>{money(line.variance)}</Cell>}
-        {internal && <StatusToggle active={line.isAgreed} onClick={() => props.onSaveLine(line, { isAgreed: !line.isAgreed })} />}
-        {internal && <StatusToggle active={line.isClosed} onClick={() => props.onSaveLine(line, { isClosed: !line.isClosed })} />}
-        {internal && <StatusToggle active={invoiced} />}
-        {internal && <StatusToggle active={paid} />}
+        <div className="flex items-center gap-1 px-2 text-[11px] text-[#888]">
+          {internal && hasSubCosts && (
+            <button onClick={onToggleSubCosts} className="grid h-5 w-4 place-items-center">{subCostsCollapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}</button>
+          )}
+          <span>{line.lineCode}</span>
+        </div>
+        <Cell><EditableCell value={line.description} onSave={(value) => props.onSaveLine(line, { description: String(value) })} className="font-medium text-[#1a1a1f]" /></Cell>
+        <Cell><EditableCell value={line.clientNotes ?? ""} onSave={(value) => props.onSaveLine(line, { clientNotes: String(value) })} className="italic text-[#888]" /></Cell>
+        {internal && <Cell><EditableCell value={line.internalNotes ?? ""} onSave={(value) => props.onSaveLine(line, { internalNotes: String(value) })} className="text-[#aaa]" /></Cell>}
+        {internal && <NumberCell value={line.prepTravelDays} onSave={(value) => props.onSaveLine(line, { prepTravelDays: value })} />}
+        {internal && <NumberCell value={line.shootDays} onSave={(value) => props.onSaveLine(line, { shootDays: value })} />}
+        <NumberCell value={line.qty} onSave={(value) => props.onSaveLine(line, { qty: value ?? 0 })} />
+        <MoneyCell value={line.rate} onSave={(value) => props.onSaveLine(line, { rate: value ?? 0 })} />
+        <NumberCell value={line.multiplier} onSave={(value) => props.onSaveLine(line, { multiplier: value ?? 1 })} />
+        <Cell><UnitDropdown value={line.unit} onSave={(unit) => props.onSaveLine(line, { unit })} /></Cell>
+        {internal && <MoneyCell value={line.otRate} onSave={(value) => props.onSaveLine(line, { otRate: value })} />}
+        {internal && <NumberCell value={line.otHours} onSave={(value) => props.onSaveLine(line, { otHours: value })} />}
+        {internal && <PercentCell value={line.agencyFeePercent} onSave={(value) => props.onSaveLine(line, { agencyFeePercent: value })} />}
+        <ReadMoney value={line.estimatedTotal} strong />
+        {internal && <ReadMoney value={line.actualTotal} className={actualClass} />}
+        {internal && <ReadMoney value={line.variance} className={remainingClass(line.variance)} />}
+        {internal && <StatusButton active={line.isAgreed} onClick={() => props.onSaveLine(line, { isAgreed: !line.isAgreed }).catch(console.error)} title="Supplier agreed to rate" />}
+        {internal && <StatusButton active={line.isClosed} onClick={() => props.onSaveLine(line, { isClosed: !line.isClosed }).catch(console.error)} title="Line item closed" />}
+        {internal && <StatusButton active={inv} title="Invoice received" />}
+        {internal && <StatusButton active={paid} title="All costs paid" />}
         <div className="flex items-center justify-end gap-1 px-2 opacity-0 group-hover:opacity-100">
-          {internal && <button onClick={() => props.onAddSubItem(line).catch(console.error)} className="grid h-8 w-8 place-items-center rounded hover:bg-gray-100" title="Add sub-item"><Plus size={14} /></button>}
-          {internal && <button onClick={() => props.onToggleSubCosts(line.id)} className="grid h-8 w-8 place-items-center rounded hover:bg-gray-100" title="Sub-costs"><ReceiptText size={14} /></button>}
-          <button onClick={() => props.onDuplicate(line).catch(console.error)} className="grid h-8 w-8 place-items-center rounded hover:bg-gray-100"><Copy size={14} /></button>
-          <button onClick={() => props.onDelete(line).catch(console.error)} className="grid h-8 w-8 place-items-center rounded text-red-600 hover:bg-red-50"><Trash2 size={14} /></button>
+          {internal && <button onClick={() => props.onSetAddingSubCost(line.id)} className="grid h-7 w-7 place-items-center rounded text-[#888] hover:bg-gray-100" title="+ sub-cost"><Plus size={14} /></button>}
+          <button onClick={() => props.onDuplicate(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#888] hover:bg-gray-100" title="Duplicate"><Copy size={13} /></button>
+          <button onClick={() => props.onDelete(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#888] hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 size={13} /></button>
         </div>
       </div>
-      {props.expandedSubCosts === line.id && <SubCostsPanel line={line} onRevision={props.onRevision} onError={props.onError} />}
-      {line.children?.map((child) => <LineRow key={child.id} line={child} grid={grid} internal={internal} {...props} />)}
+
+      {internal && !subCostsCollapsed && line.subCosts.map((subCost) => (
+        <SubCostRow key={subCost.id} subCost={subCost} onRevision={props.onRevision} onError={props.onError} />
+      ))}
+      {internal && props.addingSubCostFor === line.id && (
+        <SubCostDraftRow lineId={line.id} onCancel={() => props.onSetAddingSubCost(null)} onRevision={(next) => { props.onRevision(next); props.onSetAddingSubCost(null); }} onError={props.onError} />
+      )}
     </>
   );
 }
 
-function Cell({ children, right, className = "" }: { children?: React.ReactNode; right?: boolean; className?: string }) {
-  return <div className={`flex min-h-9 items-center px-2 ${right ? "justify-end text-right" : ""} ${className}`}>{children}</div>;
+function Cell({ children, className = "" }: { children?: ReactNode; className?: string }) {
+  return <div className={`flex min-h-[34px] items-center px-2 ${className}`}>{children}</div>;
 }
 
-function EditableText({ value, onSave, muted, className = "" }: { value: string; onSave: (value: string) => Promise<void>; muted?: boolean; className?: string }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => { setEditing(false); if (draft !== value) onSave(draft).catch(console.error); }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "Escape") { setDraft(value); setEditing(false); }
-        }}
-        className={`h-8 w-full border-0 bg-transparent p-0 text-xs outline-none ${className}`}
-      />
-    );
-  }
-  return <button onClick={() => setEditing(true)} className={`w-full truncate text-left hover:underline ${muted ? "text-gray-500" : ""} ${className}`}>{value || "—"}</button>;
+function ReadMoney({ value, strong, className }: { value: number | null | undefined; strong?: boolean; className?: string }) {
+  return <div className={`flex min-h-[34px] items-center justify-end px-2 text-right tabular-nums ${strong ? "font-medium" : ""} ${className ?? moneyClass(value)}`}>{money(value)}</div>;
 }
 
-function NumberCell({ value, onSave, suffix }: { value?: number | null; onSave: (value: number | null) => Promise<void>; suffix?: boolean }) {
-  return <EditableNumber value={value} onSave={onSave} render={(v) => suffix ? percentLabel(v) : String(v ?? "")} />;
-}
-
-function MoneyEditCell({ value, onSave }: { value?: number | null; onSave: (value: number | null) => Promise<void> }) {
-  return <EditableNumber value={value} onSave={onSave} render={(v) => money(v)} />;
-}
-
-function EditableNumber({ value, onSave, render }: { value?: number | null; onSave: (value: number | null) => Promise<void>; render: (value?: number | null) => string }) {
+function EditableCell({ value, onSave, className = "", kind = "text" }: { value: string | number | null | undefined; onSave: (value: string | number | null) => Promise<void>; className?: string; kind?: EditableKind }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value === null || value === undefined ? "" : String(value));
+  const [flash, setFlash] = useState(false);
   useEffect(() => setDraft(value === null || value === undefined ? "" : String(value)), [value]);
+
+  async function save(move?: "next" | "down") {
+    setEditing(false);
+    const next = kind === "text" ? draft : draft === "" ? null : Number(draft);
+    const current = value === null || value === undefined ? "" : String(value);
+    if (String(draft) !== current) {
+      await onSave(next);
+      setFlash(true);
+      window.setTimeout(() => setFlash(false), 350);
+    }
+    if (move) {
+      window.setTimeout(() => {
+        const cells = Array.from(document.querySelectorAll<HTMLElement>("[data-budget-editable='true']"));
+        const currentButton = document.activeElement as HTMLElement | null;
+        const index = currentButton ? cells.indexOf(currentButton) : -1;
+        const target = cells[index + 1] ?? null;
+        target?.focus();
+      }, 0);
+    }
+  }
+
+  function keyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      setDraft(value === null || value === undefined ? "" : String(value));
+      setEditing(false);
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      save("down").catch(console.error);
+    }
+    if (event.key === "Tab") {
+      event.preventDefault();
+      save("next").catch(console.error);
+    }
+  }
+
   if (editing) {
     return (
       <input
         autoFocus
-        type="number"
+        type={kind === "text" ? "text" : "number"}
+        step="any"
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => {
-          setEditing(false);
-          const next = draft === "" ? null : Number(draft);
-          if (next !== value) onSave(next).catch(console.error);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "Escape") { setDraft(value === null || value === undefined ? "" : String(value)); setEditing(false); }
-        }}
-        className="h-8 w-full border-0 bg-transparent p-0 text-right text-xs tabular-nums outline-none"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => save().catch(console.error)}
+        onKeyDown={keyDown}
+        className={`h-7 w-full border-0 border-b border-blue-500 bg-transparent p-0 text-xs outline-none ${kind === "text" ? "text-left" : "text-right tabular-nums"} ${className}`}
       />
     );
   }
-  return <button onClick={() => setEditing(true)} className={`min-h-9 w-full px-2 text-right tabular-nums ${zeroClass(value)}`}>{render(value)}</button>;
-}
 
-function UnitSelect({ value, onSave }: { value: string; onSave: (value: string) => Promise<void> }) {
+  const display = kind === "money" ? money(Number(value ?? 0)) : kind === "percent" ? percentLabel(Number(value ?? 0)) : kind === "number" ? numeric(Number(value ?? 0)) : String(value || "");
   return (
-    <select value={value} onChange={(e) => onSave(e.target.value).catch(console.error)} className="h-8 w-full appearance-none border-0 bg-transparent text-xs outline-none">
-      {UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
-    </select>
-  );
-}
-
-function StatusToggle({ active, onClick }: { active: boolean; onClick?: () => void }) {
-  return (
-    <button onClick={onClick} disabled={!onClick} className="grid min-h-9 place-items-center text-xs">
-      {active ? <Check size={15} className="text-emerald-700" /> : <span className="h-3.5 w-3.5 rounded-full border border-gray-300" />}
+    <button
+      data-budget-editable="true"
+      onClick={() => setEditing(true)}
+      className={`min-h-[30px] w-full truncate text-left ${kind !== "text" ? "text-right tabular-nums" : ""} ${flash ? "bg-[#eef5ff]" : ""} ${Number(value ?? 1) === 0 && kind !== "text" ? "text-[#c8c8c4]" : ""} ${className}`}
+    >
+      {display || (kind === "text" ? "—" : "")}
     </button>
   );
 }
 
-function SubCostsPanel({ line, onRevision, onError }: { line: BudgetLineItem; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
-  const [form, setForm] = useState({ description: "", supplierName: "", amount: "", vatRate: "" });
-  async function addSubCost() {
-    try {
-      const response = await api.post<SubCostMutationResponse>(`/api/budgets/lines/${line.id}/subcosts`, {
-        description: form.description || "Sub-cost",
-        supplierName: form.supplierName || null,
-        amount: Number(form.amount || 0),
-        vatRate: form.vatRate ? Number(form.vatRate) : null,
-        vatAmount: form.vatRate ? Number(form.amount || 0) * (Number(form.vatRate) / 100) : null,
-        status: "AGREED" as SubCostStatus,
-      });
-      if (response.revision) onRevision(response.revision);
-      setForm({ description: "", supplierName: "", amount: "", vatRate: "" });
-    } catch (err) {
-      onError(err instanceof Error ? err.message : "Failed to add sub-cost");
-    }
-  }
+function NumberCell({ value, onSave }: { value?: number | null; onSave: (value: number | null) => Promise<void> }) {
+  return <Cell><EditableCell value={value ?? ""} onSave={(next) => onSave(typeof next === "number" ? next : null)} kind="number" /></Cell>;
+}
 
+function MoneyCell({ value, onSave }: { value?: number | null; onSave: (value: number | null) => Promise<void> }) {
+  return <Cell><EditableCell value={value ?? ""} onSave={(next) => onSave(typeof next === "number" ? next : null)} kind="money" /></Cell>;
+}
+
+function PercentCell({ value, onSave }: { value?: number | null; onSave: (value: number | null) => Promise<void> }) {
+  return <Cell><EditableCell value={value ?? ""} onSave={(next) => onSave(typeof next === "number" ? next : null)} kind="percent" /></Cell>;
+}
+
+function UnitDropdown({ value, onSave }: { value: string; onSave: (value: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function close(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    }
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, []);
   return (
-    <div className="ml-8 border-l-4 border-gray-300 bg-[#fafaf8] px-4 py-3 text-xs">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="font-semibold">Sub-costs / Expenses <span className="ml-2 text-gray-500">Total: {money(line.actualTotal)}</span></p>
-        <button onClick={addSubCost} className="min-h-9 rounded bg-gray-900 px-3 text-white">+ Add sub-cost</button>
-      </div>
-      <div className="space-y-1">
-        {line.subCosts.map((subCost) => <SubCostRow key={subCost.id} subCost={subCost} onRevision={onRevision} onError={onError} />)}
-        {line.subCosts.length === 0 && <p className="py-2 text-gray-500">No sub-costs yet.</p>}
-      </div>
-      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-[1fr_160px_120px_80px_90px]">
-        <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Description" className="h-9 rounded border border-gray-200 px-2" />
-        <input value={form.supplierName} onChange={(e) => setForm({ ...form, supplierName: e.target.value })} placeholder="Supplier" className="h-9 rounded border border-gray-200 px-2" />
-        <input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="Amount ex-VAT" type="number" className="h-9 rounded border border-gray-200 px-2" />
-        <input value={form.vatRate} onChange={(e) => setForm({ ...form, vatRate: e.target.value })} placeholder="VAT%" type="number" className="h-9 rounded border border-gray-200 px-2" />
-        <button onClick={addSubCost} className="min-h-9 rounded bg-gray-900 px-3 text-white">Save</button>
-      </div>
+    <div ref={ref} className="relative w-full">
+      <button onClick={() => setOpen(!open)} className="flex min-h-[30px] w-full items-center justify-between text-left text-xs">
+        <span>{value}</span><span className="text-[10px]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-7 z-40 w-32 rounded border border-[#e8e8e4] bg-white py-1 text-xs shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
+          {UNITS.map((unit) => (
+            <button key={unit} onClick={() => { onSave(unit).catch(console.error); setOpen(false); }} className={`block h-[30px] w-full px-2 text-left hover:bg-[#f5f5f3] ${unit === value ? "bg-[#1a1a1f] text-white" : ""}`}>
+              {unit}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+function StatusButton({ active, onClick, title }: { active: boolean; onClick?: () => void; title: string }) {
+  return (
+    <button title={title} onClick={onClick} disabled={!onClick} className="grid min-h-[34px] place-items-center text-[11px]">
+      {statusSymbol(active)}
+    </button>
   );
 }
 
 function SubCostRow({ subCost, onRevision, onError }: { subCost: SubCost; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
-  async function cycleStatus() {
-    const order: SubCostStatus[] = ["PENDING", "AGREED", "INVOICED", "PAID"];
-    const next = order[(order.indexOf(subCost.status) + 1) % order.length];
+  async function patch(patchData: Partial<SubCost>) {
     try {
-      const response = await api.patch<SubCostMutationResponse>(`/api/budgets/subcosts/${subCost.id}/status`, { status: next });
+      const response = await api.patch<SubCostMutationResponse>(`/api/budgets/subcosts/${subCost.id}`, patchData);
       if (response.revision) onRevision(response.revision);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Failed to update sub-cost");
+      onError(err instanceof Error ? err.message : "Save failed");
     }
   }
+
+  async function remove() {
+    if (!window.confirm(`Delete ${subCost.description}?`)) return;
+    await api.delete(`/api/budgets/subcosts/${subCost.id}`);
+    onError("Sub-cost deleted. Refreshing totals...");
+    window.location.reload();
+  }
+
   return (
-    <div className="grid min-h-8 grid-cols-[90px_1fr_140px_110px_80px_44px] items-center gap-2 border-b border-gray-100">
-      <button onClick={cycleStatus} className={`rounded-full px-2 py-1 text-[10px] font-medium ${statusClass(subCost.status)}`}>{subCost.status}</button>
-      <span>{subCost.receiptCaptureId && <ReceiptText size={12} className="mr-1 inline" />}{subCost.description}</span>
-      <span className="text-gray-500">{subCost.supplierName}</span>
-      <span className="text-right tabular-nums">{money(subCost.amount)}</span>
-      <span className="text-right text-gray-400">{subCost.vatAmount ? money(subCost.vatAmount) : ""}</span>
-      <FileText size={14} className="text-gray-400" />
+    <div className="grid min-h-[30px] border-b border-[#ebebea] bg-[#fafaf8] text-xs" style={gridStyle("internal")}>
+      <div />
+      <div className="flex items-center justify-end pr-1 text-[#ccc]">{subCost.receiptCaptureId ? <Camera size={12} /> : "└"}</div>
+      <Cell><EditableCell value={subCost.description} onSave={(value) => patch({ description: String(value) })} className="text-[#555]" /></Cell>
+      <Cell><EditableCell value={subCost.supplierName ?? ""} onSave={(value) => patch({ supplierName: String(value) })} className="text-[11px] text-[#888]" /></Cell>
+      <div className="col-span-10" />
+      <div />
+      <Cell><EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" /></Cell>
+      <div className="flex min-h-[30px] items-center justify-end px-2 text-[11px] text-[#aaa] tabular-nums">{subCost.vatAmount && subCost.vatAmount > 0 ? money(subCost.vatAmount) : ""}</div>
+      <div />
+      <div />
+      <div className="grid min-h-[30px] place-items-center"><Paperclip size={14} className={subCost.invoiceFileId ? "text-[#1a1a1f]" : "text-[#888]"} /></div>
+      <div className="grid min-h-[30px] place-items-center">{subCost.proofOfPayment ? <Check size={14} className="text-green-600" /> : <span className="text-[#aaa]">✓</span>}</div>
+      <button onClick={remove} className="grid min-h-[30px] place-items-center text-[#aaa] hover:text-red-600"><X size={12} /></button>
     </div>
   );
 }
 
-function statusClass(status: SubCostStatus) {
-  if (status === "PAID") return "bg-emerald-100 text-emerald-800";
-  if (status === "INVOICED") return "bg-amber-100 text-amber-800";
-  if (status === "AGREED") return "bg-blue-100 text-blue-800";
-  return "bg-gray-100 text-gray-600";
+function SubCostDraftRow({ lineId, onCancel, onRevision, onError }: { lineId: string; onCancel: () => void; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
+  const [description, setDescription] = useState("");
+  const [supplierName, setSupplierName] = useState("");
+  const [amount, setAmount] = useState("");
+
+  async function save() {
+    try {
+      const response = await api.post<SubCostMutationResponse>(`/api/budgets/lines/${lineId}/subcosts`, {
+        description: description || "Sub-cost",
+        supplierName: supplierName || null,
+        amount: Number(amount || 0),
+        status: "AGREED",
+      });
+      if (response.revision) onRevision(response.revision);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Save failed");
+    }
+  }
+
+  return (
+    <div className="grid min-h-[30px] border-b border-[#ebebea] bg-[#fafaf8] text-xs" style={gridStyle("internal")}>
+      <div />
+      <div className="flex items-center justify-end pr-1 text-[#ccc]">└</div>
+      <Cell><input autoFocus value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description..." className="h-7 w-full border-0 bg-transparent text-xs outline-none" /></Cell>
+      <Cell><input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="Supplier..." className="h-7 w-full border-0 bg-transparent text-xs outline-none" /></Cell>
+      <div className="col-span-11" />
+      <Cell><input value={amount} onChange={(event) => setAmount(event.target.value)} type="number" placeholder="£" className="h-7 w-full border-0 bg-transparent text-right text-xs tabular-nums outline-none" /></Cell>
+      <div />
+      <div />
+      <button onClick={save} className="min-h-[30px] text-[11px] font-medium text-[#1a1a1f]">Save</button>
+      <button onClick={onCancel} className="grid min-h-[30px] place-items-center text-red-600"><X size={12} /></button>
+    </div>
+  );
 }
 
-function TemplatePicker({ templates, onApply }: { templates: SectionTemplate[]; onApply: (templateId: string) => Promise<void> }) {
+function TemplatePicker({ templates, onApply, onBlank }: { templates: SectionTemplate[]; onApply: (templateId: string) => Promise<void>; onBlank: () => void }) {
+  const iconFor = (name: string) => name.includes("Motion") ? "🎬" : name.includes("Event") ? "🎉" : "📷";
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <h2 className="text-lg font-semibold">Choose a template to start</h2>
-      <div className="mt-5 grid gap-3 md:grid-cols-4">
-        {templates.map((template) => (
-          <button key={template.id} onClick={() => onApply(template.id).catch(console.error)} className="min-h-28 rounded-lg border border-gray-200 bg-white p-4 text-left hover:border-gray-900">
-            <p className="text-sm font-semibold">{template.name}</p>
-            <p className="mt-2 text-xs text-gray-500">{template.description}</p>
-            <p className="mt-3 text-xs text-gray-400">{template.sections.length} sections</p>
-          </button>
-        ))}
+    <div className="flex min-h-full items-center justify-center p-8">
+      <div className="w-full max-w-3xl rounded-lg border border-[#e8e8e4] bg-white p-8 text-center">
+        <h2 className="text-base font-semibold text-[#1a1a1f]">Choose a template to get started</h2>
+        <div className="mt-8 flex flex-wrap justify-center gap-4">
+          {templates.map((template) => (
+            <button key={template.id} onClick={() => onApply(template.id).catch(console.error)} className="h-[110px] w-[180px] rounded-lg border border-[#e8e8e4] bg-white p-4 text-center hover:border-[#1a1a1f]">
+              <div className="text-2xl">{iconFor(template.name)}</div>
+              <p className="mt-2 text-sm font-medium">{template.name}</p>
+              <p className="mt-1 text-xs text-gray-400">{template.sections.length} sections</p>
+            </button>
+          ))}
+        </div>
+        <button onClick={onBlank} className="mt-7 min-h-11 text-sm text-gray-500 hover:text-[#1a1a1f]">or <span className="font-medium underline">Start blank →</span></button>
       </div>
     </div>
   );
@@ -613,13 +739,13 @@ function TemplatePicker({ templates, onApply }: { templates: SectionTemplate[]; 
 
 function TemplatePanel({ templates, onClose, onApply }: { templates: SectionTemplate[]; onClose: () => void; onApply: (templateId: string) => Promise<void> }) {
   return (
-    <SidePanel title="Section templates" onClose={onClose}>
+    <SidePanel title="Section templates" onClose={onClose} width="360px">
       <div className="space-y-3">
         {templates.map((template) => (
-          <div key={template.id} className="rounded-lg border border-gray-200 p-3">
-            <p className="text-sm font-semibold">{template.name}</p>
-            <p className="text-xs text-gray-500">{template.description}</p>
-            <button onClick={() => onApply(template.id).catch(console.error)} className="mt-3 min-h-10 rounded bg-gray-900 px-3 text-sm text-white">Apply template</button>
+          <div key={template.id} className="rounded-md border border-[#e8e8e4] p-3">
+            <p className="text-sm font-medium">{template.name}</p>
+            <p className="text-xs text-gray-500">{template.sections.length} sections</p>
+            <button onClick={() => onApply(template.id).catch(console.error)} className="mt-3 min-h-10 rounded bg-[#1a1a1f] px-3 text-xs text-white">Apply</button>
           </div>
         ))}
       </div>
@@ -636,20 +762,20 @@ function CoverPanel({ budget, onClose, onSave }: { budget: Budget; onClose: () =
     ["shootDates", "Shoot Dates", "input"],
     ["photographerDirector", "Photographer / Director", "input"],
     ["accountingContact", "Accounting Contact", "input"],
-    ["comments", "Comments", "textarea"],
-    ["caveats", "Caveats", "textarea"],
+    ["comments", "Comments (shown on PDF)", "textarea"],
+    ["caveats", "Included / Not included", "textarea"],
     ["usages", "Usages", "textarea"],
   ];
   return (
-    <SidePanel title="Cover page" onClose={onClose}>
-      <div className="space-y-3">
+    <SidePanel title="Cover page" onClose={onClose} width="360px">
+      <div className="space-y-4">
         {fields.map(([key, label, kind]) => (
-          <label key={String(key)} className="block text-xs font-medium text-gray-500">
+          <label key={String(key)} className="block text-[13px] font-medium text-gray-600">
             {label}
             {kind === "textarea" ? (
-              <textarea defaultValue={String(budget[key] ?? "")} onBlur={(e) => onSave({ [key]: e.target.value } as Partial<Budget>).catch(console.error)} className="mt-1 min-h-20 w-full rounded border border-gray-200 p-2 text-sm text-gray-900" />
+              <textarea defaultValue={String(budget[key] ?? "")} onBlur={(event) => onSave({ [key]: event.target.value } as Partial<Budget>).catch(console.error)} className="mt-1 min-h-20 w-full rounded border border-[#e8e8e4] p-2 text-sm text-[#1a1a1f]" />
             ) : (
-              <input defaultValue={String(budget[key] ?? "")} onBlur={(e) => onSave({ [key]: e.target.value } as Partial<Budget>).catch(console.error)} className="mt-1 h-10 w-full rounded border border-gray-200 px-2 text-sm text-gray-900" />
+              <input defaultValue={String(budget[key] ?? "")} onBlur={(event) => onSave({ [key]: event.target.value } as Partial<Budget>).catch(console.error)} className="mt-1 h-10 w-full rounded border border-[#e8e8e4] px-2 text-sm text-[#1a1a1f]" />
             )}
           </label>
         ))}
@@ -659,7 +785,12 @@ function CoverPanel({ budget, onClose, onSave }: { budget: Budget; onClose: () =
 }
 
 function AdvancesPanel({ budget, totals, onClose, onChanged }: { budget: Budget; totals: BudgetRevision["totals"]; onClose: () => void; onChanged: () => Promise<void> }) {
-  const [form, setForm] = useState({ label: "75% Advance", calculationType: "PERCENT_OF_TOTAL" as AdvanceCalcType, percent: "75", amount: "", dueDate: "" });
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState({ label: "75% Advance", calculationType: "PERCENT_OF_TOTAL" as AdvanceCalcType, percent: "75", amount: "", dueDate: "", notes: "" });
+  const preview = form.calculationType === "FIXED_AMOUNT"
+    ? Number(form.amount || 0)
+    : (form.calculationType === "PERCENT_OF_PRODUCTION" ? totals.subtotal : totals.grandTotal) * (Number(form.percent || 0) / 100);
+
   async function addAdvance() {
     await api.post(`/api/budgets/${budget.id}/advances`, {
       label: form.label,
@@ -667,27 +798,47 @@ function AdvancesPanel({ budget, totals, onClose, onChanged }: { budget: Budget;
       percent: form.calculationType === "FIXED_AMOUNT" ? null : Number(form.percent || 0),
       amount: form.calculationType === "FIXED_AMOUNT" ? Number(form.amount || 0) : null,
       dueDate: form.dueDate || null,
+      notes: form.notes || null,
     });
+    setFormOpen(false);
     await onChanged();
   }
+
+  const totalAdvances = budget.advanceInvoices.reduce((sum, advance) => sum + (totals.advances.find((item) => item.id === advance.id)?.calculatedAmount ?? advance.calculatedAmount ?? 0), 0);
+
   return (
-    <SidePanel title="Advance invoices" onClose={onClose}>
-      <div className="space-y-2">
+    <SidePanel title="Advance Invoices" onClose={onClose} width="320px">
+      {budget.advanceInvoices.length === 0 && !formOpen && (
+        <div className="rounded-md border border-dashed border-[#e8e8e4] p-4 text-center text-sm text-gray-500">
+          <p>No advance invoices yet.</p>
+          <button onClick={() => setFormOpen(true)} className="mt-3 min-h-10 rounded bg-[#1a1a1f] px-3 text-xs text-white">+ Add advance invoice</button>
+        </div>
+      )}
+      <div className="space-y-3">
         {budget.advanceInvoices.map((advance) => (
           <AdvanceRow key={advance.id} advance={advance} calculated={totals.advances.find((item) => item.id === advance.id)?.calculatedAmount ?? advance.calculatedAmount ?? 0} onChanged={onChanged} />
         ))}
       </div>
-      <div className="mt-5 space-y-2 border-t border-gray-200 pt-4">
-        <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} className="h-10 w-full rounded border border-gray-200 px-2 text-sm" />
-        <select value={form.calculationType} onChange={(e) => setForm({ ...form, calculationType: e.target.value as AdvanceCalcType })} className="h-10 w-full rounded border border-gray-200 px-2 text-sm">
-          <option value="PERCENT_OF_TOTAL">% of Grand Total</option>
-          <option value="PERCENT_OF_PRODUCTION">% of Production Subtotal</option>
-          <option value="FIXED_AMOUNT">Fixed £ amount</option>
-        </select>
-        <input value={form.calculationType === "FIXED_AMOUNT" ? form.amount : form.percent} onChange={(e) => form.calculationType === "FIXED_AMOUNT" ? setForm({ ...form, amount: e.target.value }) : setForm({ ...form, percent: e.target.value })} type="number" className="h-10 w-full rounded border border-gray-200 px-2 text-sm" />
-        <input value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} type="date" className="h-10 w-full rounded border border-gray-200 px-2 text-sm" />
-        <button onClick={addAdvance} className="min-h-11 w-full rounded bg-gray-900 text-sm text-white">Add advance</button>
-      </div>
+      {!formOpen && budget.advanceInvoices.length > 0 && <button onClick={() => setFormOpen(true)} className="mt-4 min-h-10 text-xs font-medium text-[#1a1a1f]">+ Add advance invoice</button>}
+      {formOpen && (
+        <div className="mt-4 space-y-3 border-t border-[#e8e8e4] pt-4 text-xs">
+          <label className="block">Label<input value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} className="mt-1 h-9 w-full rounded border border-[#e8e8e4] px-2" /></label>
+          <label className="block">Type<select value={form.calculationType} onChange={(event) => setForm({ ...form, calculationType: event.target.value as AdvanceCalcType })} className="mt-1 h-9 w-full rounded border border-[#e8e8e4] px-2">
+            <option value="PERCENT_OF_TOTAL">% of Grand Total</option>
+            <option value="PERCENT_OF_PRODUCTION">% of Subtotal</option>
+            <option value="FIXED_AMOUNT">Fixed Amount</option>
+          </select></label>
+          <label className="block">Value<input value={form.calculationType === "FIXED_AMOUNT" ? form.amount : form.percent} onChange={(event) => form.calculationType === "FIXED_AMOUNT" ? setForm({ ...form, amount: event.target.value }) : setForm({ ...form, percent: event.target.value })} type="number" className="mt-1 h-9 w-full rounded border border-[#e8e8e4] px-2" /></label>
+          <p className="text-gray-500">Calculated: <span className="font-semibold text-[#1a1a1f]">{money(preview)}</span></p>
+          <label className="block">Due date<input value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} type="date" className="mt-1 h-9 w-full rounded border border-[#e8e8e4] px-2" /></label>
+          <label className="block">Notes<input value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} className="mt-1 h-9 w-full rounded border border-[#e8e8e4] px-2" /></label>
+          <div className="flex gap-2">
+            <button onClick={addAdvance} className="min-h-10 rounded bg-[#1a1a1f] px-3 text-white">Add</button>
+            <button onClick={() => setFormOpen(false)} className="min-h-10 px-3 text-gray-500">Cancel</button>
+          </div>
+        </div>
+      )}
+      <div className="mt-5 border-t border-[#e8e8e4] pt-3 text-right text-xs text-gray-500">Total advances: <span className="font-semibold text-[#1a1a1f]">{money(totalAdvances)}</span></div>
     </SidePanel>
   );
 }
@@ -703,23 +854,26 @@ function AdvanceRow({ advance, calculated, onChanged }: { advance: AdvanceInvoic
     await onChanged();
   }
   return (
-    <div className="grid grid-cols-[1fr_auto] gap-2 rounded border border-gray-200 p-3 text-sm">
-      <div>
-        <p className="font-medium">{advance.label}</p>
-        <p className="text-xs text-gray-500">{advance.calculationType.replace(/_/g, " ")} {advance.percent ?? advance.amount ?? ""}</p>
+    <div className="rounded-md border border-[#e8e8e4] bg-white p-3 text-xs">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[13px] font-medium">{advance.label}</p>
+        <button onClick={togglePaid} className={`rounded-full px-2 py-1 text-[10px] ${advance.isPaid ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{advance.isPaid ? "PAID" : "UNPAID"}</button>
       </div>
-      <div className="text-right">
-        <p className="font-medium tabular-nums">{money(calculated)}</p>
-        <button onClick={togglePaid} className={`mt-1 rounded-full px-2 py-1 text-[10px] ${advance.isPaid ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{advance.isPaid ? "paid" : "unpaid"}</button>
-        <button onClick={remove} className="ml-2 text-red-600"><Trash2 size={13} /></button>
+      <div className="mt-2 flex items-center justify-between">
+        <p className="text-[11px] text-gray-500">{advance.calculationType.replace(/_/g, " ")} · {advance.percent ?? advance.amount ?? ""}</p>
+        <p className="text-sm font-semibold tabular-nums">{money(calculated)}</p>
+      </div>
+      <div className="mt-1 flex items-center justify-between text-[11px] text-gray-500">
+        <span>Due: {advance.dueDate ? new Date(advance.dueDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "not set"}</span>
+        <button onClick={remove} className="text-red-600">Delete</button>
       </div>
     </div>
   );
 }
 
-function SidePanel({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+function SidePanel({ title, children, onClose, width = "420px" }: { title: string; children: ReactNode; onClose: () => void; width?: string }) {
   return (
-    <aside className="fixed inset-y-0 right-0 z-[55] w-full max-w-[420px] overflow-auto border-l border-gray-200 bg-white p-5 shadow-xl">
+    <aside className="fixed inset-y-0 right-0 z-[60] w-full overflow-auto border-l border-[#e8e8e4] bg-white p-5 shadow-xl md:w-auto" style={{ maxWidth: width }}>
       <div className="mb-5 flex items-center justify-between">
         <h2 className="text-base font-semibold">{title}</h2>
         <button onClick={onClose} className="grid h-10 w-10 place-items-center rounded hover:bg-gray-100"><X size={18} /></button>
