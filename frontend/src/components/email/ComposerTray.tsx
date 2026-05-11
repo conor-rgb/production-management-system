@@ -5,7 +5,6 @@ import TiptapLink from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import { Bold, Italic, Link2, List, ListOrdered, Paperclip, Send, Underline as UnderlineIcon, X } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { useDrafts, type Draft } from "../../store/draftStore";
 
@@ -167,7 +166,6 @@ function RecipientInput({ label, values, onChange }: { label: string; values: st
 }
 
 function DraftComposerWindow({ draft }: { draft: Draft }) {
-  const navigate = useNavigate();
   const { updateDraft, minimizeDraft, closeDraft, sendDraft, isSending } = useDrafts();
   const [ccVisible, setCcVisible] = useState(draft.cc.length > 0);
   const [bccVisible, setBccVisible] = useState(draft.bcc.length > 0);
@@ -228,7 +226,7 @@ function DraftComposerWindow({ draft }: { draft: Draft }) {
       {isReply && (
         <div className="flex h-7 shrink-0 items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 text-[11px] text-gray-500">
           <span className="min-w-0 flex-1 truncate">↩ Replying to thread: {draft.subject}</span>
-          <button type="button" onClick={() => navigate(`/email?thread=${draft.replyToThreadId}`)} className="min-h-7 text-gray-900 underline">View thread →</button>
+          <button type="button" onClick={() => { window.location.href = `/email?thread=${draft.replyToThreadId}`; }} className="min-h-7 text-gray-900 underline">View thread →</button>
         </div>
       )}
 

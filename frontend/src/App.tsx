@@ -12,29 +12,24 @@ import Budgets from "./pages/Budgets";
 import Contacts from "./pages/Contacts";
 import Files from "./pages/Files";
 import SettingsPage from "./pages/SettingsPage";
-import { ComposerTray } from "./components/email/ComposerTray";
-import { DraftProvider } from "./store/draftStore";
 
 function AuthedRoutes() {
   return (
     <ProtectedRoute>
-      <DraftProvider>
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="email" element={<Email />} />
-            <Route path="opportunities" element={<Opportunities />} />
-            <Route path="productions" element={<Productions />} />
-            <Route path="calendar" element={<CalendarPage />} />
-            <Route path="budgets" element={<Budgets />} />
-            <Route path="contacts" element={<Contacts />} />
-            <Route path="files" element={<Files />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
-        <ComposerTray />
-      </DraftProvider>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="email" element={<Email />} />
+          <Route path="opportunities" element={<Opportunities />} />
+          <Route path="productions" element={<Productions />} />
+          <Route path="calendar" element={<CalendarPage />} />
+          <Route path="budgets" element={<Budgets />} />
+          <Route path="contacts" element={<Contacts />} />
+          <Route path="files" element={<Files />} />
+          <Route path="settings" element={<SettingsPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
     </ProtectedRoute>
   );
 }

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import type { EmailAccount } from "../lib/types";
+import { ComposerTray } from "../components/email/ComposerTray";
 
 export interface Draft {
   id: string;
@@ -76,9 +77,13 @@ export function DraftProvider({ children }: { children: ReactNode }) {
   const saveTimers = useRef<Record<string, number>>({});
 
   useEffect(() => {
+    if (window.location.pathname === "/login") return undefined;
     api.get<Draft[]>("/api/email/drafts")
       .then(setDrafts)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load drafts"));
+      .catch((err: unknown) => {
+        if (err instanceof Error && err.message === "Unauthorised") return;
+        setError(err instanceof Error ? err.message : "Failed to load drafts");
+      });
     return () => {
       Object.values(saveTimers.current).forEach(window.clearTimeout);
     };
@@ -191,7 +196,12 @@ export function DraftProvider({ children }: { children: ReactNode }) {
     clearError: () => setError(""),
   }), [drafts, openDraft, openReply, updateDraft, minimizeDraft, maximizeDraft, closeDraft, sendDraft, isSending, error]);
 
-  return <DraftContext.Provider value={value}>{children}</DraftContext.Provider>;
+  return (
+    <DraftContext.Provider value={value}>
+      {children}
+      <ComposerTray />
+    </DraftContext.Provider>
+  );
 }
 
 export function useDrafts() {
