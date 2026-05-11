@@ -929,11 +929,10 @@ function SubCostRow({ subCost, closed, onRevision, onError }: { subCost: SubCost
   return (
     <div className="grid min-h-[32px] border-b border-[#ebebea] text-xs" style={{ ...gridStyle("internal"), background, opacity: closed ? 0.55 : 1 }}>
       <div />
-      <div className="flex min-h-[32px] min-w-0 items-center gap-1 overflow-hidden px-1">
-        <span className="text-[#ccc]">{subCost.receiptCaptureId ? <Camera size={12} /> : "└"}</span>
+      <div />
+      <div className="flex min-h-[32px] min-w-0 items-center gap-2 overflow-hidden pl-8 pr-2">
+        <span className="shrink-0 text-[#b8b8b4]">{subCost.receiptCaptureId ? <Camera size={12} /> : "└─"}</span>
         <CostLineTypePill lineType={subCost.lineType} onChange={(lineType) => patch({ lineType }).catch(console.error)} />
-      </div>
-      <div className="flex min-h-[32px] min-w-0 items-center gap-2 overflow-hidden px-2">
         {reference && <span className="shrink-0 whitespace-nowrap text-xs font-medium" style={{ color: DOT_COLORS[subCost.lineType === "PO" ? "PURPLE" : "BLUE" ] }}>{reference}</span>}
         <EditableCell value={subCost.description} onSave={(value) => patch({ description: String(value) })} className="min-w-0 text-[#555]" />
         {subCost.supplierName && <span className="shrink-0 truncate text-[11px] italic text-[#888]">{subCost.supplierName}</span>}
@@ -979,10 +978,10 @@ function SubCostDraftRow({ lineId, initialLineType, onCancel, onRevision, onErro
     <div className="grid min-h-[30px] border-b border-[#ebebea] bg-[#fafaf8] text-xs" style={gridStyle("internal")}>
       <div />
       <div className="flex min-h-[30px] items-center gap-1 overflow-hidden px-1">
-        <span className="text-[#ccc]">└</span>
-        <CostLineTypePill lineType={lineType} onChange={setLineType} />
       </div>
-      <div className="flex min-h-[30px] items-center gap-2 px-2">
+      <div className="flex min-h-[30px] items-center gap-2 pl-8 pr-2">
+        <span className="shrink-0 text-[#b8b8b4]">└─</span>
+        <CostLineTypePill lineType={lineType} onChange={setLineType} />
         <input autoFocus value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description..." className="h-7 min-w-0 flex-1 border-0 bg-transparent text-xs outline-none" />
         <input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="Supplier..." className="h-7 w-28 border-0 bg-transparent text-[11px] italic text-[#888] outline-none" />
       </div>
