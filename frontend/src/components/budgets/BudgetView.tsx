@@ -13,7 +13,7 @@ import type {
   SubCost,
   SubCostLineType,
 } from "../../lib/types";
-import { BUDGET_GRID_CLIENT, BUDGET_GRID_INTERNAL } from "./budgetLayout";
+import { BUDGET_GRID_CLIENT, BUDGET_GRID_INTERNAL, BUDGET_TABLE_CLIENT_WIDTH, BUDGET_TABLE_INTERNAL_WIDTH } from "./budgetLayout";
 import { COST_LINE_BACKGROUNDS, DOT_COLORS, STATE_BADGES, getDotState, type DotState } from "./budgetStatus";
 
 type Entity = { type: "production" | "opportunity"; id: string; label?: string; data?: unknown };
@@ -373,6 +373,7 @@ function BudgetTable(props: {
   const [toggledCostLines, setToggledCostLines] = useState<Set<string>>(new Set());
   const [parentMenu, setParentMenu] = useState<ParentContextMenu>(null);
   const internal = props.mode === "internal";
+  const tableWidth = internal ? BUDGET_TABLE_INTERNAL_WIDTH : BUDGET_TABLE_CLIENT_WIDTH;
   const menuLine = parentMenu
     ? props.revision.sections.flatMap((section) => section.lineItems).find((line) => line.id === parentMenu.lineId)
     : null;
@@ -394,8 +395,8 @@ function BudgetTable(props: {
   }, [parentMenu]);
 
   return (
-    <div className="budget-table w-full min-w-[900px] overflow-x-auto">
-      <div className="budget-table-inner w-full min-w-[900px]">
+    <div className="budget-table w-full overflow-x-auto">
+      <div className="budget-table-inner" style={{ width: tableWidth, minWidth: tableWidth }}>
       <div className="sticky top-0 z-20 grid h-7 items-center border-b border-[#e8e8e4] bg-[#f8f8f6] text-[10px] uppercase tracking-[0.5px] text-[#aaa]" style={gridStyle(props.mode)}>
         {internal && <HeaderCell center />}
         <HeaderCell>Code</HeaderCell>

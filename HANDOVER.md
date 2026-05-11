@@ -1,5 +1,32 @@
 # Budget Table Interaction Handover — 2026-05-11
 
+## Latest Visual Width Fix
+
+Adjusted the budget grid so the Description column no longer stretches excessively on wide screens.
+
+Changed:
+- `BUDGET_GRID_INTERNAL` now uses fixed readable columns instead of `1fr` for Description.
+- `BUDGET_GRID_CLIENT` also uses a fixed readable Description width.
+- Added table width constants:
+  - `BUDGET_TABLE_INTERNAL_WIDTH = 1374px`
+  - `BUDGET_TABLE_CLIENT_WIDTH = 910px`
+- `BudgetView` now uses those fixed table widths so fields stay close enough to scan on wide displays.
+- Horizontal scrolling remains available on smaller screens.
+
+Verification:
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- PM2 reloaded.
+- Health check passed at `2026-05-11T12:39:10.232Z`.
+
+Exact visual test:
+1. Open a production budget on a wide screen.
+2. Confirm Description is no longer disproportionately wide.
+3. Confirm Rate, Agency, Estimated, Actuals, Remaining, and CLO stay within a readable distance.
+4. Narrow the viewport and confirm the table scrolls horizontally instead of squashing cells.
+
+---
+
 ## Built This Session
 
 Targeted budget table interaction fix only. No schema changes and no backend code changes were made.
