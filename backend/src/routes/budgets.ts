@@ -80,6 +80,7 @@ function subCostPatch(body: Record<string, unknown>): Prisma.SubCostUncheckedUpd
   return {
     description: body.description as string | undefined,
     lineType,
+    poNumber: body.poNumber as string | null | undefined,
     supplierName: body.supplierName as string | null | undefined,
     amount: numberOrUndefined(body.amount),
     amountGross: numberOrNull(body.amountGross),
@@ -94,8 +95,45 @@ function subCostPatch(body: Record<string, unknown>): Prisma.SubCostUncheckedUpd
     isAgreed: body.isAgreed as boolean | undefined ?? lifecycle.isAgreed,
     isInvoiced: body.isInvoiced as boolean | undefined ?? lifecycle.isInvoiced,
     isPaid: body.isPaid as boolean | undefined ?? lifecycle.isPaid,
+    freeAgentTransactionId: body.freeAgentTransactionId as string | null | undefined,
     datePaid: dateOrNull(body.datePaid) ?? lifecycle.datePaid,
   };
+}
+
+async function generatePoNumber(lineItemId: string): Promise<string> {
+  const lineItem = await prisma.budgetLineItem.findUnique({
+    where: { id: lineItemId },
+    include: {
+      section: {
+        include: {
+          revision: {
+            include: {
+              budget: {
+                include: { production: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+  const production = lineItem?.section.revision.budget.production;
+  const jobCode = production?.jobCode ?? "OPP";
+  const existingPOCount = await prisma.subCost.count({
+    where: {
+      lineType: SubCostLineType.PO,
+      lineItem: {
+        section: {
+          revision: {
+            budget: production
+              ? { productionId: production.id }
+              : { id: lineItem?.section.revision.budgetId },
+          },
+        },
+      },
+    },
+  });
+  return `PO-${jobCode}-${String(existingPOCount + 1).padStart(3, "0")}`;
 }
 
 async function lineRevision(lineItemId: string) {
@@ -288,10 +326,12 @@ router.post("/lines/:lineItemId/subcosts", async (req: Request, res: Response): 
   const body = req.body as Record<string, unknown>;
   const lineType = normalizeLineType(body.lineType);
   const lifecycle = lineTypeLifecycle(lineType);
+  const poNumber = lineType === SubCostLineType.PO ? await generatePoNumber(req.params.lineItemId) : null;
   const subCost = await prisma.subCost.create({
     data: {
       lineItemId: req.params.lineItemId,
       lineType,
+      poNumber,
       description: body.description as string || `${lineType === SubCostLineType.PO ? "PO" : lineType === SubCostLineType.BILL ? "Bill" : "Receipt"} cost line`,
       supplierName: body.supplierName as string | null | undefined,
       amount: Number(body.amount ?? 0),

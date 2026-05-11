@@ -482,6 +482,7 @@ export interface SubCost {
   id: string;
   lineItemId: string;
   lineType: SubCostLineType;
+  poNumber?: string | null;
   description: string;
   supplierName?: string | null;
   amount: number;
@@ -498,6 +499,7 @@ export interface SubCost {
   isAgreed: boolean;
   isInvoiced: boolean;
   isPaid: boolean;
+  freeAgentTransactionId?: string | null;
   receiptCaptureId?: string | null;
   createdAt: string;
   updatedAt: string;
