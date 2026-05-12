@@ -63,6 +63,7 @@ const COMMON_CATEGORIES = [
   { name: "Florists", emoji: "🌸" },
   { name: "Caterers", emoji: "🍽" },
 ];
+const OPTIONS_GRID_INTERNAL = "44px minmax(220px,360px) minmax(140px,180px) 96px 118px 100px minmax(132px,180px) minmax(132px,180px) minmax(120px,160px) minmax(120px,160px) 88px";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -221,6 +222,77 @@ function PhotoManager({ option, onClose, onUploaded, onDelete, onCover }: {
           <button onClick={() => inputRef.current?.click()} disabled={uploading} className="rounded bg-gray-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-40">
             {uploading ? "Uploading..." : "Upload photos"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotePreview({ label, value, onClick }: { label: string; value: string | null; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex min-h-7 w-full items-center rounded border px-2 text-left text-xs transition ${
+        value?.trim()
+          ? "border-amber-200 bg-amber-50/70 text-amber-900 hover:bg-amber-100"
+          : "border-transparent text-gray-300 hover:border-amber-200 hover:bg-amber-50"
+      }`}
+      title={value ?? label}
+    >
+      <span className="truncate">{value?.trim() || label}</span>
+    </button>
+  );
+}
+
+function StickyNoteEditor({ title, value, onClose, onSave }: {
+  title: string;
+  value: string;
+  onClose: () => void;
+  onSave: (value: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setDraft(value), [value]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await onSave(draft);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[850] bg-black/10" onMouseDown={onClose}>
+      <div
+        onMouseDown={(event) => event.stopPropagation()}
+        className="absolute right-8 top-28 w-[360px] rotate-[-0.5deg] rounded-sm border border-amber-200 bg-[#fff8bf] p-4 shadow-2xl"
+      >
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-amber-950">{title}</h3>
+          <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded text-amber-900 hover:bg-amber-200/60">
+            <X size={15} />
+          </button>
+        </div>
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          autoFocus
+          rows={10}
+          className="w-full resize-none rounded-sm border border-amber-200/70 bg-[#fffbd1] p-3 text-sm leading-6 text-amber-950 outline-none placeholder:text-amber-700/50 focus:border-amber-400"
+          placeholder="Write notes..."
+        />
+        <div className="mt-3 flex items-center justify-between">
+          <p className="text-[11px] text-amber-800/70">Autosaves when you press Save.</p>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="rounded px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-200/60">Cancel</button>
+            <button onClick={save} disabled={saving} className="rounded bg-amber-950 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+              {saving ? "Saving..." : "Save"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -453,8 +525,10 @@ function InternalTable({ category, onUpdateCategory, onAddOption, onUpdateOption
   onDuplicateOption: (option: BoardOption) => Promise<void>;
   onPhoto: (option: BoardOption) => void;
 }) {
+  const [noteEditor, setNoteEditor] = useState<{ option: BoardOption; field: "internalNotes" | "clientNotes" } | null>(null);
+
   return (
-    <div className="min-w-[1180px]">
+    <div className="min-w-[1120px]">
       <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
         <div className="flex items-center gap-2">
           <EditableCell value={category.emoji ?? ""} onSave={(emoji) => onUpdateCategory(category.id, { emoji })} className="w-8 text-lg" />
@@ -462,19 +536,19 @@ function InternalTable({ category, onUpdateCategory, onAddOption, onUpdateOption
         </div>
         <button disabled title="Coming soon" className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-400">+ Add from library</button>
       </div>
-      <div className="grid min-h-7 grid-cols-[40px_minmax(160px,1fr)_120px_90px_110px_90px_160px_160px_100px_110px_82px] items-center border-b border-gray-200 bg-[#f8f8f6] px-3 text-[10px] uppercase tracking-[0.05em] text-gray-400">
+      <div className="grid min-h-7 w-max min-w-full max-w-[1500px] items-center gap-x-3 border-b border-gray-200 bg-[#f8f8f6] px-3 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: OPTIONS_GRID_INTERNAL }}>
         <div>📷</div><div>Name</div><div>Subtitle</div><div className="text-right">Rate</div><div>Status</div><div>Available</div><div>Internal notes</div><div>Client notes</div><div>Website</div><div>Contact</div><div />
       </div>
       {category.options.map((option) => (
-        <div key={option.id} className="group grid min-h-10 grid-cols-[40px_minmax(160px,1fr)_120px_90px_110px_90px_160px_160px_100px_110px_82px] items-center border-b border-gray-100 px-3 text-xs hover:bg-[#f5f5f3]">
+        <div key={option.id} className="group grid min-h-11 w-max min-w-full max-w-[1500px] items-center gap-x-3 border-b border-gray-100 px-3 text-xs hover:bg-[#f5f5f3]" style={{ gridTemplateColumns: OPTIONS_GRID_INTERNAL }}>
           <PhotoThumb option={option} onOpen={() => onPhoto(option)} />
           <EditableCell value={option.name} onSave={(name) => onUpdateOption(option.id, { name })} className="font-semibold text-gray-900" placeholder="Name" />
           <EditableCell value={option.subtitle ?? ""} onSave={(subtitle) => onUpdateOption(option.id, { subtitle })} className="text-gray-500" placeholder="Subtitle" />
           <EditableCell value={option.rate?.toString() ?? ""} type="number" onSave={(rate) => onUpdateOption(option.id, { rate: rate ? Number(rate) : null })} className="text-right tabular-nums text-gray-700" placeholder="£0" />
           <button onClick={() => onUpdateOption(option.id, { status: nextValue(STATUS_ORDER, option.status) })} className={`w-fit rounded border px-2 py-1 text-[10px] font-semibold ${statusClass(option.status)}`}>{option.status.replace(/_/g, " ")}</button>
           <button onClick={() => onUpdateOption(option.id, { isAvailable: nextValue(AVAILABILITY_ORDER, option.isAvailable) })} className={`text-left text-xs font-medium ${availabilityClass(option.isAvailable)}`}>{option.isAvailable.replace(/_/g, " ")}</button>
-          <EditableCell value={option.internalNotes ?? ""} onSave={(internalNotes) => onUpdateOption(option.id, { internalNotes })} className="text-gray-500" placeholder="Notes" />
-          <EditableCell value={option.clientNotes ?? ""} onSave={(clientNotes) => onUpdateOption(option.id, { clientNotes })} className="text-gray-500" placeholder="Client notes" />
+          <NotePreview label="Internal notes" value={option.internalNotes} onClick={() => setNoteEditor({ option, field: "internalNotes" })} />
+          <NotePreview label="Client notes" value={option.clientNotes} onClick={() => setNoteEditor({ option, field: "clientNotes" })} />
           {option.website ? <a href={option.website} target="_blank" rel="noreferrer" className="truncate text-blue-700">{option.website}</a> : <EditableCell value="" onSave={(website) => onUpdateOption(option.id, { website })} className="text-gray-300" placeholder="Website" />}
           <EditableCell value={option.contactName ?? option.contactEmail ?? ""} onSave={(contactName) => onUpdateOption(option.id, { contactName })} className="text-gray-500" placeholder="Contact" />
           <div className="hidden justify-end gap-1 group-hover:flex">
@@ -492,6 +566,14 @@ function InternalTable({ category, onUpdateCategory, onAddOption, onUpdateOption
       <button onClick={() => onAddOption(category.id)} className="m-3 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-500 hover:border-gray-500 hover:text-gray-900">
         <Plus size={14} className="mr-1 inline" /> Add option
       </button>
+      {noteEditor && (
+        <StickyNoteEditor
+          title={`${noteEditor.field === "internalNotes" ? "Internal notes" : "Client notes"} — ${noteEditor.option.name}`}
+          value={noteEditor.option[noteEditor.field] ?? ""}
+          onClose={() => setNoteEditor(null)}
+          onSave={(value) => onUpdateOption(noteEditor.option.id, { [noteEditor.field]: value })}
+        />
+      )}
     </div>
   );
 }

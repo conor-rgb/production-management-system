@@ -72,10 +72,13 @@
   - `NOT_AVAILABLE` hidden
   - No rates, internal notes, or contact details shown
 - PDF export button downloads the generated PDF and confirms save to job folder.
+- Second pass added a capped, consistent internal table grid so the description column no longer stretches too far on wide screens.
+- Internal and client notes now render as compact note chips that open a sticky-note style editor for longer text.
 
 ## Commits
 - `35a3d5c feat: options board schema api and pdf service`
 - `b1b0b41 feat: options board production UI`
+- latest UI pass pending commit at time of this handover update if not listed below.
 
 ## Verification
 - Prisma migration deployed successfully.
@@ -84,6 +87,7 @@
 - Frontend build passed.
 - Frontend copied to `/var/www/agent`.
 - PM2 process `0` reloaded successfully.
+- Frontend-only column spacing/sticky-note pass built, copied to `/var/www/agent`, and PM2 reloaded.
 
 ## Known gaps / technical debt
 - Category tab drag-and-drop is not implemented yet; add/move/delete endpoints exist for future UI polish.
