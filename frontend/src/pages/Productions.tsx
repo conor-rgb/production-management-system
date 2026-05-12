@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import BudgetView from "../components/budgets/BudgetView";
 import FileBrowser from "../components/files/FileBrowser";
 import CalendarView from "../components/calendar/CalendarView";
+import OptionsBoardView from "../components/options/OptionsBoardView";
 import type {
   ActivityNote,
   ActivityTask,
@@ -45,8 +46,19 @@ const JOB_TYPES: PmsJobType[] = ["STILLS", "MOTION", "EVENTS"];
 const DATE_TYPES: ProductionDateType[] = ["PPM", "RECCE", "FITTING", "MEETING", "SHOOT_DAY", "POST_DELIVERY", "OTHER"];
 const CREW_STATUSES: CrewStatus[] = ["REQUESTED", "FIRST_OPTION", "SECOND_OPTION", "CONFIRMED", "RELEASED"];
 const INVOICE_STATUSES: FreeAgentInvoiceStatus[] = ["NOT_RAISED", "DRAFT", "SENT", "VIEWED", "PAID", "OVERDUE"];
-const TABS = ["Overview", "Dates", "Crew", "Comms", "Files", "Budget"] as const;
+const TABS = ["Overview", "Dates", "Crew", "Comms", "Files", "Budget", "Options"] as const;
 type Tab = typeof TABS[number];
+
+function tabFromQuery(value: string | null): Tab {
+  const normalized = value?.toLowerCase();
+  if (normalized === "dates") return "Dates";
+  if (normalized === "crew") return "Crew";
+  if (normalized === "comms") return "Comms";
+  if (normalized === "files") return "Files";
+  if (normalized === "budget") return "Budget";
+  if (normalized === "options") return "Options";
+  return "Overview";
+}
 
 function statusClass(status: ProductionStatus) {
   if (status === "WRAPPED" || status === "CLOSED" || status === "INVOICED") return "bg-gray-100 text-gray-600";
@@ -95,6 +107,7 @@ export default function Productions() {
 
   const selected = productions.find((p) => p.id === selectedId) ?? null;
   const budgetViewOpen = searchParams.get("view") === "budget" && Boolean(selectedId);
+  const optionsViewOpen = searchParams.get("tab")?.toLowerCase() === "options" && Boolean(selectedId);
 
   function selectProduction(id: string | null) {
     setSelectedId(id);
@@ -128,6 +141,20 @@ export default function Productions() {
     setSearchParams(next, { replace: true });
   }
 
+  function openOptions(id: string) {
+    const next = new URLSearchParams(searchParams);
+    next.set("production", id);
+    next.delete("view");
+    next.set("tab", "options");
+    setSearchParams(next, { replace: true });
+  }
+
+  function closeOptions() {
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", "Overview");
+    setSearchParams(next, { replace: true });
+  }
+
   if (budgetViewOpen && selectedId) {
     return (
       <BudgetView
@@ -135,6 +162,10 @@ export default function Productions() {
         onBack={closeBudget}
       />
     );
+  }
+
+  if (optionsViewOpen && selectedId) {
+    return <OptionsBoardView productionId={selectedId} onBack={closeOptions} />;
   }
 
   return (
@@ -225,8 +256,9 @@ export default function Productions() {
             onClose={() => selectProduction(null)}
             onSaved={load}
             onInvoicePrompt={setInvoicePrompt}
-            initialTab={searchParams.get("tab") === "Budget" ? "Budget" : "Overview"}
+            initialTab={tabFromQuery(searchParams.get("tab"))}
             onOpenBudget={() => openBudget(selected.id)}
+            onOpenOptions={() => openOptions(selected.id)}
           />
         </div>
       )}
@@ -238,8 +270,9 @@ export default function Productions() {
             onClose={() => selectProduction(null)}
             onSaved={load}
             onInvoicePrompt={setInvoicePrompt}
-            initialTab={searchParams.get("tab") === "Budget" ? "Budget" : "Overview"}
+            initialTab={tabFromQuery(searchParams.get("tab"))}
             onOpenBudget={() => openBudget(selected.id)}
+            onOpenOptions={() => openOptions(selected.id)}
           />
         </div>
       )}
@@ -298,13 +331,14 @@ function ProductionForm({ onClose, onSaved }: { onClose: () => void; onSaved: (p
   );
 }
 
-function ProductionDetail({ productionId, onClose, onSaved, onInvoicePrompt, initialTab = "Overview", onOpenBudget }: {
+function ProductionDetail({ productionId, onClose, onSaved, onInvoicePrompt, initialTab = "Overview", onOpenBudget, onOpenOptions }: {
   productionId: string;
   onClose: () => void;
   onSaved: () => void;
   onInvoicePrompt: (production: Production) => void;
   initialTab?: Tab;
   onOpenBudget: () => void;
+  onOpenOptions: () => void;
 }) {
   const [production, setProduction] = useState<Production | null>(null);
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -341,7 +375,7 @@ function ProductionDetail({ productionId, onClose, onSaved, onInvoicePrompt, ini
           {TABS.map((item) => (
             <button
               key={item}
-              onClick={() => item === "Budget" ? onOpenBudget() : setTab(item)}
+              onClick={() => item === "Budget" ? onOpenBudget() : item === "Options" ? onOpenOptions() : setTab(item)}
               className={`min-h-11 shrink-0 rounded-lg px-3 text-sm font-medium ${tab === item ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700"}`}
             >
               {item}
@@ -356,6 +390,7 @@ function ProductionDetail({ productionId, onClose, onSaved, onInvoicePrompt, ini
         {tab === "Comms" && <CommsTab production={production} onReload={reload} />}
         {tab === "Files" && <FileBrowser productionId={production.id} />}
         {tab === "Budget" && <ProductionBudgetSummary production={production} onOpenBudget={onOpenBudget} />}
+        {tab === "Options" && <OptionsBoardView productionId={production.id} onBack={() => setTab("Overview")} />}
       </div>
     </div>
   );
