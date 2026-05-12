@@ -3,7 +3,7 @@ import type { ChangeEvent, KeyboardEvent } from "react";
 import { Camera, Download, ExternalLink, ImagePlus, Plus, Trash2, X } from "lucide-react";
 import { api } from "../../lib/api";
 
-type OptionStatus = "RECOMMENDED" | "OPTION" | "SHORTLISTED" | "NOT_AVAILABLE";
+type OptionStatus = "RECOMMENDED" | "RESEARCHED" | "OPTION" | "SHORTLISTED" | "NOT_AVAILABLE";
 type OptionAvailability = "AVAILABLE" | "UNAVAILABLE" | "TBC" | "UNKNOWN";
 type ViewMode = "internal" | "client";
 
@@ -55,8 +55,9 @@ interface OptionsBoard {
   categories: OptionsCategory[];
 }
 
-const STATUS_ORDER: OptionStatus[] = ["OPTION", "RECOMMENDED", "SHORTLISTED", "NOT_AVAILABLE"];
+const STATUS_ORDER: OptionStatus[] = ["RESEARCHED", "OPTION", "SHORTLISTED", "RECOMMENDED", "NOT_AVAILABLE"];
 const AVAILABILITY_ORDER: OptionAvailability[] = ["UNKNOWN", "AVAILABLE", "TBC", "UNAVAILABLE"];
+const CLIENT_VISIBLE_STATUSES: OptionStatus[] = ["RECOMMENDED", "OPTION", "SHORTLISTED"];
 const EMOJIS = ["📍", "🌸", "🍽", "🎹", "📷", "🌿", "🏛", "🚗", "✈️", "🎨", "🎭", "💐", "🍷", "🎬", "🎤"];
 const COMMON_CATEGORIES = [
   { name: "Locations", emoji: "📍" },
@@ -71,6 +72,7 @@ function today(): string {
 
 function statusClass(status: OptionStatus): string {
   if (status === "RECOMMENDED") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "RESEARCHED") return "border-violet-200 bg-violet-50 text-violet-700";
   if (status === "SHORTLISTED") return "border-amber-200 bg-amber-50 text-amber-700";
   if (status === "NOT_AVAILABLE") return "border-red-200 bg-red-50 text-red-700";
   return "border-blue-200 bg-blue-50 text-blue-700";
@@ -83,9 +85,8 @@ function availabilityClass(value: OptionAvailability): string {
   return "text-gray-400";
 }
 
-function nextValue<T extends string>(values: readonly T[], current: T): T {
-  const index = values.indexOf(current);
-  return values[(index + 1) % values.length];
+function label(value: string): string {
+  return value.replace(/_/g, " ").toLowerCase();
 }
 
 interface EditableCellProps {
@@ -155,7 +156,7 @@ function ClientCard({ option, emoji }: { option: BoardOption; emoji: string | nu
         {option.subtitle && <p className="mt-1 text-xs text-gray-500">{option.subtitle}</p>}
         {option.clientNotes && <p className="mt-2 text-xs leading-6 text-gray-600">{option.clientNotes}</p>}
         <div className="mt-3 flex items-center justify-between gap-2">
-          <span className={`rounded border px-2 py-1 text-[10px] font-semibold ${statusClass(option.status)}`}>{option.status.replace(/_/g, " ")}</span>
+          <span className={`rounded border px-2 py-1 text-[10px] font-semibold uppercase ${statusClass(option.status)}`}>{label(option.status)}</span>
           {option.website && (
             <a href={option.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-700">
               Visit <ExternalLink size={12} />
@@ -241,6 +242,52 @@ function NotePreview({ label, value, onClick }: { label: string; value: string |
     >
       <span className="truncate">{value?.trim() || label}</span>
     </button>
+  );
+}
+
+function PillDropdown<T extends string>({ value, options, onChange, classNameForValue }: {
+  value: T;
+  options: readonly T[];
+  onChange: (value: T) => Promise<void>;
+  classNameForValue: (value: T) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function close(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((current) => !current)}
+        className={`inline-flex min-h-7 items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${classNameForValue(value)}`}
+      >
+        {label(value)}
+        <span className="text-[9px] opacity-60">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-[142px] overflow-hidden rounded-md border border-gray-200 bg-white p-1 shadow-lg">
+          {options.map((option) => (
+            <button
+              key={option}
+              onClick={() => {
+                setOpen(false);
+                void onChange(option);
+              }}
+              className={`mb-1 flex w-full items-center rounded border px-2 py-1.5 text-left text-[10px] font-semibold uppercase last:mb-0 ${option === value ? classNameForValue(option) : "border-transparent text-gray-600 hover:bg-gray-50"}`}
+            >
+              {label(option)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -545,8 +592,8 @@ function InternalTable({ category, onUpdateCategory, onAddOption, onUpdateOption
           <EditableCell value={option.name} onSave={(name) => onUpdateOption(option.id, { name })} className="font-semibold text-gray-900" placeholder="Name" />
           <EditableCell value={option.subtitle ?? ""} onSave={(subtitle) => onUpdateOption(option.id, { subtitle })} className="text-gray-500" placeholder="Subtitle" />
           <EditableCell value={option.rate?.toString() ?? ""} type="number" onSave={(rate) => onUpdateOption(option.id, { rate: rate ? Number(rate) : null })} className="text-right tabular-nums text-gray-700" placeholder="£0" />
-          <button onClick={() => onUpdateOption(option.id, { status: nextValue(STATUS_ORDER, option.status) })} className={`w-fit rounded border px-2 py-1 text-[10px] font-semibold ${statusClass(option.status)}`}>{option.status.replace(/_/g, " ")}</button>
-          <button onClick={() => onUpdateOption(option.id, { isAvailable: nextValue(AVAILABILITY_ORDER, option.isAvailable) })} className={`text-left text-xs font-medium ${availabilityClass(option.isAvailable)}`}>{option.isAvailable.replace(/_/g, " ")}</button>
+          <PillDropdown value={option.status} options={STATUS_ORDER} onChange={(status) => onUpdateOption(option.id, { status })} classNameForValue={statusClass} />
+          <PillDropdown value={option.isAvailable} options={AVAILABILITY_ORDER} onChange={(isAvailable) => onUpdateOption(option.id, { isAvailable })} classNameForValue={(availability) => `border-transparent bg-transparent ${availabilityClass(availability)}`} />
           <NotePreview label="Internal notes" value={option.internalNotes} onClick={() => setNoteEditor({ option, field: "internalNotes" })} />
           <NotePreview label="Client notes" value={option.clientNotes} onClick={() => setNoteEditor({ option, field: "clientNotes" })} />
           {option.website ? <a href={option.website} target="_blank" rel="noreferrer" className="truncate text-blue-700">{option.website}</a> : <EditableCell value="" onSave={(website) => onUpdateOption(option.id, { website })} className="text-gray-300" placeholder="Website" />}
@@ -594,7 +641,7 @@ function ClientPresentation({ board, category }: { board: OptionsBoard; category
       </div>
       <div className="space-y-8">
         {groups.map((group) => {
-          const options = category.options.filter((option) => group.statuses.includes(option.status) && option.status !== "NOT_AVAILABLE");
+          const options = category.options.filter((option) => group.statuses.includes(option.status) && CLIENT_VISIBLE_STATUSES.includes(option.status));
           if (options.length === 0) return null;
           return (
             <section key={group.label}>

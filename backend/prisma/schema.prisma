@@ -398,6 +398,7 @@ model OptionPhoto {
 
 enum OptionStatus {
   RECOMMENDED
+  RESEARCHED
   OPTION
   SHORTLISTED
   NOT_AVAILABLE

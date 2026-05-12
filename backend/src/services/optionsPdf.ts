@@ -17,13 +17,17 @@ export type OptionsPdfBoard = Prisma.OptionsBoardGetPayload<{
   };
 }>;
 
-const STATUS_LABELS: Record<Exclude<OptionStatus, "NOT_AVAILABLE">, string> = {
+type ClientOptionStatus = "RECOMMENDED" | "OPTION" | "SHORTLISTED";
+
+const CLIENT_STATUSES: ClientOptionStatus[] = ["RECOMMENDED", "OPTION", "SHORTLISTED"];
+
+const STATUS_LABELS: Record<ClientOptionStatus, string> = {
   RECOMMENDED: "RECOMMENDED",
   OPTION: "OPTION",
   SHORTLISTED: "SHORTLISTED",
 };
 
-const STATUS_COLORS: Record<Exclude<OptionStatus, "NOT_AVAILABLE">, string> = {
+const STATUS_COLORS: Record<ClientOptionStatus, string> = {
   RECOMMENDED: "#16a34a",
   OPTION: "#2563eb",
   SHORTLISTED: "#d97706",
@@ -35,6 +39,7 @@ function pageDate(): string {
 
 function optionOrder(status: OptionStatus): number {
   if (status === "RECOMMENDED") return 0;
+  if (status === "RESEARCHED") return 3;
   if (status === "OPTION") return 1;
   if (status === "SHORTLISTED") return 2;
   return 3;
@@ -75,7 +80,7 @@ function drawPhoto(doc: PDFKit.PDFDocument, path: string | undefined, x: number,
   }
 }
 
-function drawStatusBadge(doc: PDFKit.PDFDocument, status: Exclude<OptionStatus, "NOT_AVAILABLE">, x: number, y: number): void {
+function drawStatusBadge(doc: PDFKit.PDFDocument, status: ClientOptionStatus, x: number, y: number): void {
   const label = STATUS_LABELS[status];
   const width = doc.widthOfString(label) + 14;
   doc.roundedRect(x, y, width, 16, 4).fill(STATUS_COLORS[status]);
@@ -94,7 +99,7 @@ function drawOption(doc: PDFKit.PDFDocument, option: OptionsPdfBoard["categories
   const textX = x + 144;
   const textWidth = width - 158;
   doc.font("Helvetica-Bold").fontSize(12).fillColor("#1a1a1f").text(option.name, textX, rowY + 12, { width: textWidth - 96 });
-  drawStatusBadge(doc, option.status as Exclude<OptionStatus, "NOT_AVAILABLE">, x + width - 112, rowY + 12);
+  drawStatusBadge(doc, option.status as ClientOptionStatus, x + width - 112, rowY + 12);
 
   if (option.subtitle) {
     doc.font("Helvetica").fontSize(9).fillColor("#666").text(option.subtitle, textX, rowY + 30, { width: textWidth });
@@ -123,7 +128,7 @@ export async function renderOptionsPdf(board: OptionsPdfBoard): Promise<Buffer> 
     .map((category) => ({
       ...category,
       options: category.options
-        .filter((option) => option.status !== "NOT_AVAILABLE")
+        .filter((option) => CLIENT_STATUSES.includes(option.status as ClientOptionStatus))
         .slice()
         .sort((a, b) => optionOrder(a.status) - optionOrder(b.status) || a.order - b.order),
     }))
@@ -151,7 +156,7 @@ export async function renderOptionsPdf(board: OptionsPdfBoard): Promise<Buffer> 
       .text(`${category.emoji ? `${category.emoji}  ` : ""}${category.name.toUpperCase()}`, 62, y + 9);
     y += 48;
 
-    for (const status of ["RECOMMENDED", "OPTION", "SHORTLISTED"] as const) {
+    for (const status of CLIENT_STATUSES) {
       const group = category.options.filter((option) => option.status === status);
       if (group.length === 0) continue;
       y = ensureSpace(doc, y, 28);
