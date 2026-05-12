@@ -319,10 +319,99 @@ model Production {
   emailDrafts            EmailDraft[]
   receiptCaptures        ReceiptCapture[]
   calendarEvents         CalendarEvent[]
+  optionsBoard           OptionsBoard?
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 
   @@map("pms_productions")
+}
+
+model OptionsBoard {
+  id           String            @id @default(uuid())
+  productionId String            @unique
+  title        String            @default("Options")
+  categories   OptionsCategory[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  production Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  @@map("pms_options_boards")
+}
+
+model OptionsCategory {
+  id        String   @id @default(uuid())
+  boardId   String
+  name      String
+  emoji     String?
+  order     Int      @default(0)
+  options   Option[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  board OptionsBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@map("pms_options_categories")
+}
+
+model Option {
+  id            String             @id @default(uuid())
+  categoryId    String
+  name          String
+  subtitle      String?
+  website       String?
+  contactName   String?
+  contactEmail  String?
+  contactPhone  String?
+  rate          Float?
+  rateUnit      String?
+  currency      String             @default("GBP")
+  status        OptionStatus       @default(OPTION)
+  isAvailable   OptionAvailability @default(UNKNOWN)
+  internalNotes String?
+  clientNotes   String?
+  photos        OptionPhoto[]
+  order         Int                @default(0)
+  libraryEntryId String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  category OptionsCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@map("pms_options")
+}
+
+model OptionPhoto {
+  id         String   @id @default(uuid())
+  optionId   String
+  filename   String
+  storedPath String
+  sizeBytes  Int
+  order      Int      @default(0)
+  caption    String?
+  createdAt  DateTime @default(now())
+
+  option Option @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@map("pms_option_photos")
+}
+
+enum OptionStatus {
+  RECOMMENDED
+  OPTION
+  SHORTLISTED
+  NOT_AVAILABLE
+
+  @@map("pms_option_status")
+}
+
+enum OptionAvailability {
+  AVAILABLE
+  UNAVAILABLE
+  TBC
+  UNKNOWN
+
+  @@map("pms_option_availability")
 }
 
 model ProductionDate {

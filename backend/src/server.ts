@@ -18,6 +18,7 @@ import emailRoutes, { googleOAuthCallbackHandler } from "./routes/email";
 import receiptsRoutes from "./routes/receipts";
 import calendarRoutes from "./routes/calendar";
 import settingsRoutes from "./routes/settings";
+import optionsRoutes from "./routes/options";
 import { requireAuth } from "./middleware/auth";
 
 const PgSession = connectPgSimple(session);
@@ -76,6 +77,7 @@ export function createServer() {
   app.use("/api/receipts", requireAuth, receiptsRoutes);
   app.use("/api/calendar", requireAuth, calendarRoutes);
   app.use("/api/settings", requireAuth, settingsRoutes);
+  app.use("/api/options", requireAuth, optionsRoutes);
 
   return app;
 }
