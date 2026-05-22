@@ -1,3 +1,61 @@
+# HANDOVER - 2026-05-22 - Options Contact Sync / Blackbook Email Model
+
+## Built This Session
+- Added compact email/phone display to Options candidate rows.
+- Contact details render under the option title/Blackbook link so the sheet does not gain another wide column.
+- Clicking the contact line opens a small contact details popover.
+- Option candidate contact edits now update the row snapshot and, when linked, sync back to the linked Blackbook entry:
+  - `contactEmail` -> `BlackbookEntry.email`
+  - `contactPhone` -> `BlackbookEntry.phone`
+- The contact popover shows "syncs to Blackbook" when a candidate is linked to a Blackbook record.
+
+## How Email Is Stored For Blackbook
+- Blackbook records store the primary reusable contact fields directly on `pms_blackbook_entries`:
+  - `email`
+  - `phone`
+- Gmail/email messages are not duplicated onto Blackbook records.
+- Email activity is resolved dynamically by matching Blackbook email addresses against Gmail-synced rows in `pms_email_messages`.
+- The Blackbook CRM/activity endpoint also includes company/people context where available, then builds the timeline from matching email messages, options, opportunities, and productions.
+- This keeps Gmail as the message source of truth and Blackbook as the contact/source-of-truth profile.
+
+## Backend
+- Updated `backend/src/routes/options.ts`.
+- `PATCH /api/options/matrix/candidates/:candidateId` now writes changed email/phone values back to a linked `BlackbookEntry`.
+- Existing Blackbook-to-option link behaviour still snapshots Blackbook details into the option row.
+- Two-way behaviour is now:
+  - Link Blackbook -> option row receives email/phone.
+  - Edit option row email/phone -> linked Blackbook entry is updated.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Added `CandidateContactCell` for compact row-level email/phone display and editing.
+- Existing candidate sheet column sizing/order is otherwise unchanged.
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
+
+## Current State
+- Blackbook remains the source of truth for reusable contact email/phone.
+- Option candidates keep a deck snapshot for stability but now push edited email/phone back to the linked Blackbook record.
+- Email timelines continue to be resolved from Gmail-synced messages by address matching.
+
+## Known Gaps / Technical Debt
+- Blackbook still has one primary email and one primary phone field. Multiple emails/phones would need a dedicated related table if required.
+- Option rows show contact details compactly, but PDF/export rendering of contact info remains a separate design decision.
+- Existing Gmail messages are matched by address; changing a Blackbook email changes future matching based on that new address.
+
+## Exact Next Steps
+1. Decide whether Blackbook needs multiple email/phone records per person/company.
+2. Decide whether option deck PDFs should expose contact details, and under which view/template.
+3. Add multi-address/multi-contact history if you need old email addresses to keep matching previous email activity.
+
+---
+
 # HANDOVER - 2026-05-22 - Google Places Address Picker for Options / Blackbook
 
 ## Built This Session

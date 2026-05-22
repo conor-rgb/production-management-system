@@ -1636,6 +1636,17 @@ router.patch("/matrix/candidates/:candidateId", async (req: Request, res: Respon
   if (body.clientNotes !== undefined) data.clientNotes = body.clientNotes;
   if (body.order !== undefined) data.order = body.order;
   const candidate = await prisma.optionCandidate.update({ where: { id: req.params.candidateId }, data });
+
+  if (candidate.blackbookEntryId && (body.contactEmail !== undefined || body.contactPhone !== undefined)) {
+    await prisma.blackbookEntry.update({
+      where: { id: candidate.blackbookEntryId },
+      data: {
+        email: body.contactEmail !== undefined ? optionalText(body.contactEmail)?.toLowerCase() ?? null : undefined,
+        phone: body.contactPhone !== undefined ? optionalText(body.contactPhone) : undefined,
+      },
+    });
+  }
+
   res.json(await matrixResponse(candidate.productionId));
 });
 

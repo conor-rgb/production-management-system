@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowLeft, BookOpen, Download, ExternalLink, FileText, Globe, Image as ImageIcon, Plus, Share2, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Download, ExternalLink, FileText, Globe, Image as ImageIcon, Mail, Phone, Plus, Share2, Trash2, Upload, X } from "lucide-react";
 import { api } from "../../lib/api";
 import { COUNTRY_OPTIONS, countryName } from "../../lib/countries";
 import BlackbookOverlay from "../blackbook/BlackbookOverlay";
@@ -1441,6 +1441,7 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
           <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
           {candidate.subtitle && <span className="truncate text-[11px] text-gray-400">{candidate.subtitle}</span>}
         </div>
+        <CandidateContactCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />
       </div>
       {dates.map((date) => {
         const status = statusFor(candidate, date.id)?.status ?? null;
@@ -1485,6 +1486,106 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
         </button>
         <button onClick={() => onDeleteCandidate(candidate.id)} title="Delete" className="grid h-7 w-4 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={12} /></button>
       </div>
+    </div>
+  );
+}
+
+function CandidateContactCell({ candidate, onUpdate }: {
+  candidate: OptionCandidate;
+  onUpdate: (patch: Partial<OptionCandidate>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [emailDraft, setEmailDraft] = useState(candidate.contactEmail ?? candidate.blackbookEntry?.email ?? "");
+  const [phoneDraft, setPhoneDraft] = useState(candidate.contactPhone ?? candidate.blackbookEntry?.phone ?? "");
+  const ref = useRef<HTMLDivElement | null>(null);
+  const email = candidate.contactEmail ?? candidate.blackbookEntry?.email ?? "";
+  const phone = candidate.contactPhone ?? candidate.blackbookEntry?.phone ?? "";
+  const hasContact = Boolean(email || phone);
+
+  useEffect(() => {
+    setEmailDraft(candidate.contactEmail ?? candidate.blackbookEntry?.email ?? "");
+    setPhoneDraft(candidate.contactPhone ?? candidate.blackbookEntry?.phone ?? "");
+  }, [candidate.contactEmail, candidate.contactPhone, candidate.blackbookEntry?.email, candidate.blackbookEntry?.phone]);
+
+  useEffect(() => {
+    function close(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  async function save() {
+    const nextEmail = emailDraft.trim();
+    const nextPhone = phoneDraft.trim();
+    if (nextEmail === email && nextPhone === phone) {
+      setOpen(false);
+      return;
+    }
+    await onUpdate({
+      contactEmail: nextEmail || null,
+      contactPhone: nextPhone || null,
+    });
+    setOpen(false);
+  }
+
+  return (
+    <div ref={ref} className="relative mt-1 min-w-0">
+      <button
+        onClick={() => setOpen(true)}
+        className={`flex max-w-full items-center gap-2 text-left text-[10.5px] ${hasContact ? "text-gray-500" : "text-gray-300"} hover:text-gray-900`}
+        title={hasContact ? "Edit contact details" : "Add contact details"}
+      >
+        {email ? (
+          <span className="inline-flex min-w-0 items-center gap-1">
+            <Mail size={11} className="shrink-0" />
+            <span className="truncate">{email}</span>
+          </span>
+        ) : null}
+        {phone ? (
+          <span className="inline-flex min-w-0 items-center gap-1">
+            <Phone size={11} className="shrink-0" />
+            <span className="truncate">{phone}</span>
+          </span>
+        ) : null}
+        {!hasContact && <span>+ contact</span>}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-[300px] rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Contact details</div>
+            {candidate.blackbookEntryId && <div className="text-[10px] text-gray-400">syncs to Blackbook</div>}
+          </div>
+          <label className="mb-2 block text-[11px] text-gray-500">
+            Email
+            <input
+              value={emailDraft}
+              onChange={(event) => setEmailDraft(event.target.value)}
+              placeholder="email@example.com"
+              className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1.5 text-[12px] text-gray-800 outline-none focus:border-gray-400"
+            />
+          </label>
+          <label className="mb-3 block text-[11px] text-gray-500">
+            Phone
+            <input
+              value={phoneDraft}
+              onChange={(event) => setPhoneDraft(event.target.value)}
+              placeholder="+44..."
+              className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1.5 text-[12px] text-gray-800 outline-none focus:border-gray-400"
+            />
+          </label>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 gap-2">
+              {email && <a href={`mailto:${email}`} className="text-[11px] text-gray-500 underline underline-offset-2">email</a>}
+              {phone && <a href={`tel:${phone}`} className="text-[11px] text-gray-500 underline underline-offset-2">call</a>}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setOpen(false)} className="rounded px-2 py-1 text-[11px] text-gray-500 hover:bg-gray-50">Cancel</button>
+              <button onClick={() => { save().catch(console.error); }} className="rounded bg-gray-900 px-3 py-1.5 text-[11px] font-medium text-white">Done</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
