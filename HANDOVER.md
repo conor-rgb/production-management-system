@@ -1,8 +1,13 @@
 # HANDOVER - 2026-05-22 - Options Contact Sync / Blackbook Email Model
 
 ## Built This Session
+- Follow-up contact column correction:
+  - Contact details now have their own `Contact` column between the date status columns and Deck notes.
+  - Email and phone render stacked as plain text with small icons, not as visible text boxes.
+  - The option identity cell is back to name, Blackbook link, and subtitle only.
+  - Clicking the contact text still opens the compact edit popover.
 - Added compact email/phone display to Options candidate rows.
-- Contact details render under the option title/Blackbook link so the sheet does not gain another wide column.
+- Contact details render in a dedicated narrow Contact column.
 - Clicking the contact line opens a small contact details popover.
 - Option candidate contact edits now update the row snapshot and, when linked, sync back to the linked Blackbook entry:
   - `contactEmail` -> `BlackbookEntry.email`

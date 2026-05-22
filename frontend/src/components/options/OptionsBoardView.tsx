@@ -1233,9 +1233,9 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   const [dragCandidateId, setDragCandidateId] = useState<string | null>(null);
   const [dropCandidateId, setDropCandidateId] = useState<string | null>(null);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
-  const gridColumns = `56px 320px ${dates.map(() => "92px").join(" ")} 230px 170px 82px 240px 58px 88px 34px`;
+  const gridColumns = `56px 320px ${dates.map(() => "92px").join(" ")} 150px 230px 170px 82px 240px 58px 88px 34px`;
   const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
-  const minimumSheetWidth = 1246 + (dates.length * 92);
+  const minimumSheetWidth = 1396 + (dates.length * 92);
 
   function setSort(nextKey: CandidateSortKey) {
     if (sortKey === nextKey) {
@@ -1289,6 +1289,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
               </SortHeader>
             );
           })}
+          <div>Contact</div>
           <SortHeader sort="notes">Deck notes</SortHeader>
           <div>Internal</div>
           <SortHeader sort="links" align="center">Links</SortHeader>
@@ -1441,7 +1442,6 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
           <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
           {candidate.subtitle && <span className="truncate text-[11px] text-gray-400">{candidate.subtitle}</span>}
         </div>
-        <CandidateContactCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />
       </div>
       {dates.map((date) => {
         const status = statusFor(candidate, date.id)?.status ?? null;
@@ -1458,6 +1458,7 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
           </div>
         );
       })}
+      <CandidateContactCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />
       <NoteCell
         value={candidate.clientNotes ?? ""}
         onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })}
@@ -1530,20 +1531,20 @@ function CandidateContactCell({ candidate, onUpdate }: {
   }
 
   return (
-    <div ref={ref} className="relative mt-1 min-w-0">
+    <div ref={ref} className="relative min-w-0">
       <button
         onClick={() => setOpen(true)}
-        className={`flex max-w-full items-center gap-2 text-left text-[10.5px] ${hasContact ? "text-gray-500" : "text-gray-300"} hover:text-gray-900`}
+        className={`block max-w-full text-left text-[10.5px] leading-4 ${hasContact ? "text-gray-500" : "text-gray-300"} hover:text-gray-900`}
         title={hasContact ? "Edit contact details" : "Add contact details"}
       >
         {email ? (
-          <span className="inline-flex min-w-0 items-center gap-1">
+          <span className="flex min-w-0 items-center gap-1">
             <Mail size={11} className="shrink-0" />
             <span className="truncate">{email}</span>
           </span>
         ) : null}
         {phone ? (
-          <span className="inline-flex min-w-0 items-center gap-1">
+          <span className="flex min-w-0 items-center gap-1">
             <Phone size={11} className="shrink-0" />
             <span className="truncate">{phone}</span>
           </span>
