@@ -4,6 +4,10 @@
 - Follow-up Options candidate sheet design pass:
   - Candidate sheets now sit on a cleaner bordered sheet surface instead of a raw grid on white.
   - Reworked candidate sheet column widths to a constrained readable table width so related fields stay visually grouped on wide screens.
+  - Reordered candidate sheet columns so date availability appears immediately after the option identity, followed by deck notes.
+  - Links now render as discreet icons only; clicking an icon opens its URL in a new tab.
+  - Right-clicking anywhere in the Links cell opens the links editor modal.
+  - Removed the visible Links button treatment from candidate rows.
   - Tightened row height, image thumbnails, link controls, address display, rate cells, and action controls.
   - Blackbook link now sits beneath the option name as secondary metadata, reducing horizontal crowding.
   - Address cells now clamp to a compact multi-line preview.

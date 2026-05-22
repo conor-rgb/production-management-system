@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowLeft, BookOpen, Download, Image as ImageIcon, Link2, Plus, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Download, ExternalLink, FileText, Globe, Image as ImageIcon, Link2, Plus, Share2, Trash2, Upload, X } from "lucide-react";
 import { api } from "../../lib/api";
 import { COUNTRY_OPTIONS, countryName } from "../../lib/countries";
 import BlackbookOverlay from "../blackbook/BlackbookOverlay";
@@ -1182,7 +1182,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   const [dragCandidateId, setDragCandidateId] = useState<string | null>(null);
   const [dropCandidateId, setDropCandidateId] = useState<string | null>(null);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
-  const gridColumns = `56px 300px 220px 92px 240px 58px 88px ${dates.map(() => "86px").join(" ")} 34px`;
+  const gridColumns = `56px 300px ${dates.map(() => "86px").join(" ")} 220px 82px 240px 58px 88px 34px`;
   const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
   const minimumSheetWidth = 1088 + (dates.length * 86);
 
@@ -1229,11 +1229,6 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
         <div className="sticky top-0 z-20 grid h-8 items-center gap-x-2 border-b border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
           <button onClick={() => setSort("manual")} className={`pl-1 text-left ${sortKey === "manual" ? "font-semibold text-gray-700" : ""}`}>Img{sortKey === "manual" ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}</button>
           <SortHeader sort="name">Option</SortHeader>
-          <SortHeader sort="notes">Notes</SortHeader>
-          <SortHeader sort="links">Links</SortHeader>
-          <div>Address</div>
-          <SortHeader sort="rate" align="right">Rate</SortHeader>
-          <SortHeader sort="state">State</SortHeader>
           {dates.map((date) => {
             const parts = compactDateLabel(date);
             return (
@@ -1243,6 +1238,11 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
               </SortHeader>
             );
           })}
+          <SortHeader sort="notes">Notes</SortHeader>
+          <SortHeader sort="links" align="center">Links</SortHeader>
+          <div>Address</div>
+          <SortHeader sort="rate" align="right">Rate</SortHeader>
+          <SortHeader sort="state">State</SortHeader>
           <div />
         </div>
         {candidates.map((candidate) => (
@@ -1390,11 +1390,6 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
           {candidate.subtitle && <span className="truncate text-[11px] text-gray-400">{candidate.subtitle}</span>}
         </div>
       </div>
-      <EditableText value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} className="text-[11px] text-gray-500" placeholder="Deck note" />
-      <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />
-      <CandidateAddressCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />
-      <EditableText value={candidate.rate && candidate.rate > 0 ? candidate.rate.toString() : ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className={`pr-1 text-right tabular-nums ${candidate.rate && candidate.rate > 0 ? "text-gray-700" : "text-gray-300"}`} placeholder="—" />
-      <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />
       {dates.map((date) => {
         const status = statusFor(candidate, date.id)?.status ?? null;
         return (
@@ -1410,6 +1405,11 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
           </div>
         );
       })}
+      <EditableText value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} className="text-[11px] text-gray-500" placeholder="Deck note" />
+      <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />
+      <CandidateAddressCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />
+      <EditableText value={candidate.rate && candidate.rate > 0 ? candidate.rate.toString() : ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className={`pr-1 text-right tabular-nums ${candidate.rate && candidate.rate > 0 ? "text-gray-700" : "text-gray-300"}`} placeholder="—" />
+      <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />
       <div className="flex items-center justify-center gap-0.5 opacity-45 transition hover:opacity-100">
         <button
           draggable
@@ -1435,13 +1435,15 @@ function CandidateLinksCell({ candidate, onUpdate, onUploadPdf }: {
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
-  const links = [
-    candidate.website ? "Website" : null,
-    candidate.bookUrl ? "Book" : null,
-    candidate.socialUrl ? "Social" : null,
-    candidate.modelsComUrl ? "MDC" : null,
-    candidate.pdfUrl ? "PDF" : null,
-  ].filter((item): item is string => Boolean(item));
+  type CandidateLink = { key: string; label: string; href: string; icon: ReactNode };
+  const maybeLinks: Array<CandidateLink | null> = [
+    candidate.website ? { key: "website", label: "Website", href: candidate.website, icon: <Globe size={13} /> } : null,
+    candidate.bookUrl ? { key: "book", label: "Book", href: candidate.bookUrl, icon: <BookOpen size={13} /> } : null,
+    candidate.socialUrl ? { key: "social", label: "Social", href: candidate.socialUrl, icon: <Share2 size={13} /> } : null,
+    candidate.modelsComUrl ? { key: "models", label: "models.com", href: candidate.modelsComUrl, icon: <ExternalLink size={13} /> } : null,
+    candidate.pdfUrl ? { key: "pdf", label: "PDF", href: candidate.pdfUrl, icon: <FileText size={13} /> } : null,
+  ];
+  const links = maybeLinks.filter((item): item is CandidateLink => item !== null);
 
   useEffect(() => {
     function close(event: MouseEvent) {
@@ -1467,16 +1469,35 @@ function CandidateLinksCell({ candidate, onUpdate, onUploadPdf }: {
 
   return (
     <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((current) => !current)}
-        className={`inline-flex h-7 max-w-full items-center gap-1 rounded-md border px-2 text-[9px] font-semibold uppercase tracking-[0.03em] ${
-          links.length ? "border-gray-300 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-400"
-        }`}
+      <div
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setOpen(true);
+        }}
+        title={links.length ? "Click an icon to open. Right-click to edit links." : "Right-click to add links."}
+        className="flex min-h-7 items-center justify-center gap-1 rounded-md px-1 text-gray-400 hover:bg-gray-50"
       >
-        <span className="truncate">{links.length ? links.slice(0, 2).join(" · ") : "links"}</span>
-        {links.length > 2 && <span className="opacity-60">+{links.length - 2}</span>}
-        <span className="text-[9px] opacity-60">▾</span>
-      </button>
+        {links.length ? links.map((link) => (
+          <a
+            key={link.key}
+            href={link.href}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={link.label}
+            title={link.label}
+            onClick={(event) => event.stopPropagation()}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setOpen(true);
+            }}
+            className="grid h-6 w-6 place-items-center rounded text-gray-500 hover:bg-white hover:text-gray-900 hover:shadow-sm"
+          >
+            {link.icon}
+          </a>
+        )) : (
+          <span className="text-[10px] uppercase tracking-[0.04em] text-gray-300">none</span>
+        )}
+      </div>
       {open && (
         <div className="absolute left-0 top-full z-50 mt-1 w-[320px] rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
           <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Deck links</div>
