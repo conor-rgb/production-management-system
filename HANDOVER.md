@@ -68,6 +68,9 @@
 - `pm2 reload 0` completed.
 - Health check passed:
   - `GET /api/health` returned `{"status":"ok"}`.
+- Follow-up fix:
+  - Google initially rejected requests because Node used the server IPv6 egress address while the key was restricted to IPv4.
+  - `googlePlacesService.ts` now sets DNS result order to `ipv4first`, matching the configured Google Cloud IP restriction.
 
 ## Current State
 - Google Places is ready for production use from the backend.

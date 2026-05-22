@@ -1,3 +1,7 @@
+import dns from "node:dns";
+
+dns.setDefaultResultOrder("ipv4first");
+
 const PLACES_API = "https://places.googleapis.com/v1";
 
 type GoogleText = {
