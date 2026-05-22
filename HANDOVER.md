@@ -1,56 +1,64 @@
-# HANDOVER - 2026-05-22 - Blackbook Company/People Linking Pass
+# HANDOVER - 2026-05-22 - Blackbook Target List Workflow Pass
 
 ## Built This Session
-- Added the missing company/person management UI to the Blackbook overlay.
-- Person records now have a Company panel:
-  - shows the linked company record
-  - opens the linked company when clicked
-  - detaches the person from the company
-  - searches existing company Blackbook entries
-  - creates a new company and immediately attaches the person
-- Company records now have a People panel:
-  - lists attached people
-  - opens a person record when clicked
-  - detaches people from the company
-  - searches existing person Blackbook entries and attaches them
-  - creates a new person directly under the company
-- New people created under a company inherit the company category, type tags, lifecycle status, and company name.
-- Company-level CRM activity continues to aggregate email messages from attached people, so linking people to companies now improves the company comms view immediately.
+- Added the operational target-list workflow to the Blackbook CRM page.
+- Target lists can now be created from the left sidebar.
+- Selecting a target list now turns the main table into an outreach workflow view.
+- Existing Blackbook records can be searched and added to the selected target list.
+- New records created while a target list is selected are automatically added to that list.
+- Each target-list row now supports:
+  - outreach status
+  - next follow-up date
+  - outreach notes
+  - remove from list
+- Target lists can be archived from the selected-list toolbar.
+- Existing company/person linking from the previous pass remains in the Blackbook overlay.
 
 ## Schema
 - No schema changes in this pass.
-- Uses the existing `BlackbookEntry.companyEntryId` self-relation from the unified CRM migration.
+- Uses the existing `BlackbookTargetList` and `BlackbookTargetListEntry` models from the unified CRM migration.
 
 ## Backend
-- No backend code changes in this pass.
-- Reused existing endpoints:
-  - `GET /api/options/blackbook?entryType=COMPANY`
-  - `GET /api/options/blackbook?entryType=PERSON`
-  - `POST /api/options/blackbook`
-  - `PATCH /api/options/blackbook/:entryId`
-  - `GET /api/options/blackbook/:entryId/crm`
+- Added:
+  - `PATCH /api/options/blackbook/lists/:listId`
+  - `DELETE /api/options/blackbook/list-entries/:itemId`
+- Reused:
+  - `GET /api/options/blackbook/lists`
+  - `POST /api/options/blackbook/lists`
+  - `POST /api/options/blackbook/lists/:listId/entries`
+  - `PATCH /api/options/blackbook/list-entries/:itemId`
+  - `GET /api/options/blackbook?listId=...`
 
 ## Frontend
-- Updated `frontend/src/components/blackbook/BlackbookOverlay.tsx`.
-- Added `PersonCompanyManager`:
-  - attach existing company
-  - create and attach company
-  - detach company
-- Added `CompanyPeopleManager`:
-  - attach existing people
-  - create people under company
-  - detach people
-  - open linked person records from the company panel
-- Kept the existing Blackbook overlay design pattern: compact right-side CRM record, neutral panels, small controls, no new route.
+- Updated `frontend/src/pages/Contacts.tsx`.
+- Added selected-list toolbar:
+  - add existing Blackbook entry to list
+  - archive current list
+  - show entry count
+- Added outreach columns when a target list is selected:
+  - status dropdown
+  - follow-up date
+  - remove button
+  - notes row
+- Status styling follows the existing pill language:
+  - not contacted
+  - contacted
+  - replied
+  - follow-up
+  - not interested
+  - converted
+  - archived
 
 ## Verification
+- Backend build passed.
 - Frontend build passed.
 - Frontend copied to `/var/www/agent`.
 - PM2 process `0` reloaded.
 - Health check passed after reload.
 
 ## Known Gaps / Technical Debt
-- Target lists exist and can be filtered in the CRM page, but the UI still needs list creation and per-entry outreach status editing controls.
+- Outreach notes save on blur. This avoids a PATCH on every keystroke, but there is not yet a subtle saved indicator.
+- Target list archive is one-way in the UI. The backend keeps archived lists; a future Settings/Admin view can expose restoration.
 - Supplier contacts are currently a broad Blackbook view; the next pass should expose category/type filters directly so Crew, Location, Florist, Caterer, AV, Transport, etc. can be segmented cleanly.
 - Existing Contacts have not been bulk migrated into Blackbook yet.
 - The email overlay links to `?message=...`, but Email still needs the exact target-message expansion/minimise behaviour.
@@ -58,13 +66,9 @@
 - No Airtable-style template designer or client PDF options designer yet.
 
 ## Exact Next Steps
-1. Add target list UI:
-   - create target list
-   - add/remove entries
-   - edit outreach status
-   - next follow-up date
-2. Add category/type filters to the CRM list so supplier groups work as a proper blackbook.
-3. Bulk migrate existing Contacts into Blackbook and auto-link by email.
-4. Wire Email `?message=` behavior so a clicked activity opens the full thread with that message expanded.
-5. Add company-level notes/files once the activity model is settled.
+1. Add category/type filters to the CRM list so supplier groups work as a proper blackbook.
+2. Bulk migrate existing Contacts into Blackbook and auto-link by email.
+3. Wire Email `?message=` behavior so a clicked activity opens the full thread with that message expanded.
+4. Add company-level notes/files once the activity model is settled.
+5. Add saved indicators/toasts for target-list status, notes, and follow-up date updates.
 6. Then continue into the Blackbook-backed outreach workflow and PDF/template planning.

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import BlackbookOverlay from "../components/blackbook/BlackbookOverlay";
-import { Building2, ListPlus, Plus, Search, Users } from "lucide-react";
+import { Building2, ListPlus, Plus, Search, Trash2, Users } from "lucide-react";
 
 type BlackbookLifecycleStatus = "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT" | "SUPPLIER" | "PREFERRED_SUPPLIER" | "DO_NOT_USE" | "ARCHIVED";
 type BlackbookEntryType = "PERSON" | "COMPANY" | "LOCATION" | "TALENT" | "SERVICE";
+type BlackbookOutreachStatus = "NOT_CONTACTED" | "CONTACTED" | "REPLIED" | "FOLLOW_UP" | "NOT_INTERESTED" | "CONVERTED" | "ARCHIVED";
 type ViewKey = "ALL" | "TARGETS" | "IN_TOUCH" | "CLIENTS" | "SUPPLIERS" | "COMPANIES";
 
 interface BlackbookConfigCategory {
@@ -17,7 +18,15 @@ interface BlackbookTargetList {
   id: string;
   name: string;
   description: string | null;
-  entries: Array<{ id: string; status: string; entry: BlackbookEntry }>;
+  entries: BlackbookTargetListEntry[];
+}
+
+interface BlackbookTargetListEntry {
+  id: string;
+  status: BlackbookOutreachStatus;
+  notes: string | null;
+  nextFollowUpAt: string | null;
+  entry: BlackbookEntry;
 }
 
 interface BlackbookEntry {
@@ -71,6 +80,26 @@ function statusClass(status: BlackbookLifecycleStatus): string {
   return "border-gray-200 bg-gray-50 text-gray-400";
 }
 
+const OUTREACH_STATUS_LABELS: Record<BlackbookOutreachStatus, string> = {
+  NOT_CONTACTED: "Not contacted",
+  CONTACTED: "Contacted",
+  REPLIED: "Replied",
+  FOLLOW_UP: "Follow-up",
+  NOT_INTERESTED: "Not interested",
+  CONVERTED: "Converted",
+  ARCHIVED: "Archived",
+};
+
+function outreachClass(status: BlackbookOutreachStatus): string {
+  if (status === "NOT_CONTACTED") return "border-gray-200 bg-gray-50 text-gray-500";
+  if (status === "CONTACTED") return "border-sky-200 bg-sky-50 text-sky-700";
+  if (status === "REPLIED") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "FOLLOW_UP") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (status === "NOT_INTERESTED") return "border-red-200 bg-red-50 text-red-600";
+  if (status === "CONVERTED") return "border-violet-200 bg-violet-50 text-violet-700";
+  return "border-gray-200 bg-gray-50 text-gray-400";
+}
+
 export default function Contacts() {
   const [view, setView] = useState<ViewKey>("ALL");
   const [query, setQuery] = useState("");
@@ -82,6 +111,11 @@ export default function Contacts() {
   const [loading, setLoading] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [newEntryName, setNewEntryName] = useState("");
+  const [listSearch, setListSearch] = useState("");
+  const [listMatches, setListMatches] = useState<BlackbookEntry[]>([]);
+
+  const selectedList = useMemo(() => lists.find((list) => list.id === selectedListId) ?? null, [lists, selectedListId]);
+  const selectedListEntryMap = useMemo(() => new Map((selectedList?.entries ?? []).map((item) => [item.entry.id, item])), [selectedList]);
 
   const loadSettings = useCallback(async () => {
     const [categoryData, listData] = await Promise.all([
@@ -118,6 +152,10 @@ export default function Contacts() {
     suppliers: entries.filter((entry) => entry.lifecycleStatus === "SUPPLIER" || entry.lifecycleStatus === "PREFERRED_SUPPLIER").length,
   }), [entries]);
 
+  async function refreshAll() {
+    await Promise.all([loadSettings(), loadEntries()]);
+  }
+
   async function addList() {
     if (!newListName.trim()) return;
     await api.post("/api/options/blackbook/lists", { name: newListName.trim() });
@@ -138,7 +176,43 @@ export default function Contacts() {
     if (selectedListId) await api.post(`/api/options/blackbook/lists/${selectedListId}/entries`, { entryId: created.id });
     setNewEntryName("");
     setSelectedEntryId(created.id);
-    await loadEntries();
+    await refreshAll();
+  }
+
+  useEffect(() => {
+    if (!selectedListId || !listSearch.trim()) {
+      setListMatches([]);
+      return;
+    }
+    const params = new URLSearchParams({ q: listSearch, limit: "8" });
+    api.get<BlackbookEntry[]>(`/api/options/blackbook?${params.toString()}`)
+      .then((data) => setListMatches(data.filter((entry) => !selectedListEntryMap.has(entry.id))))
+      .catch(console.error);
+  }, [listSearch, selectedListEntryMap, selectedListId]);
+
+  async function addExistingToList(entryId: string) {
+    if (!selectedListId) return;
+    await api.post(`/api/options/blackbook/lists/${selectedListId}/entries`, { entryId });
+    setListSearch("");
+    setListMatches([]);
+    await refreshAll();
+  }
+
+  async function updateListEntry(itemId: string, patch: Partial<Pick<BlackbookTargetListEntry, "status" | "notes" | "nextFollowUpAt">>) {
+    await api.patch(`/api/options/blackbook/list-entries/${itemId}`, patch);
+    await refreshAll();
+  }
+
+  async function removeListEntry(itemId: string) {
+    await api.delete(`/api/options/blackbook/list-entries/${itemId}`);
+    await refreshAll();
+  }
+
+  async function archiveSelectedList() {
+    if (!selectedList) return;
+    await api.patch(`/api/options/blackbook/lists/${selectedList.id}`, { isArchived: true });
+    setSelectedListId(null);
+    await refreshAll();
   }
 
   return (
@@ -180,7 +254,7 @@ export default function Contacts() {
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex min-h-16 items-center justify-between border-b border-gray-200 px-5">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">{selectedListId ? lists.find((list) => list.id === selectedListId)?.name : VIEWS.find((item) => item.key === view)?.label}</h2>
+            <h2 className="text-base font-semibold text-gray-900">{selectedList ? selectedList.name : VIEWS.find((item) => item.key === view)?.label}</h2>
             <p className="text-xs text-gray-400">{counts.all} shown · {counts.targets} targets · {counts.clients} clients · {counts.suppliers} suppliers</p>
           </div>
           <div className="flex items-center gap-2">
@@ -188,6 +262,28 @@ export default function Contacts() {
             <button onClick={addEntry} className="inline-flex h-9 items-center gap-2 rounded-lg bg-gray-900 px-3 text-xs font-medium text-white"><Plus size={14} /> Add</button>
           </div>
         </div>
+        {selectedList && (
+          <div className="flex items-center justify-between gap-4 border-b border-gray-100 bg-[#fbfbfa] px-5 py-3">
+            <div className="relative w-[340px]">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input value={listSearch} onChange={(event) => setListSearch(event.target.value)} placeholder="Add existing person/company to this list..." className="h-9 w-full rounded-lg border border-gray-200 bg-white pl-8 pr-3 text-xs outline-none focus:border-gray-500" />
+              {listMatches.length > 0 && (
+                <div className="absolute left-0 right-0 top-10 z-20 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {listMatches.map((entry) => (
+                    <button key={entry.id} onClick={() => addExistingToList(entry.id)} className="block w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50">
+                      <p className="text-xs font-medium text-gray-900">{entry.displayName}</p>
+                      <p className="text-[11px] text-gray-400">{[entry.companyEntry?.displayName ?? entry.companyName, entry.email, entry.phone].filter(Boolean).join(" · ") || STATUS_LABELS[entry.lifecycleStatus]}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-3 text-xs text-gray-400">
+              <span>{selectedList.entries.length} entries</span>
+              <button onClick={archiveSelectedList} className="rounded border border-gray-200 px-2 py-1 text-[11px] text-gray-500 hover:border-red-200 hover:text-red-600">Archive list</button>
+            </div>
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-auto">
           {loading ? (
             <div className="grid h-full place-items-center text-sm text-gray-400">Loading Blackbook...</div>
@@ -202,7 +298,15 @@ export default function Contacts() {
           ) : (
             <div className="divide-y divide-gray-100">
               {entries.map((entry) => (
-                <BlackbookRow key={entry.id} entry={entry} categories={categories} onOpen={() => setSelectedEntryId(entry.id)} />
+                <BlackbookRow
+                  key={entry.id}
+                  entry={entry}
+                  categories={categories}
+                  listEntry={selectedListEntryMap.get(entry.id)}
+                  onOpen={() => setSelectedEntryId(entry.id)}
+                  onUpdateListEntry={updateListEntry}
+                  onRemoveListEntry={removeListEntry}
+                />
               ))}
             </div>
           )}
@@ -213,24 +317,68 @@ export default function Contacts() {
   );
 }
 
-function BlackbookRow({ entry, categories, onOpen }: { entry: BlackbookEntry; categories: BlackbookConfigCategory[]; onOpen: () => void }) {
+function BlackbookRow({
+  entry,
+  categories,
+  listEntry,
+  onOpen,
+  onUpdateListEntry,
+  onRemoveListEntry,
+}: {
+  entry: BlackbookEntry;
+  categories: BlackbookConfigCategory[];
+  listEntry?: BlackbookTargetListEntry;
+  onOpen: () => void;
+  onUpdateListEntry: (itemId: string, patch: Partial<Pick<BlackbookTargetListEntry, "status" | "notes" | "nextFollowUpAt">>) => Promise<void>;
+  onRemoveListEntry: (itemId: string) => Promise<void>;
+}) {
   const category = categories.find((item) => item.id === entry.categoryConfigId);
   const dietary = [...entry.dietaryFlags, ...entry.allergens, entry.dietaryNotes].filter(Boolean).join(" · ");
   return (
-    <button onClick={onOpen} className="grid w-full grid-cols-[36px_1fr_150px_150px] items-center gap-3 px-5 py-3 text-left hover:bg-[#f8f8f6]">
-      <div className="grid h-9 w-9 place-items-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
+    <div className={`grid w-full items-center gap-3 px-5 py-3 text-left hover:bg-[#f8f8f6] ${listEntry ? "grid-cols-[36px_1fr_150px_160px_140px_36px]" : "grid-cols-[36px_1fr_150px_150px]"}`}>
+      <button onClick={onOpen} className="grid h-9 w-9 place-items-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
         {entry.entryType === "COMPANY" ? <Building2 size={15} /> : entry.displayName.slice(0, 2).toUpperCase()}
-      </div>
-      <div className="min-w-0">
+      </button>
+      <button onClick={onOpen} className="min-w-0 text-left">
         <div className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: category?.color ?? "#d1d5db" }} />
           <p className="truncate text-sm font-semibold text-gray-900">{entry.displayName}</p>
           <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusClass(entry.lifecycleStatus)}`}>{STATUS_LABELS[entry.lifecycleStatus]}</span>
         </div>
         <p className="mt-0.5 truncate text-xs text-gray-400">{[entry.companyEntry?.displayName ?? entry.companyName, entry.email, entry.phone].filter(Boolean).join(" · ")}</p>
-      </div>
+      </button>
       <div className="truncate text-xs text-gray-500">{category?.name ?? entry.entryType.toLowerCase()}</div>
-      <div className="truncate text-xs text-amber-700">{dietary}</div>
-    </button>
+      {listEntry ? (
+        <>
+          <select
+            value={listEntry.status}
+            onChange={(event) => onUpdateListEntry(listEntry.id, { status: event.target.value as BlackbookOutreachStatus })}
+            className={`h-8 rounded-full border px-2 text-[11px] font-medium outline-none ${outreachClass(listEntry.status)}`}
+          >
+            {Object.entries(OUTREACH_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+          <input
+            type="date"
+            value={listEntry.nextFollowUpAt?.slice(0, 10) ?? ""}
+            onChange={(event) => onUpdateListEntry(listEntry.id, { nextFollowUpAt: event.target.value || null })}
+            className="h-8 rounded border border-gray-200 px-2 text-xs text-gray-600 outline-none focus:border-gray-500"
+          />
+          <button onClick={() => onRemoveListEntry(listEntry.id)} className="grid h-8 w-8 place-items-center rounded text-gray-300 hover:bg-red-50 hover:text-red-600" title="Remove from list">
+            <Trash2 size={14} />
+          </button>
+          <div className="col-span-full col-start-2">
+            <input
+              key={`${listEntry.id}-${listEntry.notes ?? ""}`}
+              defaultValue={listEntry.notes ?? ""}
+              onBlur={(event) => onUpdateListEntry(listEntry.id, { notes: event.target.value })}
+              placeholder="Outreach notes..."
+              className="h-8 w-full rounded border border-transparent bg-transparent px-2 text-xs text-gray-500 outline-none hover:border-gray-200 hover:bg-white focus:border-gray-500"
+            />
+          </div>
+        </>
+      ) : (
+        <div className="truncate text-xs text-amber-700">{dietary}</div>
+      )}
+    </div>
   );
 }

@@ -486,6 +486,20 @@ router.post("/blackbook/lists", async (req: Request, res: Response): Promise<voi
   res.status(201).json(list);
 });
 
+router.patch("/blackbook/lists/:listId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { name?: string; description?: string | null; isArchived?: boolean };
+  const list = await prisma.blackbookTargetList.update({
+    where: { id: req.params.listId },
+    data: {
+      name: body.name === undefined ? undefined : body.name.trim(),
+      description: body.description === undefined ? undefined : optionalText(body.description),
+      isArchived: body.isArchived,
+    },
+    include: { entries: { include: { entry: true }, orderBy: { updatedAt: "desc" } } },
+  });
+  res.json(list);
+});
+
 router.post("/blackbook/lists/:listId/entries", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as { entryId?: string; status?: BlackbookOutreachStatus; notes?: string | null; nextFollowUpAt?: string | null };
   if (!body.entryId) {
@@ -509,6 +523,11 @@ router.post("/blackbook/lists/:listId/entries", async (req: Request, res: Respon
     include: { entry: true, list: true },
   });
   res.json(item);
+});
+
+router.delete("/blackbook/list-entries/:itemId", async (req: Request, res: Response): Promise<void> => {
+  await prisma.blackbookTargetListEntry.delete({ where: { id: req.params.itemId } });
+  res.json({ deleted: true });
 });
 
 router.patch("/blackbook/list-entries/:itemId", async (req: Request, res: Response): Promise<void> => {
