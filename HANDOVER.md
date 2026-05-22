@@ -1,6 +1,11 @@
 # HANDOVER - 2026-05-22 - Google Places Address Picker for Options / Blackbook
 
 ## Built This Session
+- Follow-up Blackbook create pass:
+  - "Create from row" in the options Blackbook link dropdown now opens a structured create panel.
+  - New records default to supplier lifecycle.
+  - User can choose Blackbook category and one or more category types before saving.
+  - Backend accepts those category/type choices when creating the Blackbook entry from an option row.
 - Follow-up URL pass:
   - Options candidate sheets now persist in the URL with `optionGroup=<groupId>`.
   - Opening a role/service/location sheet updates the browser URL.

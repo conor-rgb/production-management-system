@@ -10,6 +10,7 @@ type RequirementType = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" 
 type RequirementState = "ACTIVE" | "PARKED" | "RELEASED";
 type CandidateState = "ACTIVE" | "PARKED" | "RELEASED";
 type HoldStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFIRMED" | "RELEASED" | "UNAVAILABLE" | "NA";
+type BlackbookLifecycleStatus = "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT" | "SUPPLIER" | "PREFERRED_SUPPLIER" | "DO_NOT_USE" | "ARCHIVED";
 type CandidateSortKey = "manual" | "name" | "notes" | "links" | "rate" | "state" | `date:${string}`;
 type SortDirection = "asc" | "desc";
 type BlackbookAddressType = "WORK" | "BILLING" | "PERSONAL" | "CUSTOM";
@@ -35,6 +36,27 @@ interface BlackbookAddress {
   website: string | null;
   phone: string | null;
 }
+
+interface BlackbookConfigType {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+interface BlackbookConfigCategory {
+  id: string;
+  name: string;
+  broadType: BlackbookCategory;
+  color: string;
+  types: BlackbookConfigType[];
+}
+
+type CreateBlackbookPayload = {
+  categoryConfigId?: string | null;
+  typeIds?: string[];
+  lifecycleStatus?: BlackbookLifecycleStatus;
+  category?: BlackbookCategory;
+};
 
 interface PlaceSearchResult {
   placeId: string;
@@ -589,16 +611,21 @@ function EditableText({ value, onSave, className = "", placeholder = "" }: { val
 function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook }: {
   group: OptionGroup;
   candidate: OptionCandidate;
-  onLink: (payload: { entryId?: string | null; createFromCandidate?: boolean }) => Promise<void>;
+  onLink: (payload: { entryId?: string | null; createFromCandidate?: boolean; create?: CreateBlackbookPayload }) => Promise<void>;
   onOpenBlackbook: (entryId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(candidate.name);
   const [results, setResults] = useState<BlackbookEntry[]>([]);
+  const [categories, setCategories] = useState<BlackbookConfigCategory[]>([]);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [selectedTypeIds, setSelectedTypeIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const entry = candidate.blackbookEntry;
   const linkedTitle = entry ? [entry.displayName, entry.companyName, entry.email].filter(Boolean).join(" · ") : "Link or create Blackbook entry";
+  const selectedCategory = categories.find((category) => category.id === selectedCategoryId) ?? null;
 
   useEffect(() => {
     function close(event: MouseEvent) {
@@ -607,6 +634,21 @@ function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook }: {
     if (open) document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    api.get<BlackbookConfigCategory[]>("/api/settings/blackbook/categories")
+      .then((items) => {
+        setCategories(items);
+        setSelectedCategoryId((current) => {
+          if (current && items.some((item) => item.id === current)) return current;
+          const matching = items.find((item) => item.broadType === TYPE_TO_BLACKBOOK_CATEGORY[group.type]);
+          const supplier = items.find((item) => item.broadType === "SERVICE");
+          return matching?.id ?? supplier?.id ?? items[0]?.id ?? "";
+        });
+      })
+      .catch(console.error);
+  }, [group.type, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -690,16 +732,67 @@ function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook }: {
                 </button>
               </div>
             ) : <span />}
-            <button
-              onClick={() => {
-                setOpen(false);
-                void onLink({ createFromCandidate: true });
-              }}
-              className="rounded bg-gray-900 px-2 py-1.5 text-[11px] font-medium text-white"
-            >
-              Create from row
-            </button>
+            {!entry && (
+              <button onClick={() => setCreateOpen((current) => !current)} className="rounded bg-gray-900 px-2 py-1.5 text-[11px] font-medium text-white">
+                Create from row
+              </button>
+            )}
           </div>
+          {createOpen && !entry && (
+            <div className="mt-3 rounded-lg border border-gray-100 bg-gray-50 p-2">
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Create Blackbook record</div>
+              <label className="mb-2 block text-[11px] text-gray-500">
+                Category
+                <select
+                  value={selectedCategoryId}
+                  onChange={(event) => {
+                    setSelectedCategoryId(event.target.value);
+                    setSelectedTypeIds([]);
+                  }}
+                  className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-800 outline-none focus:border-gray-500"
+                >
+                  {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                </select>
+              </label>
+              {selectedCategory && selectedCategory.types.length > 0 && (
+                <div className="mb-2">
+                  <div className="mb-1 text-[11px] text-gray-500">Type</div>
+                  <div className="flex max-h-24 flex-wrap gap-1 overflow-auto">
+                    {selectedCategory.types.map((type) => {
+                      const selected = selectedTypeIds.includes(type.id);
+                      return (
+                        <button
+                          key={type.id}
+                          onClick={() => setSelectedTypeIds((current) => selected ? current.filter((id) => id !== type.id) : [...current, type.id])}
+                          className={`rounded border px-2 py-1 text-[10px] font-medium ${selected ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"}`}
+                        >
+                          {type.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <p className="mb-2 text-[10px] leading-4 text-gray-400">Defaults to supplier lifecycle. You can edit the full record after creation.</p>
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  void onLink({
+                    createFromCandidate: true,
+                    create: {
+                      categoryConfigId: selectedCategoryId || null,
+                      category: selectedCategory?.broadType ?? TYPE_TO_BLACKBOOK_CATEGORY[group.type],
+                      typeIds: selectedTypeIds,
+                      lifecycleStatus: "SUPPLIER",
+                    },
+                  });
+                }}
+                className="w-full rounded bg-gray-900 px-2 py-1.5 text-[11px] font-medium text-white"
+              >
+                Save to Blackbook
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -789,7 +882,7 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
     setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/candidates/${candidateId}`, patch));
   }
 
-  async function linkBlackbook(candidateId: string, payload: { entryId?: string | null; createFromCandidate?: boolean }) {
+  async function linkBlackbook(candidateId: string, payload: { entryId?: string | null; createFromCandidate?: boolean; create?: CreateBlackbookPayload }) {
     setMatrix(await api.post<MatrixResponse>(`/api/options/matrix/candidates/${candidateId}/link-blackbook`, payload));
   }
 
@@ -1051,7 +1144,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   group: OptionGroup;
   dates: MatrixDate[];
   onUpdateCandidate: (candidateId: string, patch: Partial<OptionCandidate>) => Promise<void>;
-  onLinkBlackbook: (candidateId: string, payload: { entryId?: string | null; createFromCandidate?: boolean }) => Promise<void>;
+  onLinkBlackbook: (candidateId: string, payload: { entryId?: string | null; createFromCandidate?: boolean; create?: CreateBlackbookPayload }) => Promise<void>;
   onOpenBlackbook: (entryId: string) => void;
   onUpdateCandidateDate: (candidateId: string, dateId: string, status: HoldStatus | null) => Promise<void>;
   onUploadPhoto: (candidateId: string, file: File) => Promise<void>;

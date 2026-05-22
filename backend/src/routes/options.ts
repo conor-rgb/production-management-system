@@ -364,6 +364,13 @@ function entryTypeFromRequirementType(type: OptionRequirementType): BlackbookEnt
   return "PERSON";
 }
 
+function entryTypeFromBlackbookCategory(category: BlackbookCategory): BlackbookEntryType {
+  if (category === "LOCATION") return "LOCATION";
+  if (category === "TALENT") return "TALENT";
+  if (category === "SERVICE" || category === "EQUIPMENT" || category === "TRANSPORT" || category === "POST") return "SERVICE";
+  return "PERSON";
+}
+
 function blackbookDataFromBody(body: BlackbookFieldBody): Prisma.BlackbookEntryUpdateInput {
   const data: Prisma.BlackbookEntryUpdateInput = {};
   if (body.entryType !== undefined) data.entryType = body.entryType;
@@ -1556,7 +1563,17 @@ router.patch("/matrix/groups/:groupId/candidates/reorder", async (req: Request, 
 });
 
 router.post("/matrix/candidates/:candidateId/link-blackbook", async (req: Request, res: Response): Promise<void> => {
-  const { entryId, createFromCandidate = false } = req.body as { entryId?: string | null; createFromCandidate?: boolean };
+  const { entryId, createFromCandidate = false, create } = req.body as {
+    entryId?: string | null;
+    createFromCandidate?: boolean;
+    create?: {
+      categoryConfigId?: string | null;
+      typeIds?: string[];
+      lifecycleStatus?: BlackbookLifecycleStatus;
+      category?: BlackbookCategory;
+      entryType?: BlackbookEntryType;
+    };
+  };
   const candidate = await prisma.optionCandidate.findUnique({
     where: { id: req.params.candidateId },
     include: { group: { select: { type: true } } },
@@ -1582,11 +1599,19 @@ router.post("/matrix/candidates/:candidateId/link-blackbook", async (req: Reques
       })
     : null;
   if (!entry && createFromCandidate) {
+    const categoryConfig = create?.categoryConfigId
+      ? await prisma.blackbookConfigCategory.findUnique({ where: { id: create.categoryConfigId } })
+      : null;
+    const category = categoryConfig?.broadType ?? create?.category ?? categoryFromRequirementType(candidate.group.type);
+    const entryType = create?.entryType ?? entryTypeFromBlackbookCategory(category);
     entry = await prisma.blackbookEntry.create({
       data: {
         displayName: candidate.name,
-        entryType: entryTypeFromRequirementType(candidate.group.type),
-        category: categoryFromRequirementType(candidate.group.type),
+        entryType,
+        category,
+        categoryConfigId: categoryConfig?.id ?? null,
+        typeIds: create?.typeIds ?? [],
+        lifecycleStatus: create?.lifecycleStatus ?? "SUPPLIER",
         companyName: candidate.subtitle,
         email: candidate.contactEmail,
         phone: candidate.contactPhone,
