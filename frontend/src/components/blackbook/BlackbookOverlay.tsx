@@ -252,11 +252,12 @@ function BlackbookDetail({
   const optionCount = entry.optionCandidates.length;
   const opportunityCount = data.opportunities.length;
   const productionCount = data.productions.length;
+  const timelineItems = buildTimelineItems(data);
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(360px,440px)_minmax(420px,1fr)] divide-x divide-gray-200 bg-white">
       <div className="min-h-0 overflow-auto p-6">
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <div className="mb-5">
         <div>
           <div className="mb-2 flex items-center gap-2">
             <span className="h-3 w-3 rounded-full" style={{ background: category?.color ?? "#d1d5db" }} />
@@ -267,14 +268,16 @@ function BlackbookDetail({
           {typeNames.length > 0 && <p className="mt-2 text-xs text-gray-500">{typeNames.join(" · ")}</p>}
           {(entry.targetLists?.length ?? 0) > 0 && <p className="mt-2 text-xs text-violet-600">{entry.targetLists?.map((item) => `${item.list.name}: ${item.status.toLowerCase().replace(/_/g, " ")}`).join(" · ")}</p>}
         </div>
-        <div className="space-y-3">
+        <div className="mt-4">
           <SaveIndicator status={saveStatus} />
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <LifecycleEditor value={entry.lifecycleStatus} onChange={(lifecycleStatus) => patch({ lifecycleStatus })} />
           <CategoryEditor entry={entry} categories={categories} onSave={patch} />
         </div>
       </div>
 
-      <div className="mb-5 grid gap-3 md:grid-cols-4">
+      <div className="mb-5 grid grid-cols-4 gap-2">
         <MetricCard label={entry.entryType === "COMPANY" ? "People" : "Company people"} value={entry.entryType === "COMPANY" ? entry.people?.length ?? 0 : entry.companyEntry ? 1 : 0} />
         <MetricCard label="Emails" value={emailCount} />
         <MetricCard label="Options" value={optionCount} />
@@ -376,35 +379,7 @@ function BlackbookDetail({
             <button className="rounded border border-gray-200 bg-white px-2 py-1.5 text-[11px] text-gray-500">Follow up</button>
           </div>
         </div>
-        <div className="space-y-5">
-        <TimelineSection title="Projects" icon={<Briefcase size={15} />} empty="No linked projects yet.">
-          {data.productions.map((item) => (
-            <Card key={item.id} title={`${item.production.jobCode ?? ""} ${item.production.title}`.trim()} meta={[item.production.clientName, item.production.brand, item.production.status].filter(Boolean).join(" · ")} />
-          ))}
-        </TimelineSection>
-        <TimelineSection title="Opportunities" icon={<CalendarDays size={15} />} empty="No linked opportunities yet.">
-          {data.opportunities.map((item) => (
-            <Card key={item.id} title={item.title} meta={[item.clientName, item.brand, item.stage].filter(Boolean).join(" · ")} />
-          ))}
-        </TimelineSection>
-        <TimelineSection title="Options" icon={<Tag size={15} />} empty="No option history yet.">
-          {entry.optionCandidates.map((candidate) => (
-            <Card key={candidate.id} title={`${candidate.group.name} · ${candidate.name}`} meta={`${candidate.production.jobCode ?? ""} ${candidate.production.title} · ${candidate.blackbookEntry && entry.entryType === "COMPANY" ? candidate.blackbookEntry.displayName : ""} · ${candidate.dateStatuses.map((status) => `${status.date.label ?? status.date.dateType}: ${status.status.toLowerCase().replace(/_/g, " ")}`).join(" · ")}`} />
-          ))}
-        </TimelineSection>
-        <TimelineSection title="Email messages" icon={<Mail size={15} />} empty="No matching email messages yet.">
-          {data.emailMessages.map((message) => (
-            <a key={message.id} href={`/email?thread=${message.threadId}&message=${message.id}`} className="block rounded-lg border border-gray-200 bg-white p-3 hover:border-gray-400">
-              <div className="flex items-start justify-between gap-3">
-                <p className="truncate text-sm font-medium text-gray-900">{message.subject}</p>
-                <span className="shrink-0 text-[10px] text-gray-400">{new Date(message.sentAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span>
-              </div>
-              <p className="mt-1 truncate text-xs text-gray-500">{message.isFromMe ? "To" : "From"} {message.fromName || message.fromAddress}</p>
-              {message.snippet && <p className="mt-1 line-clamp-2 text-xs text-gray-400">{message.snippet}</p>}
-            </a>
-          ))}
-        </TimelineSection>
-        </div>
+        <UnifiedTimeline items={timelineItems} />
       </aside>
     </div>
   );
@@ -435,9 +410,120 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
 
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-[#fbfbfa] p-3">
+    <div className="rounded border border-gray-200 bg-[#fbfbfa] px-2 py-2">
       <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">{label}</p>
-      <p className="mt-1 text-xl font-semibold tabular-nums text-gray-900">{value}</p>
+      <p className="mt-0.5 text-lg font-semibold tabular-nums text-gray-900">{value}</p>
+    </div>
+  );
+}
+
+type TimelineItem = {
+  id: string;
+  date: Date;
+  type: "email" | "option" | "production" | "opportunity";
+  title: string;
+  meta: string;
+  body?: string | null;
+  href?: string;
+};
+
+function buildTimelineItems(data: BlackbookCrmResponse): TimelineItem[] {
+  const optionItems = data.entry.optionCandidates.map((candidate) => ({
+    id: `option-${candidate.id}`,
+    date: candidate.dateStatuses[0]?.date.date ? new Date(candidate.dateStatuses[0].date.date) : new Date(),
+    type: "option" as const,
+    title: `${candidate.group.name} · ${candidate.name}`,
+    meta: [
+      candidate.production.jobCode,
+      candidate.production.title,
+      candidate.production.brand,
+      candidate.dateStatuses.map((status) => `${status.date.label ?? status.date.dateType}: ${status.status.toLowerCase().replace(/_/g, " ")}`).join(" · "),
+    ].filter(Boolean).join(" · "),
+  }));
+
+  const productionItems = data.productions.map((item) => ({
+    id: `production-${item.id}`,
+    date: new Date(),
+    type: "production" as const,
+    title: `${item.production.jobCode ?? ""} ${item.production.title}`.trim(),
+    meta: [item.production.clientName, item.production.brand, item.production.status].filter(Boolean).join(" · "),
+    href: `/productions?production=${item.production.id}`,
+  }));
+
+  const opportunityItems = data.opportunities.map((item) => ({
+    id: `opportunity-${item.id}`,
+    date: new Date(item.createdAt),
+    type: "opportunity" as const,
+    title: item.title,
+    meta: [item.clientName, item.brand, item.stage].filter(Boolean).join(" · "),
+    href: `/opportunities?opportunity=${item.id}`,
+  }));
+
+  const emailItems = data.emailMessages.map((message) => ({
+    id: `email-${message.id}`,
+    date: new Date(message.sentAt),
+    type: "email" as const,
+    title: message.subject,
+    meta: `${message.isFromMe ? "To" : "From"} ${message.fromName || message.fromAddress}`,
+    body: message.snippet,
+    href: `/email?thread=${message.threadId}&message=${message.id}`,
+  }));
+
+  return [...emailItems, ...optionItems, ...productionItems, ...opportunityItems]
+    .filter((item) => !Number.isNaN(item.date.getTime()))
+    .sort((a, b) => b.date.getTime() - a.date.getTime());
+}
+
+function timelineIcon(type: TimelineItem["type"]): ReactNode {
+  if (type === "email") return <Mail size={14} />;
+  if (type === "option") return <Tag size={14} />;
+  if (type === "production") return <Briefcase size={14} />;
+  return <CalendarDays size={14} />;
+}
+
+function timelineLabel(date: Date): string {
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startItem = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const delta = startToday - startItem;
+  if (delta === 0) return "Today";
+  if (delta > 0 && delta < 7 * 86400000) return "Last seven days";
+  if (date.getFullYear() === now.getFullYear()) return date.toLocaleDateString("en-GB", { month: "long" });
+  return String(date.getFullYear());
+}
+
+function UnifiedTimeline({ items }: { items: TimelineItem[] }) {
+  if (items.length === 0) {
+    return <p className="rounded-lg bg-white p-4 text-sm text-gray-400">No activity yet.</p>;
+  }
+
+  let lastLabel = "";
+  return (
+    <div className="space-y-1">
+      {items.map((item) => {
+        const group = timelineLabel(item.date);
+        const showGroup = group !== lastLabel;
+        lastLabel = group;
+        const content = (
+          <div className="flex gap-3 rounded-lg border border-transparent px-2 py-2 hover:border-gray-200 hover:bg-white">
+            <div className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded bg-white text-gray-400 ring-1 ring-gray-200">{timelineIcon(item.type)}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <p className="truncate text-sm font-medium text-gray-900">{item.title}</p>
+                <span className="shrink-0 text-[10px] tabular-nums text-gray-400">{item.date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span>
+              </div>
+              <p className="mt-0.5 truncate text-xs text-gray-500">{item.meta}</p>
+              {item.body && <p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-400">{item.body}</p>}
+            </div>
+          </div>
+        );
+        return (
+          <div key={item.id}>
+            {showGroup && <h4 className="pb-1 pt-4 text-xs font-semibold text-blue-600 first:pt-0">{group}</h4>}
+            {item.href ? <a href={item.href} className="block">{content}</a> : content}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -751,25 +837,6 @@ function CategoryEditor({ entry, categories, onSave }: { entry: BlackbookEntry; 
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function TimelineSection({ title, icon, empty, children }: { title: string; icon: ReactNode; empty: string; children: ReactNode }) {
-  const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
-  return (
-    <section>
-      <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">{icon}{title}</h3>
-      <div className="space-y-2">{hasChildren ? children : <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-400">{empty}</p>}</div>
-    </section>
-  );
-}
-
-function Card({ title, meta }: { title: string; meta: string }) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3">
-      <p className="truncate text-sm font-medium text-gray-900">{title}</p>
-      <p className="mt-1 truncate text-xs text-gray-500">{meta}</p>
     </div>
   );
 }

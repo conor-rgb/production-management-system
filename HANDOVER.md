@@ -1,6 +1,11 @@
 # HANDOVER - 2026-05-22 - Google Places Address Picker for Options / Blackbook
 
 ## Built This Session
+- Follow-up Blackbook UX pass:
+  - Profile controls are now compact and organised in the left profile column.
+  - The activity side is now a single chronological feed instead of separate project/options/email blocks.
+  - Timeline items mix email, option, opportunity, and production activity with date grouping.
+  - The metrics strip has been tightened to reduce the heavy card feeling.
 - Follow-up Blackbook overlay pass:
   - Blackbook detail now uses a two-column layout: profile/details on the left and activity timeline on the right.
   - Opening Blackbook from Options now uses compact mode, easing in from the right with only profile + timeline columns.
