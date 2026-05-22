@@ -1,41 +1,70 @@
-# HANDOVER - 2026-05-22 - Options Candidate Sheet Column Tightening
+# HANDOVER - 2026-05-22 - Options Candidate Sorting And Manual Order
 
 ## Built This Session
-- Tightened the Options candidate sheet columns.
-- Reduced the breathing room past the Links column.
-- Made date columns narrower and more consistent.
-- Added compact fixed-width date status pills so row controls line up under date headers.
-- Shortened `Project rate` header to `Rate`.
-- Reduced grid gaps and side padding for candidate sheet rows and headers.
+- Added manual candidate row ordering in Options candidate sheets.
+- Added header-based candidate sorting.
+- Added backend reorder endpoint for option candidates within a group.
+
+## Backend
+- Updated `backend/src/routes/options.ts`.
+- Added:
+  - `PATCH /api/options/matrix/groups/:groupId/candidates/reorder`
+  - Body: `{ orderedIds: string[] }`
+- Endpoint validates:
+  - group exists,
+  - ordered IDs are provided,
+  - every candidate belongs to the group.
+- Reorders by updating each candidate `order`.
 
 ## Frontend
 - Updated `frontend/src/components/options/OptionsBoardView.tsx`.
-- Candidate sheet grid changed from:
-  - `72px 260px 220px 120px 95px 120px [126px dates] 44px`
-- To:
-  - `64px 250px 210px 92px 82px 92px [96px dates] 36px`
-- `PillDropdown` now accepts `compact` for date-status cells.
-- Date headers truncate with full label available as a title tooltip.
-
-## Backend
-- No backend changes.
+- Candidate sheet headers are now clickable sorts:
+  - Image/manual order,
+  - Option/name,
+  - Deck notes,
+  - Links,
+  - Rate,
+  - State,
+  - each date/availability column.
+- Clicking the same header toggles ascending/descending.
+- Date sorting uses pipeline weight:
+  - Confirmed,
+  - First option,
+  - Second option,
+  - Requested,
+  - Unavailable,
+  - Released,
+  - N/A,
+  - blank last.
+- Candidate state sorting uses:
+  - Active,
+  - Parked,
+  - Released.
+- Each row now has compact hover actions:
+  - move up,
+  - move down,
+  - delete.
+- Moving rows switches the view back to manual order.
 
 ## Deployment / Verification
+- Backend build passed.
 - Frontend build passed.
 - Frontend copied to `/var/www/agent`.
-- No PM2 reload required.
+- PM2 process `0` reloaded.
+- Health check passed.
 
 ## Current Options Sheet State
-- Candidate sheet columns are denser and better aligned.
-- Image, option, deck notes, links, rate, state, and date columns should now read more like a spreadsheet.
-- Existing links popover, PDF upload, image drag/drop, and PDF export remain unchanged.
+- You can manually order rows with row actions.
+- You can sort by headers without changing the saved manual order.
+- Manual order is persisted only when using up/down row controls.
+- Header sorting is local UI state and non-destructive.
 
 ## Known Gaps / Technical Debt
-- Needs visual QA in-browser on wide screens with several dates.
-- If very long date labels are important, a future pass could split date headers into two lines instead of truncating.
-- Candidate subtitle is still not visible in the main candidate sheet.
+- Manual row ordering uses up/down buttons rather than drag handles.
+- Sorted views do not persist, by design for now.
+- Date sort labels still use the full date label and may be visually dense if many dates exist.
 
 ## Exact Next Steps
-1. Review the candidate sheet on the GANNI x Disney options page.
-2. If dates still feel wide, reduce date columns from 96px to 88px and use shorter date labels.
-3. Continue PDF visual tuning once sheet spacing is accepted.
+1. Try sorting by a date column and by State on a real GANNI x Disney options sheet.
+2. If manual ordering needs to be faster, add row drag handles that call the same reorder endpoint.
+3. Continue PDF layout refinement once the candidate sheet workflow feels right.

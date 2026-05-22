@@ -8,6 +8,8 @@ type RequirementType = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" 
 type RequirementState = "ACTIVE" | "PARKED" | "RELEASED";
 type CandidateState = "ACTIVE" | "PARKED" | "RELEASED";
 type HoldStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFIRMED" | "RELEASED" | "UNAVAILABLE" | "NA";
+type CandidateSortKey = "manual" | "name" | "notes" | "links" | "rate" | "state" | `date:${string}`;
+type SortDirection = "asc" | "desc";
 type PipelineState = "NOT_REQUIRED" | "NEEDED" | "REQUESTED" | "SECOND_OPTION" | "FIRST_OPTION" | "CONFIRMED" | "UNAVAILABLE" | "RELEASED";
 type ProductionDateType = "PPM" | "RECCE" | "FITTING" | "MEETING" | "SHOOT_DAY" | "POST_DELIVERY" | "OTHER";
 type ProductionDateStatus = "PROPOSED" | "OPTIONED" | "CONFIRMED" | "RELEASED" | "CANCELLED";
@@ -200,6 +202,20 @@ const TYPE_TO_BLACKBOOK_CATEGORY: Record<RequirementType, BlackbookCategory> = {
 };
 
 const PIPELINE_ORDER: HoldStatus[] = ["CONFIRMED", "FIRST_OPTION", "SECOND_OPTION", "REQUESTED", "UNAVAILABLE", "RELEASED", "NA"];
+const HOLD_SORT_WEIGHT: Record<HoldStatus, number> = {
+  CONFIRMED: 0,
+  FIRST_OPTION: 1,
+  SECOND_OPTION: 2,
+  REQUESTED: 3,
+  UNAVAILABLE: 4,
+  RELEASED: 5,
+  NA: 6,
+};
+const CANDIDATE_STATE_WEIGHT: Record<CandidateState, number> = {
+  ACTIVE: 0,
+  PARKED: 1,
+  RELEASED: 2,
+};
 
 function label(value: string): string {
   return value.replace(/_/g, " ").toLowerCase();
@@ -315,6 +331,36 @@ function candidateSummary(group: OptionGroup, dateId: string): string {
       return status ? `${candidate.name}: ${label(status)}` : `${candidate.name}: no request`;
     });
   return lines.length ? lines.join("\n") : "No candidates yet";
+}
+
+function linkCount(candidate: OptionCandidate): number {
+  return [candidate.bookUrl, candidate.socialUrl, candidate.modelsComUrl, candidate.pdfUrl].filter(Boolean).length;
+}
+
+function compareText(a: string | null | undefined, b: string | null | undefined): number {
+  return (a ?? "").localeCompare(b ?? "", undefined, { sensitivity: "base" });
+}
+
+function sortedCandidates(candidates: OptionCandidate[], sortKey: CandidateSortKey, direction: SortDirection): OptionCandidate[] {
+  const sorted = candidates.slice();
+  const multiplier = direction === "asc" ? 1 : -1;
+  sorted.sort((a, b) => {
+    let result = 0;
+    if (sortKey === "manual") result = a.order - b.order;
+    else if (sortKey === "name") result = compareText(a.name, b.name);
+    else if (sortKey === "notes") result = compareText(a.clientNotes, b.clientNotes);
+    else if (sortKey === "links") result = linkCount(a) - linkCount(b);
+    else if (sortKey === "rate") result = (a.rate ?? -1) - (b.rate ?? -1);
+    else if (sortKey === "state") result = CANDIDATE_STATE_WEIGHT[a.activeState] - CANDIDATE_STATE_WEIGHT[b.activeState];
+    else if (sortKey.startsWith("date:")) {
+      const dateId = sortKey.slice(5);
+      const aStatus = statusFor(a, dateId)?.status;
+      const bStatus = statusFor(b, dateId)?.status;
+      result = (aStatus ? HOLD_SORT_WEIGHT[aStatus] : 99) - (bStatus ? HOLD_SORT_WEIGHT[bStatus] : 99);
+    }
+    return result === 0 ? a.order - b.order : result * multiplier;
+  });
+  return sorted;
 }
 
 function PillDropdown<T extends string>({ value, options, onChange, classNameForValue, placeholder = "blank", compact = false }: {
@@ -677,6 +723,10 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
     setMatrix(await response.json() as MatrixResponse);
   }
 
+  async function reorderCandidates(groupId: string, orderedIds: string[]) {
+    setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/groups/${groupId}/candidates/reorder`, { orderedIds }));
+  }
+
   async function updateCandidatePhoto(photoId: string, patch: Partial<OptionCandidatePhoto>) {
     setMatrix(await api.patch<MatrixResponse>(`/api/options/candidate-photos/${photoId}`, patch));
   }
@@ -753,6 +803,7 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
           onUpdateCandidateDate={updateCandidateDate}
           onUploadPhoto={uploadCandidatePhoto}
           onUploadPdf={uploadCandidatePdf}
+          onReorderCandidates={(orderedIds) => reorderCandidates(selectedGroup.id, orderedIds)}
           onUpdatePhoto={updateCandidatePhoto}
           onDeletePhoto={deleteCandidatePhoto}
           onDeleteCandidate={deleteCandidate}
@@ -887,7 +938,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   );
 }
 
-function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate }: {
+function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate }: {
   group: OptionGroup;
   dates: MatrixDate[];
   onUpdateCandidate: (candidateId: string, patch: Partial<OptionCandidate>) => Promise<void>;
@@ -896,23 +947,68 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   onUpdateCandidateDate: (candidateId: string, dateId: string, status: HoldStatus | null) => Promise<void>;
   onUploadPhoto: (candidateId: string, file: File) => Promise<void>;
   onUploadPdf: (candidateId: string, file: File) => Promise<void>;
+  onReorderCandidates: (orderedIds: string[]) => Promise<void>;
   onUpdatePhoto: (photoId: string, patch: Partial<OptionCandidatePhoto>) => Promise<void>;
   onDeletePhoto: (photoId: string) => Promise<void>;
   onDeleteCandidate: (candidateId: string) => Promise<void>;
   onAddCandidate: () => Promise<void>;
 }) {
   const [photoCandidate, setPhotoCandidate] = useState<OptionCandidate | null>(null);
+  const [sortKey, setSortKey] = useState<CandidateSortKey>("manual");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
   const gridColumns = `64px 250px 210px 92px 82px 92px ${dates.map(() => "96px").join(" ")} 36px`;
+  const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
+
+  function setSort(nextKey: CandidateSortKey) {
+    if (sortKey === nextKey) {
+      setSortDirection((current) => current === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(nextKey);
+      setSortDirection("asc");
+    }
+  }
+
+  async function moveCandidate(candidateId: string, direction: "up" | "down") {
+    const manualOrder = sortedCandidates(group.candidates, "manual", "asc");
+    const index = manualOrder.findIndex((candidate) => candidate.id === candidateId);
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (index < 0 || target < 0 || target >= manualOrder.length) return;
+    const next = manualOrder.slice();
+    const [candidate] = next.splice(index, 1);
+    next.splice(target, 0, candidate);
+    await onReorderCandidates(next.map((item) => item.id));
+    setSortKey("manual");
+    setSortDirection("asc");
+  }
+
+  function SortHeader({ sort, children, align = "left" }: { sort: CandidateSortKey; children: React.ReactNode; align?: "left" | "center" | "right" }) {
+    const active = sortKey === sort;
+    return (
+      <button
+        onClick={() => setSort(sort)}
+        className={`truncate ${align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left"} ${active ? "font-semibold text-gray-700" : ""}`}
+        title="Sort"
+      >
+        {children}{active ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
+      </button>
+    );
+  }
+
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <div className="min-w-max">
         <div className="sticky top-0 z-20 grid min-h-9 items-center gap-x-2 border-b border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
-          <div className="pl-1">Image</div><div>Option</div><div>Deck notes</div><div>Links</div><div className="pr-1 text-right">Rate</div><div>State</div>
-          {dates.map((date) => <div key={date.id} className="truncate text-center" title={dateLabel(date)}>{dateLabel(date)}</div>)}
+          <button onClick={() => setSort("manual")} className={`pl-1 text-left ${sortKey === "manual" ? "font-semibold text-gray-700" : ""}`}>Image{sortKey === "manual" ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}</button>
+          <SortHeader sort="name">Option</SortHeader>
+          <SortHeader sort="notes">Deck notes</SortHeader>
+          <SortHeader sort="links">Links</SortHeader>
+          <SortHeader sort="rate" align="right">Rate</SortHeader>
+          <SortHeader sort="state">State</SortHeader>
+          {dates.map((date) => <SortHeader key={date.id} sort={`date:${date.id}`} align="center">{dateLabel(date)}</SortHeader>)}
           <div />
         </div>
-        {group.candidates.map((candidate) => (
+        {candidates.map((candidate) => (
           <CandidateRow
             key={candidate.id}
             candidate={candidate}
@@ -926,6 +1022,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
             onUpdateCandidateDate={onUpdateCandidateDate}
             onUploadPhoto={onUploadPhoto}
             onUploadPdf={onUploadPdf}
+            onMoveCandidate={moveCandidate}
             onDeleteCandidate={onDeleteCandidate}
           />
         ))}
@@ -951,7 +1048,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   );
 }
 
-function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onDeleteCandidate }: {
+function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onMoveCandidate, onDeleteCandidate }: {
   candidate: OptionCandidate;
   group: OptionGroup;
   dates: MatrixDate[];
@@ -963,6 +1060,7 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
   onUpdateCandidateDate: (candidateId: string, dateId: string, status: HoldStatus | null) => Promise<void>;
   onUploadPhoto: (candidateId: string, file: File) => Promise<void>;
   onUploadPdf: (candidateId: string, file: File) => Promise<void>;
+  onMoveCandidate: (candidateId: string, direction: "up" | "down") => Promise<void>;
   onDeleteCandidate: (candidateId: string) => Promise<void>;
 }) {
   const [dragActive, setDragActive] = useState(false);
@@ -1043,7 +1141,11 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
           </div>
         );
       })}
-      <button onClick={() => onDeleteCandidate(candidate.id)} className="grid h-8 w-8 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
+      <div className="flex items-center justify-center gap-0.5 opacity-45 transition hover:opacity-100">
+        <button onClick={() => onMoveCandidate(candidate.id, "up").catch(console.error)} title="Move up" className="grid h-7 w-4 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">↑</button>
+        <button onClick={() => onMoveCandidate(candidate.id, "down").catch(console.error)} title="Move down" className="grid h-7 w-4 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">↓</button>
+        <button onClick={() => onDeleteCandidate(candidate.id)} title="Delete" className="grid h-7 w-4 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={12} /></button>
+      </div>
     </div>
   );
 }

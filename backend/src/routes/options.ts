@@ -1292,6 +1292,28 @@ router.patch("/matrix/candidates/:candidateId", async (req: Request, res: Respon
   res.json(await matrixResponse(candidate.productionId));
 });
 
+router.patch("/matrix/groups/:groupId/candidates/reorder", async (req: Request, res: Response): Promise<void> => {
+  const { orderedIds } = req.body as { orderedIds?: string[] };
+  const group = await prisma.optionGroup.findUnique({ where: { id: req.params.groupId }, select: { id: true, productionId: true } });
+  if (!group) {
+    res.status(404).json({ error: "Group not found" });
+    return;
+  }
+  if (!orderedIds?.length) {
+    res.status(400).json({ error: "orderedIds is required" });
+    return;
+  }
+
+  const count = await prisma.optionCandidate.count({ where: { id: { in: orderedIds }, groupId: group.id } });
+  if (count !== orderedIds.length) {
+    res.status(400).json({ error: "All candidates must belong to this group" });
+    return;
+  }
+
+  await prisma.$transaction(orderedIds.map((id, order) => prisma.optionCandidate.update({ where: { id }, data: { order } })));
+  res.json(await matrixResponse(group.productionId));
+});
+
 router.post("/matrix/candidates/:candidateId/link-blackbook", async (req: Request, res: Response): Promise<void> => {
   const { entryId, createFromCandidate = false } = req.body as { entryId?: string | null; createFromCandidate?: boolean };
   const candidate = await prisma.optionCandidate.findUnique({
