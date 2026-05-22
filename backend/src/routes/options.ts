@@ -850,52 +850,82 @@ router.get("/blackbook/:entryId/crm", async (req: Request, res: Response): Promi
     res.status(404).json({ error: "Blackbook entry not found" });
     return;
   }
+
+  const relatedEntryIds = entry.entryType === "COMPANY"
+    ? [entry.id, ...entry.people.map((person) => person.id)]
+    : [entry.id];
+  const relatedContactIds = [entry.contactId, ...entry.people.map((person) => person.contactId)].filter((id): id is string => Boolean(id));
   const relatedEmails = [
     entry.email?.toLowerCase(),
     ...entry.people.map((person) => person.email?.toLowerCase()),
   ].filter((email): email is string => Boolean(email));
-  const emailMatches = relatedEmails.length
-    ? await prisma.emailMessage.findMany({
-        where: {
-          OR: [
-            { fromAddress: { in: relatedEmails, mode: "insensitive" } },
-            { toAddresses: { hasSome: relatedEmails } },
-            { ccAddresses: { hasSome: relatedEmails } },
-            { bccAddresses: { hasSome: relatedEmails } },
-          ],
-        },
-        orderBy: { sentAt: "desc" },
-        take: 50,
-        include: {
-          thread: {
-            select: {
-              id: true,
-              subject: true,
-              linkedOpportunity: { select: { id: true, title: true, clientName: true, brand: true, stage: true } },
-              linkedProduction: { select: { id: true, title: true, jobCode: true, clientName: true, brand: true, status: true } },
+  const [emailMatches, opportunities, productions, optionCandidates] = await Promise.all([
+    relatedEmails.length
+      ? prisma.emailMessage.findMany({
+          where: {
+            OR: [
+              { fromAddress: { in: relatedEmails, mode: "insensitive" } },
+              { toAddresses: { hasSome: relatedEmails } },
+              { ccAddresses: { hasSome: relatedEmails } },
+              { bccAddresses: { hasSome: relatedEmails } },
+            ],
+          },
+          orderBy: { sentAt: "desc" },
+          take: 50,
+          include: {
+            thread: {
+              select: {
+                id: true,
+                subject: true,
+                linkedOpportunity: { select: { id: true, title: true, clientName: true, brand: true, stage: true } },
+                linkedProduction: { select: { id: true, title: true, jobCode: true, clientName: true, brand: true, status: true } },
+              },
             },
           },
-        },
-      })
-    : [];
-  const contactId = entry.contactId;
-  const [opportunities, productions] = contactId
-    ? await Promise.all([
-        prisma.opportunity.findMany({
-          where: { contactId },
+        })
+      : Promise.resolve([]),
+    relatedContactIds.length
+      ? prisma.opportunity.findMany({
+          where: { contactId: { in: relatedContactIds } },
           orderBy: { createdAt: "desc" },
-          take: 20,
+          take: 30,
           select: { id: true, title: true, clientName: true, brand: true, stage: true, value: true, createdAt: true },
-        }),
-        prisma.crewMember.findMany({
-          where: { contactId },
+        })
+      : Promise.resolve([]),
+    relatedContactIds.length
+      ? prisma.crewMember.findMany({
+          where: { contactId: { in: relatedContactIds } },
           orderBy: { createdAt: "desc" },
-          take: 20,
+          take: 30,
           include: { production: { select: { id: true, title: true, jobCode: true, clientName: true, brand: true, status: true } } },
-        }),
-      ])
-    : [[], []];
-  res.json({ entry, opportunities, productions, emailMessages: emailMatches });
+        })
+      : Promise.resolve([]),
+    prisma.optionCandidate.findMany({
+      where: { blackbookEntryId: { in: relatedEntryIds } },
+      include: {
+        production: { select: { id: true, title: true, jobCode: true, clientName: true, brand: true, status: true } },
+        group: { select: { id: true, name: true, type: true } },
+        dateStatuses: { include: { date: true }, orderBy: { date: { date: "asc" } } },
+        assignments: { include: { requirement: true, date: true } },
+        blackbookEntry: { select: { id: true, displayName: true, email: true, companyEntryId: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 50,
+    }),
+  ]);
+
+  res.json({
+    entry: { ...entry, optionCandidates },
+    opportunities,
+    productions,
+    emailMessages: emailMatches,
+    rollup: {
+      entryIds: relatedEntryIds,
+      contactIds: relatedContactIds,
+      emailAddresses: relatedEmails,
+      peopleCount: entry.people.length,
+    },
+  });
 });
 
 router.patch("/blackbook/:entryId", async (req: Request, res: Response): Promise<void> => {

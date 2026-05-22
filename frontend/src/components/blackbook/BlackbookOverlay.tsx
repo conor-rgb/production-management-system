@@ -29,6 +29,7 @@ interface BlackbookEntry {
   category: BlackbookCategory;
   categoryConfigId: string | null;
   typeIds: string[];
+  contactId?: string | null;
   companyEntryId?: string | null;
   displayName: string;
   firstName?: string | null;
@@ -40,6 +41,7 @@ interface BlackbookEntry {
   website: string | null;
   city: string | null;
   country: string | null;
+  notes: string | null;
   dietaryNotes: string | null;
   dietaryFlags: string[];
   allergens: string[];
@@ -58,6 +60,7 @@ interface BlackbookCrmResponse {
       production: { id: string; title: string; jobCode: string | null; clientName: string | null; brand: string | null; status: string };
       group: { name: string; type: string };
       dateStatuses: Array<{ status: string; date: { date: string; label: string | null; dateType: string } }>;
+      blackbookEntry?: { id: string; displayName: string; email: string | null; companyEntryId: string | null } | null;
     }>;
   };
   opportunities: Array<{ id: string; title: string; clientName: string | null; brand: string | null; stage: string; createdAt: string }>;
@@ -73,6 +76,12 @@ interface BlackbookCrmResponse {
     isFromMe: boolean;
     thread: { id: string; subject: string };
   }>;
+  rollup?: {
+    entryIds: string[];
+    contactIds: string[];
+    emailAddresses: string[];
+    peopleCount: number;
+  };
 }
 
 export default function BlackbookOverlay({ initialEntryId, onClose }: { initialEntryId?: string | null; onClose: () => void }) {
@@ -180,6 +189,10 @@ function BlackbookDetail({
     await api.patch(`/api/options/blackbook/${entry.id}`, patchData);
     onRefresh();
   }
+  const emailCount = data.emailMessages.length;
+  const optionCount = entry.optionCandidates.length;
+  const opportunityCount = data.opportunities.length;
+  const productionCount = data.productions.length;
 
   return (
     <div className="p-6">
@@ -199,6 +212,23 @@ function BlackbookDetail({
           <CategoryEditor entry={entry} categories={categories} onSave={patch} />
         </div>
       </div>
+
+      <div className="mb-5 grid gap-3 md:grid-cols-4">
+        <MetricCard label={entry.entryType === "COMPANY" ? "People" : "Company people"} value={entry.entryType === "COMPANY" ? entry.people?.length ?? 0 : entry.companyEntry ? 1 : 0} />
+        <MetricCard label="Emails" value={emailCount} />
+        <MetricCard label="Options" value={optionCount} />
+        <MetricCard label="Jobs / Opps" value={productionCount + opportunityCount} />
+      </div>
+
+      <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">{entry.entryType === "COMPANY" ? "Company notes" : "Record notes"}</h3>
+          {entry.entryType === "COMPANY" && data.rollup && (
+            <span className="shrink-0 text-[11px] text-gray-400">{data.rollup.emailAddresses.length} email addresses in rollup</span>
+          )}
+        </div>
+        <NotesEditor value={entry.notes ?? ""} onSave={(notes) => patch({ notes })} placeholder={entry.entryType === "COMPANY" ? "Add company-level context, client preferences, relationship notes, billing quirks..." : "Add relationship notes, preferences, context..."} />
+      </section>
 
       {(entry.dietaryNotes || entry.dietaryFlags.length || entry.allergens.length) && (
         <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -225,7 +255,7 @@ function BlackbookDetail({
         </TimelineSection>
         <TimelineSection title="Options" icon={<Tag size={15} />} empty="No option history yet.">
           {entry.optionCandidates.map((candidate) => (
-            <Card key={candidate.id} title={`${candidate.group.name} · ${candidate.name}`} meta={`${candidate.production.jobCode ?? ""} ${candidate.production.title} · ${candidate.dateStatuses.map((status) => `${status.date.label ?? status.date.dateType}: ${status.status.toLowerCase().replace(/_/g, " ")}`).join(" · ")}`} />
+            <Card key={candidate.id} title={`${candidate.group.name} · ${candidate.name}`} meta={`${candidate.production.jobCode ?? ""} ${candidate.production.title} · ${candidate.blackbookEntry && entry.entryType === "COMPANY" ? candidate.blackbookEntry.displayName : ""} · ${candidate.dateStatuses.map((status) => `${status.date.label ?? status.date.dateType}: ${status.status.toLowerCase().replace(/_/g, " ")}`).join(" · ")}`} />
           ))}
         </TimelineSection>
         <TimelineSection title="Email messages" icon={<Mail size={15} />} empty="No matching email messages yet.">
@@ -253,6 +283,47 @@ function LifecycleEditor({ value, onChange }: { value: BlackbookLifecycleStatus;
       <select value={value} onChange={(event) => void onChange(event.target.value as BlackbookLifecycleStatus)} className="mt-1 h-9 w-full rounded border border-gray-200 px-2 text-xs">
         {options.map((option) => <option key={option} value={option}>{option.toLowerCase().replace(/_/g, " ")}</option>)}
       </select>
+    </div>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-[#fbfbfa] p-3">
+      <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">{label}</p>
+      <p className="mt-1 text-xl font-semibold tabular-nums text-gray-900">{value}</p>
+    </div>
+  );
+}
+
+function NotesEditor({ value, onSave, placeholder }: { value: string; onSave: (value: string) => Promise<void>; placeholder: string }) {
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  async function save() {
+    if (draft === value) return;
+    setSaving(true);
+    try {
+      await onSave(draft);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => { save().catch(console.error); }}
+        placeholder={placeholder}
+        className="min-h-28 w-full resize-y rounded-md border border-gray-200 bg-[#fffdf3] p-3 text-sm leading-6 text-gray-800 outline-none shadow-inner focus:border-amber-300"
+      />
+      <div className="mt-1 flex justify-end text-[10px] text-gray-400">{saving ? "Saving..." : "Autosaves on blur"}</div>
     </div>
   );
 }
