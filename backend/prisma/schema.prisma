@@ -240,44 +240,77 @@ model Company {
 }
 
 model Contact {
-  id              String                 @id @default(cuid())
-  firstName       String
-  lastName        String?
-  email           String?
-  phone           String?
-  companyId       String?
-  company         Company?               @relation(fields: [companyId], references: [id])
-  jobTitle        String?
-  type            ContactType            @default(CLIENT)
-  source          ContactSource          @default(OTHER)
-  tags            String[]               @default([])
-  lastContactedAt DateTime?
-  notes           String?
-  opportunities   Opportunity[]
-  crewMembers     CrewMember[]
-  productionDates ProductionDatePerson[]
-  emailThreads    EmailThread[]
-  emailDrafts     EmailDraft[]
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+  id               String                 @id @default(cuid())
+  firstName        String
+  lastName         String?
+  email            String?
+  phone            String?
+  companyId        String?
+  company          Company?               @relation(fields: [companyId], references: [id])
+  jobTitle         String?
+  type             ContactType            @default(CLIENT)
+  source           ContactSource          @default(OTHER)
+  tags             String[]               @default([])
+  lastContactedAt  DateTime?
+  notes            String?
+  opportunities    Opportunity[]
+  crewMembers      CrewMember[]
+  productionDates  ProductionDatePerson[]
+  emailThreads     EmailThread[]
+  emailDrafts      EmailDraft[]
+  blackbookEntries BlackbookEntry[]
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
   @@map("pms_contacts")
 }
 
+model BlackbookConfigCategory {
+  id         String                @id @default(uuid())
+  name       String
+  slug       String                @unique
+  broadType  BlackbookCategory     @default(OTHER)
+  color      String                @default("#1a1a1f")
+  order      Int                   @default(0)
+  coreFields Json                  @default("[]")
+  types      BlackbookConfigType[]
+  entries    BlackbookEntry[]
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  @@map("pms_blackbook_config_categories")
+}
+
+model BlackbookConfigType {
+  id         String                  @id @default(uuid())
+  categoryId String
+  name       String
+  slug       String
+  order      Int                     @default(0)
+  category   BlackbookConfigCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  @@unique([categoryId, slug])
+  @@map("pms_blackbook_config_types")
+}
+
 model BlackbookEntry {
-  id          String             @id @default(uuid())
-  entryType   BlackbookEntryType @default(PERSON)
-  category    BlackbookCategory  @default(OTHER)
-  displayName String
-  firstName   String?
-  lastName    String?
-  companyName String?
-  jobTitle    String?
-  email       String?
-  phone       String?
-  website     String?
-  tags        String[]           @default([])
-  notes       String?
+  id               String             @id @default(uuid())
+  entryType        BlackbookEntryType @default(PERSON)
+  category         BlackbookCategory  @default(OTHER)
+  categoryConfigId String?
+  typeIds          String[]           @default([])
+  displayName      String
+  firstName        String?
+  lastName         String?
+  companyName      String?
+  jobTitle         String?
+  email            String?
+  phone            String?
+  website          String?
+  tags             String[]           @default([])
+  notes            String?
 
   // Commercial defaults
   defaultRate Float?
@@ -329,11 +362,16 @@ model BlackbookEntry {
   shoe         String?
 
   optionCandidates OptionCandidate[]
+  contactId        String?
+  contact          Contact?                 @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  categoryConfig   BlackbookConfigCategory? @relation(fields: [categoryConfigId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([entryType, category])
+  @@index([categoryConfigId])
+  @@index([contactId])
   @@index([displayName])
   @@index([email])
   @@map("pms_blackbook_entries")

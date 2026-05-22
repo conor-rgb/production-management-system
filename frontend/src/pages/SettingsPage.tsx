@@ -5,6 +5,26 @@ import { api } from "../lib/api";
 import type { CrewRole, EmailAccount, EmailTemplate, SectionTemplate, StorageInfo } from "../lib/types";
 import { formatBytes } from "../lib/types";
 
+type BlackbookCategory = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" | "TRANSPORT" | "POST" | "OTHER";
+
+interface BlackbookConfigType {
+  id: string;
+  name: string;
+  slug: string;
+  order: number;
+}
+
+interface BlackbookConfigCategory {
+  id: string;
+  name: string;
+  slug: string;
+  broadType: BlackbookCategory;
+  color: string;
+  order: number;
+  coreFields: string[];
+  types: BlackbookConfigType[];
+}
+
 export default function SettingsPage() {
   const { email } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
@@ -37,6 +57,9 @@ export default function SettingsPage() {
     password: "",
   });
   const [templateForm, setTemplateForm] = useState({ name: "", subject: "", bodyHtml: "", defaultCc: "", defaultBcc: "" });
+  const [blackbookCategories, setBlackbookCategories] = useState<BlackbookConfigCategory[]>([]);
+  const [newBlackbookCategory, setNewBlackbookCategory] = useState("");
+  const [newTypeByCategory, setNewTypeByCategory] = useState<Record<string, string>>({});
 
   async function loadRoles() {
     const data = await api.get<CrewRole[]>("/api/settings/crew-roles");
@@ -61,10 +84,15 @@ export default function SettingsPage() {
     setEmailHealth(Object.fromEntries(health.map((item) => [item.accountId, item.connected])));
   }
 
+  async function loadBlackbookSettings() {
+    setBlackbookCategories(await api.get<BlackbookConfigCategory[]>("/api/settings/blackbook/categories"));
+  }
+
   useEffect(() => {
     loadRoles().catch(console.error);
     loadCatalog().catch(console.error);
     loadEmailSettings().catch(console.error);
+    loadBlackbookSettings().catch(console.error);
     api.get<StorageInfo>("/api/files/storage-info").then(setStorageInfo).catch(console.error);
   }, []);
 
@@ -203,6 +231,36 @@ export default function SettingsPage() {
     }
   }
 
+  async function addBlackbookCategory() {
+    if (!newBlackbookCategory.trim()) return;
+    await api.post("/api/settings/blackbook/categories", { name: newBlackbookCategory.trim(), broadType: "OTHER", coreFields: [] });
+    setNewBlackbookCategory("");
+    await loadBlackbookSettings();
+  }
+
+  async function updateBlackbookCategory(id: string, patch: Partial<BlackbookConfigCategory>) {
+    await api.patch(`/api/settings/blackbook/categories/${id}`, patch);
+    await loadBlackbookSettings();
+  }
+
+  async function addBlackbookType(categoryId: string) {
+    const name = newTypeByCategory[categoryId]?.trim();
+    if (!name) return;
+    await api.post(`/api/settings/blackbook/categories/${categoryId}/types`, { name });
+    setNewTypeByCategory((current) => ({ ...current, [categoryId]: "" }));
+    await loadBlackbookSettings();
+  }
+
+  async function updateBlackbookType(typeId: string, name: string) {
+    await api.patch(`/api/settings/blackbook/types/${typeId}`, { name });
+    await loadBlackbookSettings();
+  }
+
+  async function deleteBlackbookType(typeId: string) {
+    await api.delete(`/api/settings/blackbook/types/${typeId}`);
+    await loadBlackbookSettings();
+  }
+
   return (
     <div className="max-w-3xl p-4 md:p-6">
       <h1 className="mb-6 text-2xl font-semibold text-gray-900">Settings</h1>
@@ -318,6 +376,44 @@ export default function SettingsPage() {
             <RoleRow key={role.id} role={role} onSave={updateRole} onDelete={deleteRole} />
           ))}
           {roles.length === 0 && <p className="p-4 text-center text-sm text-gray-400">No crew roles yet.</p>}
+        </div>
+      </div>
+
+      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-5">
+        <div className="mb-4">
+          <h2 className="font-medium text-gray-900">Blackbook categories</h2>
+          <p className="mt-1 text-sm text-gray-500">Organise the blackbook by category, multi-select types, and matrix core fields. This drives options sheets and later PDF templates.</p>
+        </div>
+        <div className="mb-4 flex gap-2">
+          <input value={newBlackbookCategory} onChange={(event) => setNewBlackbookCategory(event.target.value)} placeholder="New category, e.g. Florists" className="min-h-11 flex-1 rounded-lg border border-gray-300 px-3 text-sm outline-none focus:ring-1 focus:ring-gray-500" />
+          <button onClick={addBlackbookCategory} className="grid min-h-11 min-w-11 place-items-center rounded-lg bg-gray-900 text-white"><Plus size={18} /></button>
+        </div>
+        <div className="space-y-3">
+          {blackbookCategories.map((category) => (
+            <div key={category.id} className="rounded-lg border border-gray-200 p-3">
+              <div className="grid gap-2 md:grid-cols-[1fr_130px_90px]">
+                <input value={category.name} onChange={(event) => updateBlackbookCategory(category.id, { name: event.target.value })} className="min-h-10 rounded border border-gray-200 px-2 text-sm" />
+                <select value={category.broadType} onChange={(event) => updateBlackbookCategory(category.id, { broadType: event.target.value as BlackbookCategory })} className="min-h-10 rounded border border-gray-200 px-2 text-xs">
+                  {(["CREW", "SERVICE", "LOCATION", "EQUIPMENT", "TALENT", "TRANSPORT", "POST", "OTHER"] as BlackbookCategory[]).map((item) => <option key={item} value={item}>{item.toLowerCase()}</option>)}
+                </select>
+                <input value={category.color} onChange={(event) => updateBlackbookCategory(category.id, { color: event.target.value })} className="min-h-10 rounded border border-gray-200 px-2 text-xs" />
+              </div>
+              <label className="mt-3 block text-xs font-medium text-gray-500">Core option matrix fields</label>
+              <input value={category.coreFields.join(", ")} onChange={(event) => updateBlackbookCategory(category.id, { coreFields: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} placeholder="email, phone, rate, dietaries, address, photos" className="mt-1 min-h-10 w-full rounded border border-gray-200 px-2 text-xs" />
+              <div className="mt-3 flex flex-wrap gap-2">
+                {category.types.map((type) => (
+                  <span key={type.id} className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-1">
+                    <input value={type.name} onChange={(event) => updateBlackbookType(type.id, event.target.value)} className="w-32 bg-transparent text-xs outline-none" />
+                    <button onClick={() => deleteBlackbookType(type.id)} className="text-gray-400 hover:text-red-600">×</button>
+                  </span>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <input value={newTypeByCategory[category.id] ?? ""} onChange={(event) => setNewTypeByCategory((current) => ({ ...current, [category.id]: event.target.value }))} placeholder="Add type, e.g. fashion photographer" className="min-h-9 flex-1 rounded border border-gray-200 px-2 text-xs" />
+                <button onClick={() => addBlackbookType(category.id)} className="rounded bg-gray-900 px-3 text-xs font-medium text-white">Add type</button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

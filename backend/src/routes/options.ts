@@ -49,6 +49,9 @@ type OptionFieldBody = {
 type BlackbookFieldBody = {
   entryType?: BlackbookEntryType;
   category?: BlackbookCategory;
+  categoryConfigId?: string | null;
+  typeIds?: string[];
+  contactId?: string | null;
   displayName?: string;
   firstName?: string | null;
   lastName?: string | null;
@@ -140,6 +143,9 @@ function blackbookDataFromBody(body: BlackbookFieldBody): Prisma.BlackbookEntryU
   const data: Prisma.BlackbookEntryUpdateInput = {};
   if (body.entryType !== undefined) data.entryType = body.entryType;
   if (body.category !== undefined) data.category = body.category;
+  if (body.categoryConfigId !== undefined) data.categoryConfig = body.categoryConfigId ? { connect: { id: body.categoryConfigId } } : { disconnect: true };
+  if (body.typeIds !== undefined) data.typeIds = body.typeIds;
+  if (body.contactId !== undefined) data.contact = body.contactId ? { connect: { id: body.contactId } } : { disconnect: true };
   if (body.displayName !== undefined) data.displayName = body.displayName.trim();
   if (body.firstName !== undefined) data.firstName = optionalText(body.firstName);
   if (body.lastName !== undefined) data.lastName = optionalText(body.lastName);
@@ -455,6 +461,9 @@ router.post("/blackbook", async (req: Request, res: Response): Promise<void> => 
       displayName,
       entryType: body.entryType ?? "PERSON",
       category: body.category ?? "OTHER",
+      categoryConfigId: body.categoryConfigId,
+      typeIds: body.typeIds ?? [],
+      contactId: body.contactId,
       firstName: optionalText(body.firstName),
       lastName: optionalText(body.lastName),
       companyName: optionalText(body.companyName),
@@ -505,6 +514,71 @@ router.post("/blackbook", async (req: Request, res: Response): Promise<void> => 
     },
   });
   res.status(201).json(entry);
+});
+
+router.get("/blackbook/:entryId/crm", async (req: Request, res: Response): Promise<void> => {
+  const entry = await prisma.blackbookEntry.findUnique({
+    where: { id: req.params.entryId },
+    include: {
+      contact: { include: { company: true } },
+      categoryConfig: { include: { types: { orderBy: { order: "asc" } } } },
+      optionCandidates: {
+        include: {
+          production: { select: { id: true, title: true, jobCode: true, clientName: true, brand: true, status: true } },
+          group: { select: { id: true, name: true, type: true } },
+          dateStatuses: { include: { date: true }, orderBy: { date: { date: "asc" } } },
+          assignments: { include: { requirement: true, date: true } },
+        },
+        orderBy: { updatedAt: "desc" },
+      },
+    },
+  });
+  if (!entry) {
+    res.status(404).json({ error: "Blackbook entry not found" });
+    return;
+  }
+  const emailMatches = entry.email
+    ? await prisma.emailMessage.findMany({
+        where: {
+          OR: [
+            { fromAddress: { equals: entry.email, mode: "insensitive" } },
+            { toAddresses: { has: entry.email.toLowerCase() } },
+            { ccAddresses: { has: entry.email.toLowerCase() } },
+            { bccAddresses: { has: entry.email.toLowerCase() } },
+          ],
+        },
+        orderBy: { sentAt: "desc" },
+        take: 50,
+        include: {
+          thread: {
+            select: {
+              id: true,
+              subject: true,
+              linkedOpportunity: { select: { id: true, title: true, clientName: true, brand: true, stage: true } },
+              linkedProduction: { select: { id: true, title: true, jobCode: true, clientName: true, brand: true, status: true } },
+            },
+          },
+        },
+      })
+    : [];
+  const contactId = entry.contactId;
+  const [opportunities, productions] = contactId
+    ? await Promise.all([
+        prisma.opportunity.findMany({
+          where: { contactId },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          select: { id: true, title: true, clientName: true, brand: true, stage: true, value: true, createdAt: true },
+        }),
+        prisma.crewMember.findMany({
+          where: { contactId },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          include: { production: { select: { id: true, title: true, jobCode: true, clientName: true, brand: true, status: true } } },
+        }),
+      ])
+    : [[], []];
+  res.json({ entry, opportunities, productions, emailMessages: emailMatches });
 });
 
 router.patch("/blackbook/:entryId", async (req: Request, res: Response): Promise<void> => {

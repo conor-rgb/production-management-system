@@ -951,12 +951,20 @@ router.get("/threads/:threadId/people", async (req: Request, res: Response): Pro
         include: { company: true },
       })
     : [];
+  const blackbookEntries = addresses.length
+    ? await prisma.blackbookEntry.findMany({
+        where: { email: { in: addresses, mode: "insensitive" } },
+        include: { categoryConfig: true },
+      })
+    : [];
   const contactByEmail = new Map(contacts.map((contact) => [contact.email?.toLowerCase(), contact]));
+  const blackbookByEmail = new Map(blackbookEntries.map((entry) => [entry.email?.toLowerCase(), entry]));
   const accountEmail = thread.account?.emailAddress.toLowerCase();
   const roleOrder = ["from", "to", "cc", "bcc"];
   const people = Array.from(addressMap.values())
     .map((person) => {
       const contact = contactByEmail.get(person.email.toLowerCase()) ?? null;
+      const blackbookEntry = blackbookByEmail.get(person.email.toLowerCase()) ?? null;
       return {
         email: person.email,
         name: contact ? `${contact.firstName}${contact.lastName ? ` ${contact.lastName}` : ""}` : person.name || inferNameFromEmail(person.email),
@@ -972,6 +980,16 @@ router.get("/threads/:threadId/people", async (req: Request, res: Response): Pro
           type: contact.type,
           company: contact.company,
         } : null,
+        blackbookEntry: blackbookEntry ? {
+          id: blackbookEntry.id,
+          displayName: blackbookEntry.displayName,
+          entryType: blackbookEntry.entryType,
+          category: blackbookEntry.category,
+          categoryConfig: blackbookEntry.categoryConfig,
+          dietaryNotes: blackbookEntry.dietaryNotes,
+          dietaryFlags: blackbookEntry.dietaryFlags,
+          allergens: blackbookEntry.allergens,
+        } : null,
         isLinkedToThread: Boolean(contact && thread.linkedContactId === contact.id),
       };
     })
@@ -982,6 +1000,38 @@ router.get("/threads/:threadId/people", async (req: Request, res: Response): Pro
     });
 
   res.json({ people });
+});
+
+router.post("/threads/:threadId/people/create-blackbook", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as {
+    email?: string;
+    displayName?: string;
+    companyName?: string;
+    entryType?: "PERSON" | "COMPANY" | "LOCATION" | "TALENT" | "SERVICE";
+    category?: "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" | "TRANSPORT" | "POST" | "OTHER";
+    contactId?: string | null;
+  };
+  if (!body.email || !body.displayName) {
+    res.status(400).json({ error: "email and displayName required" });
+    return;
+  }
+  const existing = await prisma.blackbookEntry.findFirst({ where: { email: { equals: body.email, mode: "insensitive" } } });
+  if (existing) {
+    res.status(409).json({ error: "Blackbook entry already exists", entry: existing });
+    return;
+  }
+  const entry = await prisma.blackbookEntry.create({
+    data: {
+      email: body.email.toLowerCase(),
+      displayName: body.displayName.trim(),
+      companyName: body.companyName?.trim() || null,
+      entryType: body.entryType ?? "PERSON",
+      category: body.category ?? "OTHER",
+      contactId: body.contactId ?? null,
+    },
+  });
+  console.log(`[EMAIL CRM] Created blackbook entry ${entry.email ?? entry.id} from thread ${req.params.threadId}`);
+  res.json(entry);
 });
 
 router.post("/threads/:threadId/people/create-contact", async (req: Request, res: Response): Promise<void> => {

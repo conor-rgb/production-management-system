@@ -6,6 +6,7 @@ import { tagColour } from "../lib/types";
 import ContactModal from "../components/contacts/ContactModal";
 import CompanyModal from "../components/contacts/CompanyModal";
 import ContactDetail from "../components/contacts/ContactDetail";
+import BlackbookOverlay from "../components/blackbook/BlackbookOverlay";
 import { Search, Plus, ChevronDown, ChevronRight, Building2 } from "lucide-react";
 
 type Tab = "CLIENT" | "SUPPLIER";
@@ -25,6 +26,7 @@ export default function Contacts() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [editContact, setEditContact] = useState<Contact | null | "new">(null);
   const [editCompany, setEditCompany] = useState<Company | null | "new">(null);
+  const [showBlackbook, setShowBlackbook] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -94,6 +96,12 @@ export default function Contacts() {
             ))}
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowBlackbook(true)}
+              className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Blackbook
+            </button>
             <button
               onClick={() => setEditCompany("new")}
               className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 px-2 py-1.5 rounded-lg hover:bg-gray-100"
@@ -215,6 +223,7 @@ export default function Contacts() {
           />
         </div>
       )}
+      {showBlackbook && <BlackbookOverlay onClose={() => setShowBlackbook(false)} />}
     </div>
   );
 }
