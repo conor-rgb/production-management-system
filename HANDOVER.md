@@ -1,37 +1,31 @@
-# HANDOVER - 2026-05-22 - Options Source-Of-Truth Visual Pass
+# HANDOVER - 2026-05-22 - Options Blackbook Link Button Pass
 
 ## Built This Session
-- Updated the options candidate sheet so the distinction between reusable Blackbook data and project-specific option data is visible.
-- The first column is now `Blackbook source`.
-  - Linked candidates show the live Blackbook display name as the primary identity.
-  - Shows source metadata from Blackbook: company/title/email/phone/city.
-  - Shows Blackbook flags such as default rate and dietaries.
-  - Clicking the source card opens the real Blackbook overlay.
-- Candidate/project fields now sit separately:
-  - `Project option` = job-specific alias/name
-  - `Project note` = job-specific subtitle/context
-  - `Project rate` = rate for this production
-  - state/date holds remain project-specific
-- Unlinked candidates now clearly show `No Blackbook source linked` with the link/create control beneath.
-- The small Blackbook link button remains available for linked rows for relink/unlink/create actions, but it no longer pretends to be the source record itself.
+- Simplified the Options candidate sheet Blackbook UI per latest feedback.
+- Removed the dominant `Blackbook source` column/card treatment from the options rows.
+- The candidate name is now the primary row identity again, with a compact Blackbook link control beside it.
+- The Blackbook control is intentionally small:
+  - Unlinked rows show a grey `Link` button.
+  - Linked rows show a darker underlined `Blackbook` button.
+  - The dropdown still supports search/link, create from row, open record, and unlink.
+- Removed user-facing explanation copy such as `No Blackbook source linked` and source metadata blocks from the table.
+- Kept the shared source-of-truth behavior: opening a linked row still opens the actual Blackbook record overlay, and closing that overlay refreshes the options matrix.
 
 ## Schema
 - No schema changes in this pass.
-- Uses existing `OptionCandidate.blackbookEntryId` -> `BlackbookEntry` relation.
 
 ## Backend
 - No backend changes in this pass.
 
 ## Frontend
-- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
-- Added helper display functions for Blackbook metadata and flags.
+- Updated `frontend/src/components/options/OptionsBoardView.tsx` only.
 - Candidate sheet columns now read:
-  - Blackbook source
-  - Project option
+  - Option
   - Project note
   - Project rate
   - State
   - date hold columns
+- Removed now-unused Blackbook metadata/flag display helpers.
 
 ## Verification
 - Frontend build passed.
@@ -39,13 +33,18 @@
 - PM2 process `0` reloaded.
 - Health check passed after reload.
 
+## Current Options / Blackbook State
+- Options matrix remains project-specific for candidates, rates, notes, holds, and assignments.
+- Blackbook remains the reusable source of truth for people/suppliers/locations/companies and opens as a right-side overlay from linked option rows.
+- The options row link control is deliberately low-emphasis so the sheet can stay readable while still making linking/creation available.
+
 ## Known Gaps / Technical Debt
 - Outreach notes save on blur. This avoids a PATCH on every keystroke, but there is not yet a subtle saved indicator.
 - Target list archive is one-way in the UI. The backend keeps archived lists; a future Settings/Admin view can expose restoration.
 - The email overlay links to `?message=...`, but Email still needs the exact target-message expansion/minimise behaviour.
 - Company comms aggregation is based on known email addresses. It now benefits from linked people, but contacts without email addresses will still not contribute messages.
 - Supplier view still applies the broad legacy `SERVICE` filter. Category chips now let you get to all configured groups, but supplier taxonomy can be refined further once records are migrated/classified.
-- Candidate snapshot fields are intentionally still separate from Blackbook. The visual split is now clearer, but future PDF/export logic must continue to choose deliberately between source fields and project fields.
+- Candidate snapshot fields are intentionally still separate from Blackbook. Future PDF/export logic must continue to choose deliberately between source fields and project fields.
 - No Airtable-style template designer or client PDF options designer yet.
 
 ## Exact Next Steps
