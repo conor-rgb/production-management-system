@@ -107,8 +107,18 @@ export default function BlackbookOverlay({ initialEntryId, onClose }: { initialE
   const selected = detail?.entry ?? entries.find((entry) => entry.id === selectedId) ?? null;
 
   return (
-    <div className="fixed inset-0 z-[950] bg-black/25 p-3">
-      <div className="ml-auto flex h-full w-full max-w-[1120px] overflow-hidden rounded-xl bg-white shadow-2xl">
+    <div className="fixed inset-0 z-[950] bg-black/25 p-3" style={{ animation: "blackbookOverlayFade 160ms ease-out" }}>
+      <style>{`
+        @keyframes blackbookOverlayFade {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes blackbookPanelSlideIn {
+          from { opacity: 0.96; transform: translateX(32px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+      `}</style>
+      <div className="ml-auto flex h-full w-full max-w-[1120px] overflow-hidden rounded-xl bg-white shadow-2xl" style={{ animation: "blackbookPanelSlideIn 220ms cubic-bezier(0.16, 1, 0.3, 1)" }}>
         <aside className="flex w-[320px] shrink-0 flex-col border-r border-gray-200 bg-[#fbfbfa]">
           <div className="flex h-12 items-center justify-between border-b border-gray-200 px-4">
             <h2 className="text-sm font-semibold text-gray-900">Blackbook</h2>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { ArrowLeft, BookOpen, Link2, Plus, Trash2, X } from "lucide-react";
 import { api } from "../../lib/api";
+import BlackbookOverlay from "../blackbook/BlackbookOverlay";
 
 type RequirementType = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" | "TRANSPORT" | "POST" | "OTHER";
 type RequirementState = "ACTIVE" | "PARKED" | "RELEASED";
@@ -433,14 +434,13 @@ function EditableText({ value, onSave, className = "", placeholder = "" }: { val
   return <button onClick={() => setEditing(true)} className={`w-full truncate text-left ${className}`}>{value || <span className="text-gray-300">{placeholder}</span>}</button>;
 }
 
-function BlackbookLinkControl({ group, candidate, onLink, onUpdateEntry }: {
+function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook }: {
   group: OptionGroup;
   candidate: OptionCandidate;
   onLink: (payload: { entryId?: string | null; createFromCandidate?: boolean }) => Promise<void>;
-  onUpdateEntry: (entryId: string, patch: Partial<BlackbookEntry>) => Promise<void>;
+  onOpenBlackbook: (entryId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [editingDetails, setEditingDetails] = useState(false);
   const [query, setQuery] = useState(candidate.name);
   const [results, setResults] = useState<BlackbookEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -520,10 +520,13 @@ function BlackbookLinkControl({ group, candidate, onLink, onUpdateEntry }: {
             {entry ? (
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setEditingDetails(true)}
+                  onClick={() => {
+                    setOpen(false);
+                    onOpenBlackbook(entry.id);
+                  }}
                   className="text-[11px] text-gray-500 hover:text-gray-900"
                 >
-                  Edit details
+                  Open record
                 </button>
                 <button
                   onClick={() => {
@@ -548,120 +551,6 @@ function BlackbookLinkControl({ group, candidate, onLink, onUpdateEntry }: {
           </div>
         </div>
       )}
-      {entry && editingDetails && (
-        <BlackbookDetailPad
-          entry={entry}
-          onClose={() => setEditingDetails(false)}
-          onSave={async (patch) => {
-            await onUpdateEntry(entry.id, patch);
-            setEditingDetails(false);
-            setOpen(false);
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function csvToList(value: string): string[] {
-  return value.split(",").map((item) => item.trim()).filter(Boolean);
-}
-
-function BlackbookDetailPad({ entry, onClose, onSave }: {
-  entry: BlackbookEntry;
-  onClose: () => void;
-  onSave: (patch: Partial<BlackbookEntry>) => Promise<void>;
-}) {
-  const [draft, setDraft] = useState({
-    displayName: entry.displayName,
-    companyName: entry.companyName ?? "",
-    email: entry.email ?? "",
-    phone: entry.phone ?? "",
-    website: entry.website ?? "",
-    dietaryNotes: entry.dietaryNotes ?? "",
-    dietaryFlags: entry.dietaryFlags.join(", "),
-    allergens: entry.allergens.join(", "),
-    addressLine1: entry.addressLine1 ?? "",
-    addressLine2: entry.addressLine2 ?? "",
-    city: entry.city ?? "",
-    postcode: entry.postcode ?? "",
-    country: entry.country ?? "",
-    locationType: entry.locationType ?? "",
-    ukAgency: entry.ukAgency ?? "",
-    frAgency: entry.frAgency ?? "",
-    bookUrl: entry.bookUrl ?? "",
-    socialUrl: entry.socialUrl ?? "",
-    polasUrl: entry.polasUrl ?? "",
-    modelsComUrl: entry.modelsComUrl ?? "",
-  });
-
-  function set<K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) {
-    setDraft((current) => ({ ...current, [key]: value }));
-  }
-
-  async function save() {
-    await onSave({
-      displayName: draft.displayName,
-      companyName: draft.companyName || null,
-      email: draft.email || null,
-      phone: draft.phone || null,
-      website: draft.website || null,
-      dietaryNotes: draft.dietaryNotes || null,
-      dietaryFlags: csvToList(draft.dietaryFlags),
-      allergens: csvToList(draft.allergens),
-      addressLine1: draft.addressLine1 || null,
-      addressLine2: draft.addressLine2 || null,
-      city: draft.city || null,
-      postcode: draft.postcode || null,
-      country: draft.country || null,
-      locationType: draft.locationType || null,
-      ukAgency: draft.ukAgency || null,
-      frAgency: draft.frAgency || null,
-      bookUrl: draft.bookUrl || null,
-      socialUrl: draft.socialUrl || null,
-      polasUrl: draft.polasUrl || null,
-      modelsComUrl: draft.modelsComUrl || null,
-    });
-  }
-
-  const inputClass = "min-h-8 rounded border border-amber-200 bg-[#fffbe8] px-2 text-xs text-gray-900 outline-none focus:border-amber-400";
-  return (
-    <div className="fixed inset-0 z-[900] grid place-items-center bg-black/20 p-4">
-      <div className="w-full max-w-[560px] rounded-lg border border-amber-200 bg-[#fffbe8] p-4 shadow-2xl">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Blackbook details</h3>
-            <p className="text-[11px] text-amber-800">Used later for client decks, crew lists, dietaries, and supplier filtering.</p>
-          </div>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded hover:bg-amber-100"><X size={15} /></button>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Display name<input value={draft.displayName} onChange={(event) => set("displayName", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Company / agency<input value={draft.companyName} onChange={(event) => set("companyName", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Email<input value={draft.email} onChange={(event) => set("email", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Phone<input value={draft.phone} onChange={(event) => set("phone", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Website<input value={draft.website} onChange={(event) => set("website", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Location type<input value={draft.locationType} onChange={(event) => set("locationType", event.target.value)} className={inputClass} placeholder="Studio, location house..." /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500 md:col-span-2">Address line 1<input value={draft.addressLine1} onChange={(event) => set("addressLine1", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500 md:col-span-2">Address line 2<input value={draft.addressLine2} onChange={(event) => set("addressLine2", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">City<input value={draft.city} onChange={(event) => set("city", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Postcode<input value={draft.postcode} onChange={(event) => set("postcode", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Country<input value={draft.country} onChange={(event) => set("country", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">UK agency<input value={draft.ukAgency} onChange={(event) => set("ukAgency", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">FR agency<input value={draft.frAgency} onChange={(event) => set("frAgency", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Book URL<input value={draft.bookUrl} onChange={(event) => set("bookUrl", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Social URL<input value={draft.socialUrl} onChange={(event) => set("socialUrl", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Polas URL<input value={draft.polasUrl} onChange={(event) => set("polasUrl", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Models.com URL<input value={draft.modelsComUrl} onChange={(event) => set("modelsComUrl", event.target.value)} className={inputClass} /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Dietary flags<input value={draft.dietaryFlags} onChange={(event) => set("dietaryFlags", event.target.value)} className={inputClass} placeholder="vegan, vegetarian, GF" /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500">Allergens<input value={draft.allergens} onChange={(event) => set("allergens", event.target.value)} className={inputClass} placeholder="nuts, sesame" /></label>
-          <label className="grid gap-1 text-[11px] font-medium text-gray-500 md:col-span-2">Dietary notes<textarea value={draft.dietaryNotes} onChange={(event) => set("dietaryNotes", event.target.value)} className={`${inputClass} min-h-20 py-2`} /></label>
-        </div>
-        <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded px-3 py-2 text-xs text-gray-500 hover:bg-amber-100">Cancel</button>
-          <button onClick={save} className="rounded bg-gray-900 px-3 py-2 text-xs font-medium text-white">Save details</button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -672,6 +561,7 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [showRoleForm, setShowRoleForm] = useState(false);
   const [showDateForm, setShowDateForm] = useState(false);
+  const [openBlackbookEntryId, setOpenBlackbookEntryId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -721,11 +611,6 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
     setMatrix(await api.post<MatrixResponse>(`/api/options/matrix/candidates/${candidateId}/link-blackbook`, payload));
   }
 
-  async function updateBlackbook(entryId: string, patch: Partial<BlackbookEntry>) {
-    await api.patch<BlackbookEntry>(`/api/options/blackbook/${entryId}`, patch);
-    setMatrix(await api.get<MatrixResponse>(`/api/options/production/${productionId}/matrix`));
-  }
-
   async function deleteCandidate(candidateId: string) {
     if (!window.confirm("Delete this candidate?")) return;
     setMatrix(await api.delete(`/api/options/matrix/candidates/${candidateId}`).then(() => api.get<MatrixResponse>(`/api/options/production/${productionId}/matrix`)));
@@ -762,7 +647,7 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
           dates={matrix.dates}
           onUpdateCandidate={updateCandidate}
           onLinkBlackbook={linkBlackbook}
-          onUpdateBlackbook={updateBlackbook}
+          onOpenBlackbook={setOpenBlackbookEntryId}
           onUpdateCandidateDate={updateCandidateDate}
           onDeleteCandidate={deleteCandidate}
           onAddCandidate={() => addCandidate(selectedGroup.id)}
@@ -782,6 +667,15 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
 
       {showRoleForm && <RoleForm productionId={productionId} onClose={() => setShowRoleForm(false)} onSaved={(data) => { setMatrix(data); setShowRoleForm(false); }} />}
       {showDateForm && <DateForm productionId={productionId} onClose={() => setShowDateForm(false)} onSaved={(data) => { setMatrix(data); setShowDateForm(false); }} />}
+      {openBlackbookEntryId && (
+        <BlackbookOverlay
+          initialEntryId={openBlackbookEntryId}
+          onClose={() => {
+            setOpenBlackbookEntryId(null);
+            void load();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -887,12 +781,12 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   );
 }
 
-function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onUpdateBlackbook, onUpdateCandidateDate, onDeleteCandidate, onAddCandidate }: {
+function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onDeleteCandidate, onAddCandidate }: {
   group: OptionGroup;
   dates: MatrixDate[];
   onUpdateCandidate: (candidateId: string, patch: Partial<OptionCandidate>) => Promise<void>;
   onLinkBlackbook: (candidateId: string, payload: { entryId?: string | null; createFromCandidate?: boolean }) => Promise<void>;
-  onUpdateBlackbook: (entryId: string, patch: Partial<BlackbookEntry>) => Promise<void>;
+  onOpenBlackbook: (entryId: string) => void;
   onUpdateCandidateDate: (candidateId: string, dateId: string, status: HoldStatus | null) => Promise<void>;
   onDeleteCandidate: (candidateId: string) => Promise<void>;
   onAddCandidate: () => Promise<void>;
@@ -909,7 +803,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onUp
         {group.candidates.map((candidate) => (
           <div key={candidate.id} className={`grid min-h-12 items-center gap-x-3 border-b border-gray-100 px-3 text-xs hover:bg-[#f8f8f6] ${candidate.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
             <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="font-semibold text-gray-900" placeholder="Candidate" />
-            <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onUpdateEntry={onUpdateBlackbook} />
+            <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
             <EditableText value={candidate.subtitle ?? ""} onSave={(subtitle) => onUpdateCandidate(candidate.id, { subtitle })} className="text-gray-500" placeholder="Subtitle" />
             <EditableText value={candidate.rate?.toString() ?? ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className="text-right tabular-nums text-gray-700" placeholder="0" />
             <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />
