@@ -248,6 +248,18 @@ function BlackbookDetail({
         <NotesEditor value={entry.notes ?? ""} onSave={(notes) => patch({ notes })} placeholder={entry.entryType === "COMPANY" ? "Add company-level context, client preferences, relationship notes, billing quirks..." : "Add relationship notes, preferences, context..."} />
       </section>
 
+      <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">Links</h3>
+          {entry.website && (
+            <a href={entry.website} target="_blank" rel="noreferrer" className="truncate text-[11px] text-blue-600 hover:underline">
+              {entry.website}
+            </a>
+          )}
+        </div>
+        <InlineField label="Website" value={entry.website ?? ""} onSave={(website) => patch({ website })} />
+      </section>
+
       {(entry.entryType === "LOCATION" || entry.entryType === "COMPANY" || entry.category === "LOCATION") && (
         <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
           <div className="mb-3 flex items-center justify-between gap-3">

@@ -393,7 +393,7 @@ function candidateSummary(group: OptionGroup, dateId: string): string {
 }
 
 function linkCount(candidate: OptionCandidate): number {
-  return [candidate.bookUrl, candidate.socialUrl, candidate.modelsComUrl, candidate.pdfUrl].filter(Boolean).length;
+  return [candidate.website, candidate.bookUrl, candidate.socialUrl, candidate.modelsComUrl, candidate.pdfUrl].filter(Boolean).length;
 }
 
 type AddressLike = Pick<OptionCandidate, "addressLine1" | "addressLine2" | "city" | "region" | "postcode" | "country">;
@@ -661,7 +661,7 @@ function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook }: {
                 className="mb-1 block w-full rounded px-2 py-2 text-left text-xs hover:bg-gray-50"
               >
                 <div className="font-semibold text-gray-900">{item.displayName}</div>
-                <div className="truncate text-[11px] text-gray-400">{[item.companyName, item.email, item.city, item.country].filter(Boolean).join(" · ") || label(item.entryType)}</div>
+                <div className="truncate text-[11px] text-gray-400">{[item.companyName, item.website, item.email, item.city, item.country].filter(Boolean).join(" · ") || label(item.entryType)}</div>
               </button>
             ))}
             {!loading && results.length === 0 && <div className="px-2 py-3 text-[11px] text-gray-400">No matches yet.</div>}
@@ -1279,6 +1279,7 @@ function CandidateLinksCell({ candidate, onUpdate, onUploadPdf }: {
   const [uploading, setUploading] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const links = [
+    candidate.website ? "Website" : null,
     candidate.bookUrl ? "Book" : null,
     candidate.socialUrl ? "Social" : null,
     candidate.modelsComUrl ? "MDC" : null,
@@ -1321,6 +1322,7 @@ function CandidateLinksCell({ candidate, onUpdate, onUploadPdf }: {
       {open && (
         <div className="absolute left-0 top-full z-50 mt-1 w-[320px] rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
           <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Deck links</div>
+          <LinkInput label="Website" value={candidate.website ?? ""} onSave={(website) => onUpdate({ website })} />
           <LinkInput label="Book" value={candidate.bookUrl ?? ""} onSave={(bookUrl) => onUpdate({ bookUrl })} />
           <LinkInput label="Social" value={candidate.socialUrl ?? ""} onSave={(socialUrl) => onUpdate({ socialUrl })} />
           <LinkInput label="models.com" value={candidate.modelsComUrl ?? ""} onSave={(modelsComUrl) => onUpdate({ modelsComUrl })} />

@@ -1,6 +1,11 @@
 # HANDOVER - 2026-05-22 - Google Places Address Picker for Options / Blackbook
 
 ## Built This Session
+- Follow-up frontend pass:
+  - Website is now the first field in the Options row Links dropdown.
+  - Website counts toward the compact Links cell summary.
+  - Blackbook search/link popups now show website in the result metadata when available.
+  - Blackbook overlay now has a Links section with editable Website field.
 - Added reusable Blackbook addresses with address types:
   - Work,
   - Billing,
