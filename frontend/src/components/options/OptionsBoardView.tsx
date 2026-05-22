@@ -308,6 +308,14 @@ function dateLabel(date: MatrixDate): string {
   return `${date.label || label(date.dateType)} ${formatted}`;
 }
 
+function compactDateLabel(date: MatrixDate): { top: string; bottom: string } {
+  const parsed = new Date(date.date);
+  return {
+    top: date.label || label(date.dateType),
+    bottom: parsed.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+  };
+}
+
 function needFor(requirement: OptionRequirement, dateId: string): RequirementDateNeed | undefined {
   return requirement.dateNeeds.find((need) => need.dateId === dateId);
 }
@@ -375,14 +383,14 @@ function pipelineClass(state: PipelineState): string {
 }
 
 function holdClass(status: HoldStatus | null): string {
-  if (status === "CONFIRMED") return "border-emerald-300 bg-emerald-100 text-emerald-800";
-  if (status === "FIRST_OPTION") return "border-lime-300 bg-lime-100 text-lime-800";
-  if (status === "SECOND_OPTION") return "border-sky-300 bg-sky-100 text-sky-800";
-  if (status === "REQUESTED") return "border-violet-300 bg-violet-100 text-violet-800";
-  if (status === "UNAVAILABLE") return "border-gray-300 bg-gray-100 text-gray-600";
+  if (status === "CONFIRMED") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "FIRST_OPTION") return "border-lime-200 bg-lime-50 text-lime-700";
+  if (status === "SECOND_OPTION") return "border-sky-200 bg-sky-50 text-sky-700";
+  if (status === "REQUESTED") return "border-violet-200 bg-violet-50 text-violet-700";
+  if (status === "UNAVAILABLE") return "border-gray-200 bg-gray-100 text-gray-500";
   if (status === "RELEASED") return "border-gray-200 bg-gray-50 text-gray-400";
   if (status === "NA") return "border-gray-200 bg-white text-gray-300";
-  return "border-gray-200 bg-white text-gray-300";
+  return "border-gray-100 bg-white text-gray-300";
 }
 
 function dateStatusClass(status: ProductionDateStatus | null): string {
@@ -403,6 +411,18 @@ function shortPipeline(state: PipelineState): string {
   if (state === "CONFIRMED") return "Conf";
   if (state === "UNAVAILABLE") return "No";
   return "Rel";
+}
+
+function compactHoldLabel(status: string | null, placeholder: string): string {
+  if (!status) return placeholder;
+  if (status === "REQUESTED") return "Req";
+  if (status === "FIRST_OPTION") return "1st";
+  if (status === "SECOND_OPTION") return "2nd";
+  if (status === "CONFIRMED") return "Conf";
+  if (status === "UNAVAILABLE") return "No";
+  if (status === "RELEASED") return "Rel";
+  if (status === "NA") return "N/A";
+  return label(status);
 }
 
 function candidateSummary(group: OptionGroup, dateId: string): string {
@@ -487,10 +507,10 @@ function PillDropdown<T extends string>({ value, options, onChange, classNameFor
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((current) => !current)}
-        className={`inline-flex min-h-7 items-center justify-center gap-1 rounded border py-1 text-[10px] font-semibold uppercase ${compact ? "w-[86px] px-1" : "px-2"} ${classNameForValue(value)}`}
+        className={`inline-flex h-7 items-center justify-center gap-1 rounded-md border text-[10px] font-semibold uppercase leading-none shadow-[inset_0_0_0_0.5px_rgba(255,255,255,0.35)] ${compact ? "w-[76px] px-1 text-[9px] tracking-[0.02em]" : "px-2"} ${classNameForValue(value)}`}
       >
-        {value ? label(value) : placeholder}
-        <span className="text-[9px] opacity-60">▾</span>
+        <span className="truncate">{compact ? compactHoldLabel(value, placeholder) : value ? label(value) : placeholder}</span>
+        <span className="text-[8px] opacity-50">▾</span>
       </button>
       {open && (
         <div className="absolute left-0 top-full z-50 mt-1 min-w-[142px] overflow-hidden rounded-md border border-gray-200 bg-white p-1 shadow-lg">
@@ -672,16 +692,16 @@ function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook }: {
   }, [group.type, open, query]);
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div ref={ref} className="relative min-w-0 shrink-0">
       <button
         onClick={() => {
           setOpen((current) => !current);
           setQuery(candidate.name);
         }}
-        className={`inline-flex h-7 max-w-[96px] items-center gap-1.5 rounded px-2 text-left text-[11px] transition ${entry ? "border border-transparent bg-transparent font-medium text-gray-900 underline decoration-gray-400 underline-offset-2 hover:bg-gray-100" : "border border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-700"}`}
+        className={`inline-flex h-5 max-w-[92px] items-center gap-1 rounded px-1.5 text-left text-[10px] transition ${entry ? "border border-transparent bg-transparent font-medium text-gray-800 underline decoration-gray-300 underline-offset-2 hover:bg-gray-100" : "border border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-700"}`}
         title={linkedTitle}
       >
-        {entry ? <BookOpen size={12} /> : <Link2 size={12} />}
+        {entry ? <BookOpen size={10} /> : <Link2 size={10} />}
         <span className="truncate">{entry ? "Blackbook" : "Link"}</span>
       </button>
       {open && (
@@ -1162,8 +1182,9 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   const [dragCandidateId, setDragCandidateId] = useState<string | null>(null);
   const [dropCandidateId, setDropCandidateId] = useState<string | null>(null);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
-  const gridColumns = `64px 230px 190px 92px 104px 82px 92px ${dates.map(() => "96px").join(" ")} 36px`;
+  const gridColumns = `56px 300px 220px 92px 240px 58px 88px ${dates.map(() => "86px").join(" ")} 34px`;
   const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
+  const minimumSheetWidth = 1088 + (dates.length * 86);
 
   function setSort(nextKey: CandidateSortKey) {
     if (sortKey === nextKey) {
@@ -1203,17 +1224,25 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto">
-      <div className="min-w-max">
-        <div className="sticky top-0 z-20 grid min-h-9 items-center gap-x-2 border-b border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
-          <button onClick={() => setSort("manual")} className={`pl-1 text-left ${sortKey === "manual" ? "font-semibold text-gray-700" : ""}`}>Image{sortKey === "manual" ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}</button>
+    <div className="min-h-0 flex-1 overflow-auto bg-white p-3">
+      <div className="inline-block overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm" style={{ minWidth: minimumSheetWidth }}>
+        <div className="sticky top-0 z-20 grid h-8 items-center gap-x-2 border-b border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
+          <button onClick={() => setSort("manual")} className={`pl-1 text-left ${sortKey === "manual" ? "font-semibold text-gray-700" : ""}`}>Img{sortKey === "manual" ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}</button>
           <SortHeader sort="name">Option</SortHeader>
-          <SortHeader sort="notes">Deck notes</SortHeader>
+          <SortHeader sort="notes">Notes</SortHeader>
           <SortHeader sort="links">Links</SortHeader>
           <div>Address</div>
           <SortHeader sort="rate" align="right">Rate</SortHeader>
           <SortHeader sort="state">State</SortHeader>
-          {dates.map((date) => <SortHeader key={date.id} sort={`date:${date.id}`} align="center">{dateLabel(date)}</SortHeader>)}
+          {dates.map((date) => {
+            const parts = compactDateLabel(date);
+            return (
+              <SortHeader key={date.id} sort={`date:${date.id}`} align="center">
+                <span className="block truncate leading-3">{parts.top}</span>
+                <span className="block truncate text-[9px] leading-3 tracking-normal text-gray-400">{parts.bottom}</span>
+              </SortHeader>
+            );
+          })}
           <div />
         </div>
         {candidates.map((candidate) => (
@@ -1341,8 +1370,8 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
           onReorderDrop();
         }
       }}
-      className={`relative grid min-h-[64px] items-center gap-x-2 border-b px-2 py-2 text-xs transition ${
-        dragActive ? "border-gray-400 bg-blue-50 ring-1 ring-inset ring-blue-300" : isReorderTarget ? "border-gray-300 bg-gray-100 ring-1 ring-inset ring-gray-300" : "border-gray-100 hover:bg-[#f8f8f6]"
+      className={`relative grid min-h-[62px] items-center gap-x-2 border-b px-2 py-2 text-xs transition ${
+        dragActive ? "border-gray-400 bg-blue-50 ring-1 ring-inset ring-blue-300" : isReorderTarget ? "border-gray-300 bg-gray-100 ring-1 ring-inset ring-gray-300" : "border-gray-100 hover:bg-[#fafafa]"
       } ${candidate.activeState === "RELEASED" ? "opacity-45" : ""} ${isReorderDragging ? "opacity-45" : ""}`}
       style={{ gridTemplateColumns: gridColumns }}
     >
@@ -1352,16 +1381,19 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
         </div>
       )}
       <PhotoThumb candidate={candidate} onOpen={onOpenPhotos} />
-      <div className="flex min-w-0 items-center gap-2">
-        <div className="min-w-0 flex-1">
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
           <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="font-semibold text-gray-900" placeholder="Candidate" />
         </div>
-        <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
+        <div className="mt-1 flex min-w-0 items-center gap-2">
+          <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
+          {candidate.subtitle && <span className="truncate text-[11px] text-gray-400">{candidate.subtitle}</span>}
+        </div>
       </div>
-      <EditableText value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} className="text-gray-500" placeholder="Notes for deck" />
+      <EditableText value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} className="text-[11px] text-gray-500" placeholder="Deck note" />
       <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />
       <CandidateAddressCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />
-      <EditableText value={candidate.rate?.toString() ?? ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className="pr-1 text-right tabular-nums text-gray-700" placeholder="0" />
+      <EditableText value={candidate.rate && candidate.rate > 0 ? candidate.rate.toString() : ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className={`pr-1 text-right tabular-nums ${candidate.rate && candidate.rate > 0 ? "text-gray-700" : "text-gray-300"}`} placeholder="—" />
       <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />
       {dates.map((date) => {
         const status = statusFor(candidate, date.id)?.status ?? null;
@@ -1437,11 +1469,12 @@ function CandidateLinksCell({ candidate, onUpdate, onUploadPdf }: {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((current) => !current)}
-        className={`inline-flex min-h-7 items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
+        className={`inline-flex h-7 max-w-full items-center gap-1 rounded-md border px-2 text-[9px] font-semibold uppercase tracking-[0.03em] ${
           links.length ? "border-gray-300 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-400"
         }`}
       >
-        {links.length ? links.join(" · ") : "links"}
+        <span className="truncate">{links.length ? links.slice(0, 2).join(" · ") : "links"}</span>
+        {links.length > 2 && <span className="opacity-60">+{links.length - 2}</span>}
         <span className="text-[9px] opacity-60">▾</span>
       </button>
       {open && (
@@ -1613,18 +1646,18 @@ function CandidateAddressCell({ candidate, onUpdate }: {
       <button
         onClick={() => setOpen((current) => !current)}
         title={summary || "Add address"}
-        className={`block w-full min-w-0 text-left text-[10px] leading-[1.25] ${
-          summary ? "text-gray-600 hover:text-gray-900" : "rounded border border-gray-200 bg-white px-2 py-1 font-semibold uppercase text-gray-400"
+        className={`block w-full min-w-0 text-left text-[10px] leading-[1.2] ${
+          summary ? "text-gray-600 hover:text-gray-900" : "h-7 rounded-md border border-gray-200 bg-white px-2 font-semibold uppercase text-gray-400"
         }`}
       >
         {lines.length ? (
-          <span className="block max-h-[52px] overflow-hidden">
+          <span className="block max-h-[38px] overflow-hidden">
             {lines.map((line) => (
               <span key={line} className="block truncate">{line}</span>
             ))}
           </span>
         ) : (
-          <span>address <span className="text-[9px] opacity-60">▾</span></span>
+          <span className="flex h-full items-center">address <span className="ml-1 text-[9px] opacity-60">▾</span></span>
         )}
       </button>
       {open && (
@@ -1740,7 +1773,7 @@ function AddressInput({ label: inputLabel, value, onSave }: { label: string; val
 function PhotoThumb({ candidate, onOpen }: { candidate: OptionCandidate; onOpen: () => void }) {
   const cover = candidate.photos[0];
   return (
-    <button onClick={onOpen} className="relative grid h-12 w-12 place-items-center overflow-hidden rounded-md border border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-400">
+    <button onClick={onOpen} className="relative grid h-10 w-10 place-items-center overflow-hidden rounded-md border border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-400">
       {cover ? <img src={cover.url} alt="" className="h-full w-full object-cover" /> : <ImageIcon size={17} />}
       {candidate.photos.length > 0 && <span className="absolute bottom-0 right-0 rounded-tl bg-black/65 px-1 text-[9px] text-white">{candidate.photos.length}</span>}
     </button>

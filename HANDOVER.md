@@ -1,6 +1,15 @@
 # HANDOVER - 2026-05-22 - Google Places Address Picker for Options / Blackbook
 
 ## Built This Session
+- Follow-up Options candidate sheet design pass:
+  - Candidate sheets now sit on a cleaner bordered sheet surface instead of a raw grid on white.
+  - Reworked candidate sheet column widths to a constrained readable table width so related fields stay visually grouped on wide screens.
+  - Tightened row height, image thumbnails, link controls, address display, rate cells, and action controls.
+  - Blackbook link now sits beneath the option name as secondary metadata, reducing horizontal crowding.
+  - Address cells now clamp to a compact multi-line preview.
+  - Empty/zero rates now visually recede.
+  - Date status columns are narrower and cleaner, with two-line date headers and compact chip labels (`Req`, `1st`, `2nd`, `Conf`, etc.).
+  - Status/date pills keep the existing colour language but are lighter and less button-like.
 - Follow-up Blackbook compact profile pass:
   - Read the current Blackbook and Options schema before changing layout.
   - Reworked the Blackbook profile side into compact disclosure rows instead of large padded cards.
