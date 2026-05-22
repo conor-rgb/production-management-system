@@ -95,11 +95,11 @@ function addLink(items: LinkItem[], label: string, url?: string | null): void {
 function candidateLinks(candidate: DeckCandidate): LinkItem[] {
   const links: LinkItem[] = [];
   const entry = candidate.blackbookEntry;
-  addLink(links, "Book", entry?.bookUrl);
-  addLink(links, "social", entry?.socialUrl);
-  addLink(links, "models.com", entry?.modelsComUrl);
+  addLink(links, "Book", candidate.bookUrl ?? entry?.bookUrl);
+  addLink(links, "social", candidate.socialUrl ?? entry?.socialUrl);
+  addLink(links, "models.com", candidate.modelsComUrl ?? entry?.modelsComUrl);
   addLink(links, "website", candidate.website ?? entry?.website);
-  addLink(links, "pdf", entry?.polasUrl ?? entry?.selfTapeUrl);
+  addLink(links, "pdf", candidate.pdfUrl ?? entry?.polasUrl ?? entry?.selfTapeUrl);
   return links;
 }
 
@@ -173,27 +173,29 @@ function drawStatusTable(doc: PDFKit.PDFDocument, candidate: DeckCandidate): voi
   const statuses = orderedStatuses(candidate).slice(0, 7);
   if (statuses.length === 0) return;
 
-  const x = 1300;
+  const tableRight = PAGE_WIDTH - RIGHT;
   const y = 96;
-  const dateWidth = 152;
-  const statusWidth = 246;
-  const gap = 10;
+  const dateWidth = 150;
+  const statusWidth = 214;
+  const gap = 12;
+  const statusX = tableRight - statusWidth;
+  const dateX = statusX - gap - dateWidth;
   const rowHeight = 24;
   const rowGap = 7;
 
   statuses.forEach((item, index) => {
     const style = HOLD_STYLES[item.status];
     const rowY = y + index * (rowHeight + rowGap);
-    doc.font("Helvetica").fontSize(13).fillColor("#555550").text(formatDate(item.date.date), x, rowY + 6, {
+    doc.font("Helvetica").fontSize(13).fillColor("#555550").text(formatDate(item.date.date), dateX, rowY + 6, {
       width: dateWidth,
       align: "right",
     });
-    doc.roundedRect(x + dateWidth + gap, rowY, statusWidth, rowHeight, 2).fillAndStroke(style.fill, style.stroke);
+    doc.roundedRect(statusX, rowY, statusWidth, rowHeight, 2).fillAndStroke(style.fill, style.stroke);
     doc
       .font("Helvetica-Bold")
       .fontSize(11)
       .fillColor(style.text)
-      .text(style.label, x + dateWidth + gap + 12, rowY + 7, { width: statusWidth - 24, align: "center", characterSpacing: 0 });
+      .text(style.label, statusX + 10, rowY + 7, { width: statusWidth - 20, align: "right", characterSpacing: 0 });
   });
 }
 
@@ -237,10 +239,10 @@ function drawImages(doc: PDFKit.PDFDocument, candidate: DeckCandidate): void {
 function drawNotes(doc: PDFKit.PDFDocument, candidate: DeckCandidate): void {
   const notes = candidate.clientNotes?.trim();
   if (!notes) return;
-  doc.font("Helvetica").fontSize(18).fillColor(TEXT).text(notes, LEFT, 870, {
-    width: 820,
-    height: 132,
-    lineGap: 5,
+  doc.font("Helvetica").fontSize(20).fillColor(TEXT).text(notes, LEFT, 842, {
+    width: 880,
+    height: 168,
+    lineGap: 6,
     ellipsis: true,
   });
 }

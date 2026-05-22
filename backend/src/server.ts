@@ -19,6 +19,7 @@ import receiptsRoutes from "./routes/receipts";
 import calendarRoutes from "./routes/calendar";
 import settingsRoutes from "./routes/settings";
 import optionsRoutes from "./routes/options";
+import publicOptionsRoutes from "./routes/publicOptions";
 import { requireAuth } from "./middleware/auth";
 
 const PgSession = connectPgSimple(session);
@@ -65,6 +66,7 @@ export function createServer() {
   });
 
   app.use("/api/auth", authRoutes);
+  app.use("/api/public/options", publicOptionsRoutes);
   app.get("/api/email/oauth/google/callback", googleOAuthCallbackHandler);
   app.use("/api/dashboard", requireAuth, dashboardRoutes);
   app.use("/api/opportunities", requireAuth, opportunitiesRoutes);

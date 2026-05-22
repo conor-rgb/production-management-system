@@ -619,6 +619,14 @@ model OptionCandidate {
   contactName      String?
   contactEmail     String?
   contactPhone     String?
+  bookUrl          String?
+  socialUrl        String?
+  modelsComUrl     String?
+  pdfUrl           String?
+  pdfFilename      String?
+  pdfStoredPath    String?
+  pdfSizeBytes     Int?
+  pdfPublicToken   String?                     @unique
   rate             Float?
   rateUnit         String?
   currency         String                      @default("GBP")

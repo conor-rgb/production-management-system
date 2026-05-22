@@ -28,11 +28,16 @@ import { optionsDeckFilename, renderOptionsDeckPdf } from "../services/optionsDe
 
 const router = Router();
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const PDF_MIME_TYPES = new Set(["application/pdf"]);
 const PDF_IMAGE_MAX_EDGE = 2400;
 const PDF_IMAGE_QUALITY = 84;
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
+});
+const pdfUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
 });
 
 type OptionFieldBody = {
@@ -42,6 +47,10 @@ type OptionFieldBody = {
   contactName?: string | null;
   contactEmail?: string | null;
   contactPhone?: string | null;
+  bookUrl?: string | null;
+  socialUrl?: string | null;
+  modelsComUrl?: string | null;
+  pdfUrl?: string | null;
   rate?: number | string | null;
   rateUnit?: string | null;
   currency?: string;
@@ -318,6 +327,11 @@ function candidatePatchFromBlackbook(entry: {
   email: string | null;
   phone: string | null;
   website: string | null;
+  bookUrl: string | null;
+  socialUrl: string | null;
+  modelsComUrl: string | null;
+  polasUrl: string | null;
+  selfTapeUrl: string | null;
   defaultRate: number | null;
   rateUnit: string | null;
   currency: string;
@@ -329,6 +343,10 @@ function candidatePatchFromBlackbook(entry: {
     contactEmail: entry.email,
     contactPhone: entry.phone,
     website: entry.website,
+    bookUrl: entry.bookUrl,
+    socialUrl: entry.socialUrl,
+    modelsComUrl: entry.modelsComUrl,
+    pdfUrl: entry.polasUrl ?? entry.selfTapeUrl,
     rate: entry.defaultRate,
     rateUnit: entry.rateUnit,
     currency: entry.currency,
@@ -360,6 +378,14 @@ function photoUrl(photoId: string): string {
 
 function candidatePhotoUrl(photoId: string): string {
   return `/api/options/candidate-photos/${photoId}/serve`;
+}
+
+function publicBaseUrl(): string {
+  return (process.env.PUBLIC_BASE_URL ?? process.env.FRONTEND_URL ?? "https://agent.unlimited.bond").replace(/\/$/, "");
+}
+
+function publicCandidatePdfUrl(token: string): string {
+  return `${publicBaseUrl()}/api/public/options/candidate-pdfs/${token}`;
 }
 
 async function boardResponse(boardId: string) {
@@ -553,6 +579,20 @@ function handlePhotoUpload(req: Request, res: Response, next: (err?: unknown) =>
   upload.single("photo")(req, res, (err: unknown) => {
     if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
       res.status(413).json({ error: "Maximum photo size is 10MB" });
+      return;
+    }
+    if (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : "Upload failed" });
+      return;
+    }
+    next();
+  });
+}
+
+function handlePdfUpload(req: Request, res: Response, next: (err?: unknown) => void): void {
+  pdfUpload.single("pdf")(req, res, (err: unknown) => {
+    if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+      res.status(413).json({ error: "Maximum PDF size is 25MB" });
       return;
     }
     if (err) {
@@ -1209,6 +1249,10 @@ router.post("/matrix/groups/:groupId/candidates", async (req: Request, res: Resp
       contactName: body.contactName,
       contactEmail: body.contactEmail ?? linkedEntry?.email,
       contactPhone: body.contactPhone ?? linkedEntry?.phone,
+      bookUrl: body.bookUrl ?? linkedEntry?.bookUrl,
+      socialUrl: body.socialUrl ?? linkedEntry?.socialUrl,
+      modelsComUrl: body.modelsComUrl ?? linkedEntry?.modelsComUrl,
+      pdfUrl: body.pdfUrl ?? linkedEntry?.polasUrl ?? linkedEntry?.selfTapeUrl,
       rate: asNumber(body.rate) ?? linkedEntry?.defaultRate,
       rateUnit: body.rateUnit ?? linkedEntry?.rateUnit,
       currency: body.currency ?? linkedEntry?.currency ?? "GBP",
@@ -1233,6 +1277,10 @@ router.patch("/matrix/candidates/:candidateId", async (req: Request, res: Respon
   if (body.contactName !== undefined) data.contactName = body.contactName;
   if (body.contactEmail !== undefined) data.contactEmail = body.contactEmail;
   if (body.contactPhone !== undefined) data.contactPhone = body.contactPhone;
+  if (body.bookUrl !== undefined) data.bookUrl = optionalText(body.bookUrl);
+  if (body.socialUrl !== undefined) data.socialUrl = optionalText(body.socialUrl);
+  if (body.modelsComUrl !== undefined) data.modelsComUrl = optionalText(body.modelsComUrl);
+  if (body.pdfUrl !== undefined) data.pdfUrl = optionalText(body.pdfUrl);
   if (body.rate !== undefined) data.rate = asNumber(body.rate);
   if (body.rateUnit !== undefined) data.rateUnit = body.rateUnit;
   if (body.currency !== undefined) data.currency = body.currency;
@@ -1345,6 +1393,46 @@ router.post("/matrix/candidates/:candidateId/photos", handlePhotoUpload, async (
       exportSelected: true,
     },
   });
+  res.status(201).json(await matrixResponse(candidate.productionId));
+});
+
+router.post("/matrix/candidates/:candidateId/pdf", handlePdfUpload, async (req: Request, res: Response): Promise<void> => {
+  const file = req.file;
+  if (!file) {
+    res.status(400).json({ error: "pdf is required" });
+    return;
+  }
+  if (!PDF_MIME_TYPES.has(file.mimetype)) {
+    res.status(400).json({ error: "Only PDF files are supported" });
+    return;
+  }
+
+  const candidate = await prisma.optionCandidate.findUnique({
+    where: { id: req.params.candidateId },
+    select: { id: true, productionId: true, pdfStoredPath: true, pdfPublicToken: true },
+  });
+  if (!candidate) {
+    res.status(404).json({ error: "Candidate not found" });
+    return;
+  }
+
+  const dir = await candidatePhotoDirectory(candidate.id);
+  const storedPath = path.join(dir, `${randomUUID()}.pdf`);
+  const token = candidate.pdfPublicToken ?? randomUUID();
+  await fs.writeFile(storedPath, file.buffer);
+  if (candidate.pdfStoredPath) await fs.unlink(candidate.pdfStoredPath).catch(() => undefined);
+
+  await prisma.optionCandidate.update({
+    where: { id: candidate.id },
+    data: {
+      pdfFilename: file.originalname || "option.pdf",
+      pdfStoredPath: storedPath,
+      pdfSizeBytes: file.buffer.byteLength,
+      pdfPublicToken: token,
+      pdfUrl: publicCandidatePdfUrl(token),
+    },
+  });
+
   res.status(201).json(await matrixResponse(candidate.productionId));
 });
 

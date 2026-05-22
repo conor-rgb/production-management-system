@@ -91,6 +91,12 @@ interface OptionCandidate {
   contactName: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  bookUrl: string | null;
+  socialUrl: string | null;
+  modelsComUrl: string | null;
+  pdfUrl: string | null;
+  pdfFilename: string | null;
+  pdfSizeBytes: number | null;
   rate: number | null;
   rateUnit: string | null;
   currency: string;
@@ -652,6 +658,21 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
     setMatrix(await response.json() as MatrixResponse);
   }
 
+  async function uploadCandidatePdf(candidateId: string, file: File) {
+    const formData = new FormData();
+    formData.append("pdf", file);
+    const response = await fetch(`/api/options/matrix/candidates/${candidateId}/pdf`, {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error ?? "PDF upload failed");
+    }
+    setMatrix(await response.json() as MatrixResponse);
+  }
+
   async function updateCandidatePhoto(photoId: string, patch: Partial<OptionCandidatePhoto>) {
     setMatrix(await api.patch<MatrixResponse>(`/api/options/candidate-photos/${photoId}`, patch));
   }
@@ -727,6 +748,7 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
           onOpenBlackbook={setOpenBlackbookEntryId}
           onUpdateCandidateDate={updateCandidateDate}
           onUploadPhoto={uploadCandidatePhoto}
+          onUploadPdf={uploadCandidatePdf}
           onUpdatePhoto={updateCandidatePhoto}
           onDeletePhoto={deleteCandidatePhoto}
           onDeleteCandidate={deleteCandidate}
@@ -861,7 +883,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   );
 }
 
-function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate }: {
+function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate }: {
   group: OptionGroup;
   dates: MatrixDate[];
   onUpdateCandidate: (candidateId: string, patch: Partial<OptionCandidate>) => Promise<void>;
@@ -869,6 +891,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   onOpenBlackbook: (entryId: string) => void;
   onUpdateCandidateDate: (candidateId: string, dateId: string, status: HoldStatus | null) => Promise<void>;
   onUploadPhoto: (candidateId: string, file: File) => Promise<void>;
+  onUploadPdf: (candidateId: string, file: File) => Promise<void>;
   onUpdatePhoto: (photoId: string, patch: Partial<OptionCandidatePhoto>) => Promise<void>;
   onDeletePhoto: (photoId: string) => Promise<void>;
   onDeleteCandidate: (candidateId: string) => Promise<void>;
@@ -876,12 +899,12 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
 }) {
   const [photoCandidate, setPhotoCandidate] = useState<OptionCandidate | null>(null);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
-  const gridColumns = `72px 300px 180px 95px 120px ${dates.map(() => "126px").join(" ")} 44px`;
+  const gridColumns = `72px 260px 220px 120px 95px 120px ${dates.map(() => "126px").join(" ")} 44px`;
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <div className="min-w-max">
         <div className="sticky top-0 z-20 grid min-h-9 items-center gap-x-3 border-b border-gray-200 bg-[#f8f8f6] px-3 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
-          <div>Image</div><div>Option</div><div>Project note</div><div className="text-right">Project rate</div><div>State</div>
+          <div>Image</div><div>Option</div><div>Deck notes</div><div>Links</div><div className="text-right">Project rate</div><div>State</div>
           {dates.map((date) => <div key={date.id} className="text-center">{dateLabel(date)}</div>)}
           <div />
         </div>
@@ -898,6 +921,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
             onOpenBlackbook={onOpenBlackbook}
             onUpdateCandidateDate={onUpdateCandidateDate}
             onUploadPhoto={onUploadPhoto}
+            onUploadPdf={onUploadPdf}
             onDeleteCandidate={onDeleteCandidate}
           />
         ))}
@@ -923,7 +947,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   );
 }
 
-function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onDeleteCandidate }: {
+function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onDeleteCandidate }: {
   candidate: OptionCandidate;
   group: OptionGroup;
   dates: MatrixDate[];
@@ -934,6 +958,7 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
   onOpenBlackbook: (entryId: string) => void;
   onUpdateCandidateDate: (candidateId: string, dateId: string, status: HoldStatus | null) => Promise<void>;
   onUploadPhoto: (candidateId: string, file: File) => Promise<void>;
+  onUploadPdf: (candidateId: string, file: File) => Promise<void>;
   onDeleteCandidate: (candidateId: string) => Promise<void>;
 }) {
   const [dragActive, setDragActive] = useState(false);
@@ -995,7 +1020,8 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
         </div>
         <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
       </div>
-      <EditableText value={candidate.subtitle ?? ""} onSave={(subtitle) => onUpdateCandidate(candidate.id, { subtitle })} className="text-gray-500" placeholder="Subtitle" />
+      <EditableText value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} className="text-gray-500" placeholder="Notes for deck" />
+      <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />
       <EditableText value={candidate.rate?.toString() ?? ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className="text-right tabular-nums text-gray-700" placeholder="0" />
       <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />
       {dates.map((date) => {
@@ -1013,6 +1039,105 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
       })}
       <button onClick={() => onDeleteCandidate(candidate.id)} className="grid h-8 w-8 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
     </div>
+  );
+}
+
+function CandidateLinksCell({ candidate, onUpdate, onUploadPdf }: {
+  candidate: OptionCandidate;
+  onUpdate: (patch: Partial<OptionCandidate>) => Promise<void>;
+  onUploadPdf: (file: File) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const links = [
+    candidate.bookUrl ? "Book" : null,
+    candidate.socialUrl ? "Social" : null,
+    candidate.modelsComUrl ? "MDC" : null,
+    candidate.pdfUrl ? "PDF" : null,
+  ].filter((item): item is string => Boolean(item));
+
+  useEffect(() => {
+    function close(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  async function uploadPdf(file: File) {
+    if (file.type !== "application/pdf") {
+      window.alert("Drop a PDF file here");
+      return;
+    }
+    setUploading(true);
+    try {
+      await onUploadPdf(file);
+    } finally {
+      setUploading(false);
+      setDragActive(false);
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((current) => !current)}
+        className={`inline-flex min-h-7 items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
+          links.length ? "border-gray-300 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-400"
+        }`}
+      >
+        {links.length ? links.join(" · ") : "links"}
+        <span className="text-[9px] opacity-60">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-[320px] rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Deck links</div>
+          <LinkInput label="Book" value={candidate.bookUrl ?? ""} onSave={(bookUrl) => onUpdate({ bookUrl })} />
+          <LinkInput label="Social" value={candidate.socialUrl ?? ""} onSave={(socialUrl) => onUpdate({ socialUrl })} />
+          <LinkInput label="models.com" value={candidate.modelsComUrl ?? ""} onSave={(modelsComUrl) => onUpdate({ modelsComUrl })} />
+          <LinkInput label="PDF URL" value={candidate.pdfUrl ?? ""} onSave={(pdfUrl) => onUpdate({ pdfUrl })} />
+          <div
+            onDragEnter={(event) => {
+              if (event.dataTransfer.types.includes("Files")) {
+                event.preventDefault();
+                setDragActive(true);
+              }
+            }}
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes("Files")) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+                setDragActive(true);
+              }
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragActive(false);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              const file = Array.from(event.dataTransfer.files).find((item) => item.type === "application/pdf");
+              if (file) void uploadPdf(file).catch((err: Error) => window.alert(err.message));
+            }}
+            className={`mt-3 rounded-md border border-dashed p-3 text-center text-[11px] ${
+              dragActive ? "border-blue-300 bg-blue-50 text-blue-700" : "border-gray-300 bg-gray-50 text-gray-500"
+            }`}
+          >
+            {uploading ? "Uploading PDF..." : candidate.pdfFilename ? `PDF uploaded: ${candidate.pdfFilename}` : "Drop PDF here to create a public deck link"}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LinkInput({ label: inputLabel, value, onSave }: { label: string; value: string; onSave: (value: string) => Promise<void> }) {
+  return (
+    <label className="mb-2 grid grid-cols-[72px_1fr] items-center gap-2 text-[11px] text-gray-500">
+      <span>{inputLabel}</span>
+      <EditableText value={value} onSave={onSave} className="rounded border border-gray-200 px-2 py-1 text-gray-800" placeholder="https://..." />
+    </label>
   );
 }
 
