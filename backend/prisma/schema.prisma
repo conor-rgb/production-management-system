@@ -320,6 +320,9 @@ model Production {
   receiptCaptures        ReceiptCapture[]
   calendarEvents         CalendarEvent[]
   optionsBoard           OptionsBoard?
+  optionGroups           OptionGroup[]
+  optionRequirements     OptionRequirement[]
+  optionCandidates       OptionCandidate[]
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 
@@ -337,6 +340,150 @@ model OptionsBoard {
   production Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
 
   @@map("pms_options_boards")
+}
+
+model OptionGroup {
+  id           String                @id @default(uuid())
+  productionId String
+  name         String
+  type         OptionRequirementType @default(OTHER)
+  order        Int                   @default(0)
+  requirements OptionRequirement[]
+  candidates   OptionCandidate[]
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  production Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  @@index([productionId, order])
+  @@map("pms_option_groups")
+}
+
+model OptionRequirement {
+  id           String                  @id @default(uuid())
+  productionId String
+  groupId      String
+  name         String
+  displayLabel String
+  type         OptionRequirementType   @default(OTHER)
+  slotNumber   Int                     @default(1)
+  activeState  OptionRequirementState  @default(ACTIVE)
+  notes        String?
+  order        Int                     @default(0)
+  dateNeeds    RequirementDateNeed[]
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  production Production  @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  group      OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([productionId, order])
+  @@index([groupId])
+  @@map("pms_option_requirements")
+}
+
+model RequirementDateNeed {
+  id           String   @id @default(uuid())
+  requirementId String
+  dateId        String
+  isRequired    Boolean  @default(false)
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  requirement OptionRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  date        ProductionDate    @relation(fields: [dateId], references: [id], onDelete: Cascade)
+
+  @@unique([requirementId, dateId])
+  @@index([dateId])
+  @@map("pms_requirement_date_needs")
+}
+
+model OptionCandidate {
+  id            String                       @id @default(uuid())
+  productionId  String
+  groupId       String
+  name          String
+  subtitle      String?
+  website       String?
+  contactName   String?
+  contactEmail  String?
+  contactPhone  String?
+  rate          Float?
+  rateUnit      String?
+  currency      String                       @default("GBP")
+  activeState   OptionCandidateState         @default(ACTIVE)
+  internalNotes String?
+  clientNotes   String?
+  order         Int                          @default(0)
+  dateStatuses  CandidateDateStatusRecord[]
+  createdAt     DateTime                     @default(now())
+  updatedAt     DateTime                     @updatedAt
+
+  production Production  @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  group      OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([productionId])
+  @@index([groupId, order])
+  @@map("pms_option_candidates")
+}
+
+model CandidateDateStatusRecord {
+  id          String                  @id @default(uuid())
+  candidateId String
+  dateId      String
+  status      CandidateDateHoldStatus @default(REQUESTED)
+  notes       String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  candidate OptionCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  date      ProductionDate  @relation(fields: [dateId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, dateId])
+  @@index([dateId])
+  @@map("pms_candidate_date_statuses")
+}
+
+enum OptionRequirementType {
+  CREW
+  SERVICE
+  LOCATION
+  EQUIPMENT
+  TALENT
+  TRANSPORT
+  POST
+  OTHER
+
+  @@map("pms_option_requirement_type")
+}
+
+enum OptionRequirementState {
+  ACTIVE
+  PARKED
+  RELEASED
+
+  @@map("pms_option_requirement_state")
+}
+
+enum OptionCandidateState {
+  ACTIVE
+  PARKED
+  RELEASED
+
+  @@map("pms_option_candidate_state")
+}
+
+enum CandidateDateHoldStatus {
+  REQUESTED
+  FIRST_OPTION
+  SECOND_OPTION
+  CONFIRMED
+  RELEASED
+  UNAVAILABLE
+  NA
+
+  @@map("pms_candidate_date_hold_status")
 }
 
 model OptionsCategory {
@@ -427,6 +574,8 @@ model ProductionDate {
   notes        String?
   label        String?
   people       ProductionDatePerson[]
+  requirementNeeds RequirementDateNeed[]
+  candidateStatuses CandidateDateStatusRecord[]
   createdAt    DateTime               @default(now())
   updatedAt    DateTime               @updatedAt
 

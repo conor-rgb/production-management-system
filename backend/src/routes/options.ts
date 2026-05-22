@@ -4,7 +4,16 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Router, Request, Response } from "express";
 import multer from "multer";
-import { OptionAvailability, OptionStatus, Prisma } from "@prisma/client";
+import {
+  CandidateDateHoldStatus,
+  OptionAvailability,
+  OptionCandidateState,
+  OptionRequirementState,
+  OptionRequirementType,
+  OptionStatus,
+  Prisma,
+  ProductionDateType,
+} from "@prisma/client";
 import prisma from "../prisma";
 import { ensureProductionFolders, fileExtension, autoFileDocument } from "../services/fileStorage";
 import { renderOptionsPdf } from "../services/optionsPdf";
@@ -149,6 +158,58 @@ async function optionPhotoDirectory(optionId: string): Promise<string> {
   return dir;
 }
 
+async function matrixResponse(productionId: string) {
+  const production = await prisma.production.findUnique({
+    where: { id: productionId },
+    select: { id: true, title: true, jobCode: true, clientName: true, brand: true },
+  });
+  if (!production) return null;
+
+  const [dates, groups] = await Promise.all([
+    prisma.productionDate.findMany({
+      where: { productionId },
+      orderBy: [{ date: "asc" }, { time: "asc" }, { createdAt: "asc" }],
+      select: { id: true, dateType: true, date: true, time: true, label: true, location: true, notes: true },
+    }),
+    prisma.optionGroup.findMany({
+      where: { productionId },
+      orderBy: { order: "asc" },
+      include: {
+        requirements: {
+          orderBy: { order: "asc" },
+          include: { dateNeeds: true },
+        },
+        candidates: {
+          orderBy: { order: "asc" },
+          include: { dateStatuses: true },
+        },
+      },
+    }),
+  ]);
+
+  return {
+    production,
+    dates,
+    groups,
+  };
+}
+
+function matrixDateData(body: Record<string, unknown>) {
+  return {
+    dateType: body.dateType as ProductionDateType | undefined,
+    date: body.date ? new Date(String(body.date)) : undefined,
+    time: body.time as string | null | undefined,
+    location: body.location as string | null | undefined,
+    zoomLink: body.zoomLink as string | null | undefined,
+    notes: body.notes as string | null | undefined,
+    label: body.label as string | null | undefined,
+  };
+}
+
+function slotLabel(name: string, slotNumber: number, quantity: number): string {
+  return quantity > 1 ? `${name} ${slotNumber}` : name;
+}
+
 async function deletePhotosFromDisk(photos: Array<{ storedPath: string }>): Promise<void> {
   await Promise.all(photos.map((photo) => fs.unlink(photo.storedPath).catch(() => undefined)));
 }
@@ -180,6 +241,189 @@ router.get("/production/:productionId", async (req: Request, res: Response): Pro
     create: { productionId: req.params.productionId },
   });
   res.json(await boardResponse(board.id));
+});
+
+router.get("/production/:productionId/matrix", async (req: Request, res: Response): Promise<void> => {
+  const data = await matrixResponse(req.params.productionId);
+  if (!data) {
+    res.status(404).json({ error: "Production not found" });
+    return;
+  }
+  res.json(data);
+});
+
+router.post("/production/:productionId/matrix/dates", async (req: Request, res: Response): Promise<void> => {
+  const { date } = req.body as { date?: string };
+  if (!date) {
+    res.status(400).json({ error: "date is required" });
+    return;
+  }
+  const production = await prisma.production.findUnique({ where: { id: req.params.productionId }, select: { id: true } });
+  if (!production) {
+    res.status(404).json({ error: "Production not found" });
+    return;
+  }
+  await prisma.productionDate.create({
+    data: { ...matrixDateData(req.body as Record<string, unknown>), productionId: req.params.productionId, date: new Date(date) },
+  });
+  res.status(201).json(await matrixResponse(req.params.productionId));
+});
+
+router.post("/production/:productionId/matrix/groups", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { name?: string; type?: OptionRequirementType; quantity?: number };
+  const name = body.name?.trim();
+  if (!name) {
+    res.status(400).json({ error: "name is required" });
+    return;
+  }
+  const production = await prisma.production.findUnique({ where: { id: req.params.productionId }, select: { id: true } });
+  if (!production) {
+    res.status(404).json({ error: "Production not found" });
+    return;
+  }
+  const quantity = Math.max(1, Math.floor(Number(body.quantity ?? 1)));
+  const order = await prisma.optionGroup.count({ where: { productionId: req.params.productionId } });
+  const group = await prisma.optionGroup.create({
+    data: {
+      productionId: req.params.productionId,
+      name,
+      type: body.type ?? "OTHER",
+      order,
+    },
+  });
+  await prisma.optionRequirement.createMany({
+    data: Array.from({ length: quantity }, (_, index) => ({
+      productionId: req.params.productionId,
+      groupId: group.id,
+      name,
+      displayLabel: slotLabel(name, index + 1, quantity),
+      type: body.type ?? "OTHER",
+      slotNumber: index + 1,
+      order: order + index,
+    })),
+  });
+  res.status(201).json(await matrixResponse(req.params.productionId));
+});
+
+router.patch("/matrix/requirements/:requirementId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as {
+    displayLabel?: string;
+    name?: string;
+    type?: OptionRequirementType;
+    activeState?: OptionRequirementState;
+    notes?: string | null;
+    order?: number;
+  };
+  const data: Prisma.OptionRequirementUpdateInput = {};
+  if (body.displayLabel !== undefined) data.displayLabel = body.displayLabel;
+  if (body.name !== undefined) data.name = body.name;
+  if (body.type !== undefined) data.type = body.type;
+  if (body.activeState !== undefined) data.activeState = body.activeState;
+  if (body.notes !== undefined) data.notes = body.notes;
+  if (body.order !== undefined) data.order = body.order;
+  const requirement = await prisma.optionRequirement.update({ where: { id: req.params.requirementId }, data });
+  res.json(await matrixResponse(requirement.productionId));
+});
+
+router.patch("/matrix/requirements/:requirementId/dates/:dateId", async (req: Request, res: Response): Promise<void> => {
+  const { isRequired, notes } = req.body as { isRequired?: boolean; notes?: string | null };
+  const requirement = await prisma.optionRequirement.findUnique({ where: { id: req.params.requirementId }, select: { id: true, productionId: true } });
+  if (!requirement) {
+    res.status(404).json({ error: "Requirement not found" });
+    return;
+  }
+  await prisma.requirementDateNeed.upsert({
+    where: { requirementId_dateId: { requirementId: req.params.requirementId, dateId: req.params.dateId } },
+    update: {
+      isRequired: isRequired ?? false,
+      notes,
+    },
+    create: {
+      requirementId: req.params.requirementId,
+      dateId: req.params.dateId,
+      isRequired: isRequired ?? true,
+      notes,
+    },
+  });
+  res.json(await matrixResponse(requirement.productionId));
+});
+
+router.post("/matrix/groups/:groupId/candidates", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as OptionFieldBody & { activeState?: OptionCandidateState };
+  const group = await prisma.optionGroup.findUnique({ where: { id: req.params.groupId }, select: { id: true, productionId: true } });
+  if (!group) {
+    res.status(404).json({ error: "Group not found" });
+    return;
+  }
+  await prisma.optionCandidate.create({
+    data: {
+      productionId: group.productionId,
+      groupId: group.id,
+      name: body.name?.trim() || "New candidate",
+      subtitle: body.subtitle,
+      website: body.website,
+      contactName: body.contactName,
+      contactEmail: body.contactEmail,
+      contactPhone: body.contactPhone,
+      rate: asNumber(body.rate),
+      rateUnit: body.rateUnit,
+      currency: body.currency ?? "GBP",
+      activeState: body.activeState ?? "ACTIVE",
+      internalNotes: body.internalNotes,
+      clientNotes: body.clientNotes,
+      order: await prisma.optionCandidate.count({ where: { groupId: group.id } }),
+    },
+  });
+  res.status(201).json(await matrixResponse(group.productionId));
+});
+
+router.patch("/matrix/candidates/:candidateId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as OptionFieldBody & { activeState?: OptionCandidateState };
+  const data: Prisma.OptionCandidateUpdateInput = {};
+  if (body.name !== undefined) data.name = body.name;
+  if (body.subtitle !== undefined) data.subtitle = body.subtitle;
+  if (body.website !== undefined) data.website = body.website;
+  if (body.contactName !== undefined) data.contactName = body.contactName;
+  if (body.contactEmail !== undefined) data.contactEmail = body.contactEmail;
+  if (body.contactPhone !== undefined) data.contactPhone = body.contactPhone;
+  if (body.rate !== undefined) data.rate = asNumber(body.rate);
+  if (body.rateUnit !== undefined) data.rateUnit = body.rateUnit;
+  if (body.currency !== undefined) data.currency = body.currency;
+  if (body.activeState !== undefined) data.activeState = body.activeState;
+  if (body.internalNotes !== undefined) data.internalNotes = body.internalNotes;
+  if (body.clientNotes !== undefined) data.clientNotes = body.clientNotes;
+  if (body.order !== undefined) data.order = body.order;
+  const candidate = await prisma.optionCandidate.update({ where: { id: req.params.candidateId }, data });
+  res.json(await matrixResponse(candidate.productionId));
+});
+
+router.delete("/matrix/candidates/:candidateId", async (req: Request, res: Response): Promise<void> => {
+  const candidate = await prisma.optionCandidate.findUnique({ where: { id: req.params.candidateId }, select: { id: true, productionId: true } });
+  if (!candidate) {
+    res.status(404).json({ error: "Candidate not found" });
+    return;
+  }
+  await prisma.optionCandidate.delete({ where: { id: candidate.id } });
+  res.json(await matrixResponse(candidate.productionId));
+});
+
+router.patch("/matrix/candidates/:candidateId/dates/:dateId", async (req: Request, res: Response): Promise<void> => {
+  const { status, notes } = req.body as { status?: CandidateDateHoldStatus | null; notes?: string | null };
+  const candidate = await prisma.optionCandidate.findUnique({ where: { id: req.params.candidateId }, select: { id: true, productionId: true } });
+  if (!candidate) {
+    res.status(404).json({ error: "Candidate not found" });
+    return;
+  }
+  if (!status) {
+    await prisma.candidateDateStatusRecord.deleteMany({ where: { candidateId: req.params.candidateId, dateId: req.params.dateId } });
+  } else {
+    await prisma.candidateDateStatusRecord.upsert({
+      where: { candidateId_dateId: { candidateId: req.params.candidateId, dateId: req.params.dateId } },
+      update: { status, notes },
+      create: { candidateId: req.params.candidateId, dateId: req.params.dateId, status, notes },
+    });
+  }
+  res.json(await matrixResponse(candidate.productionId));
 });
 
 router.patch("/boards/:boardId", async (req: Request, res: Response): Promise<void> => {
