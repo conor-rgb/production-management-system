@@ -1,137 +1,121 @@
-# HANDOVER — 2026-05-22 — Options Matrix First Pass
+# HANDOVER — 2026-05-22 — Blackbook Foundation Before Options PDFs
 
 ## Built this session
-- Reworked the Production Options tab from a flat options sheet into an operational Options Matrix.
-- The matrix now represents the end-goal production requirements list:
-  - rows are requirement slots such as `Photographer`, `Photo Assistant 1`, `Photo Assistant 2`, `Catering`, `Location`
-  - columns are production dates
-  - each row/date cell has a required toggle
-  - required cells derive a pipeline color from the strongest candidate status for that role/service and date
-- Clicking/opening a requirement row takes you into the shared candidate sheet for that role/service group.
-- Multi-slot requirements share one candidate sheet:
-  - `Photo Assistant 1`, `Photo Assistant 2`, and `Photo Assistant 3` can all point to the same `Photo Assistant` candidate pool.
-- Added production date status for matrix date columns:
-  - proposed
-  - optioned
-  - confirmed
-  - released
-  - cancelled
-- Added requirement row controls:
-  - change requirement type
-  - move row up/down
-  - duplicate requirement slot
-  - delete requirement slot
-- Added slot assignment:
-  - each requirement/date cell can now assign one active candidate from the shared group pool
-  - assigned cells show the candidate name and derive as confirmed in the matrix
-- Confirmed candidate holds now automatically populate the visible matrix slot for that date.
-- Manual slot assignment now also marks the selected candidate/date hold as confirmed.
+- Reviewed the historical reference material in `build references/options and crew list/`:
+  - `Locations V6 | 2431U | DISNEY Ganni x Daisy Duck.pdf`
+  - `Casting V8 | 2431U | DISNEY Ganni x Daisy Duck.pdf`
+  - crew/status sheet screenshots
+- Decision: do not build the final PDF/deck generator yet. The old docs prove the PDF needs a richer blackbook data layer first.
+- Added the first Blackbook foundation layer for the Options Matrix:
+  - reusable people/company/location/talent/service records
+  - structured location address and technical fields
+  - talent agency/link/stat fields
+  - person-level dietary flags, allergens, and dietary notes
+  - candidate-to-blackbook linking from the candidate sheet
+- Added a compact Blackbook column to each Options candidate row:
+  - search existing blackbook entries
+  - link a candidate to an existing entry
+  - create a blackbook entry from the candidate row
+  - unlink if needed
+  - show dietaries/allergens inline when present
+- Added a sticky-note style Blackbook details pad from the candidate row:
+  - display name
+  - company/agency
+  - email/phone/website
+  - location type and structured address
+  - UK/FR agency and book/social/polas/models.com links
+  - dietary flags, allergens, and notes
 
 ## Schema
-- Added matrix models:
-  - `OptionGroup`
-  - `OptionRequirement`
-  - `RequirementDateNeed`
-  - `OptionCandidate`
-  - `CandidateDateStatusRecord`
-  - `OptionSlotAssignment`
 - Added enums:
-  - `OptionRequirementType`
-  - `OptionRequirementState`
-  - `OptionCandidateState`
-  - `CandidateDateHoldStatus`
-  - `ProductionDateStatus`
-- Added relations:
-  - `Production.optionGroups`
-  - `Production.optionRequirements`
-  - `Production.optionCandidates`
-  - `ProductionDate.requirementNeeds`
-  - `ProductionDate.candidateStatuses`
-  - `ProductionDate.optionSlotAssignments`
-- Migration:
-  - `backend/prisma/migrations/20260522100000_options_matrix/migration.sql`
-  - `backend/prisma/migrations/20260522110000_production_date_status/migration.sql`
-  - `backend/prisma/migrations/20260522120000_option_slot_assignments/migration.sql`
-- Prisma migration deployed and Prisma client regenerated.
+  - `BlackbookEntryType`: `PERSON`, `COMPANY`, `LOCATION`, `TALENT`, `SERVICE`
+  - `BlackbookCategory`: `CREW`, `SERVICE`, `LOCATION`, `EQUIPMENT`, `TALENT`, `TRANSPORT`, `POST`, `OTHER`
+- Added model:
+  - `BlackbookEntry`
+- Added `OptionCandidate.blackbookEntryId` and relation to `BlackbookEntry`.
+- Migration deployed:
+  - `backend/prisma/migrations/20260522150000_blackbook_foundation/migration.sql`
+- Important: generated Prisma diff included an accidental `DROP TABLE "pms_sessions";`; this was removed before deploy.
 
 ## Backend
-- Extended `/api/options` with matrix endpoints:
-  - `GET /api/options/production/:productionId/matrix`
-  - `POST /api/options/production/:productionId/matrix/dates`
-  - `POST /api/options/production/:productionId/matrix/groups`
-  - `PATCH /api/options/matrix/requirements/:requirementId`
-  - `PATCH /api/options/matrix/requirements/:requirementId/dates/:dateId`
-  - `POST /api/options/matrix/groups/:groupId/candidates`
-  - `PATCH /api/options/matrix/candidates/:candidateId`
-  - `DELETE /api/options/matrix/candidates/:candidateId`
-  - `PATCH /api/options/matrix/candidates/:candidateId/dates/:dateId`
-  - `POST /api/options/matrix/requirements/:requirementId/duplicate`
-  - `DELETE /api/options/matrix/requirements/:requirementId`
-  - `PATCH /api/options/matrix/dates/:dateId`
-  - `PATCH /api/options/matrix/requirements/:requirementId/dates/:dateId/assignment`
-- Existing legacy Options Board, photo, and PDF endpoints remain in place for compatibility.
-- The new date endpoint creates normal `ProductionDate` rows, so dates remain part of the production record.
+- Extended `/api/options`:
+  - `GET /api/options/blackbook?q=&category=&entryType=&limit=`
+  - `POST /api/options/blackbook`
+  - `PATCH /api/options/blackbook/:entryId`
+  - `POST /api/options/matrix/candidates/:candidateId/link-blackbook`
+- Matrix response now includes each candidate’s linked `blackbookEntry`.
+- Candidate creation can accept `blackbookEntryId`.
+- Linking a candidate to blackbook copies key defaults into the candidate row:
+  - name
+  - company/subtitle
+  - email/phone/website
+  - default rate/rate unit/currency
+- Creating from a candidate infers blackbook entry type/category from the option group type.
 
 ## Frontend
-- Replaced `frontend/src/components/options/OptionsBoardView.tsx` with the matrix UI.
-- Top-level Options view now shows:
-  - production requirement rows
-  - production dates as columns
-  - `+ Date`
-  - `+ Role / service`
-- Requirement cells:
-  - blank = not required
-  - `Need` = required but no active candidate status yet
-  - `Req`
-  - `2nd`
-  - `1st`
-  - `Conf`
-  - `No`
-  - `Rel`
-- Cell colors are deliberately calm pipeline colors:
-  - confirmed = emerald
-  - first option = lime
-  - second option = sky
-  - requested = violet
-  - needed = soft amber
-  - unavailable/released = muted gray
-- Hovering a matrix cell shows candidate summaries for that role/date.
-- Double-clicking a matrix cell, or clicking the row’s “Open options” link, opens the candidate sheet.
-- Candidate sheet includes:
-  - candidate name
-  - subtitle
-  - rate
-  - active/parked/released state
-  - one status dropdown per production date
-  - delete candidate
-  - add candidate
-- Matrix date headers now show styled date status dropdowns.
-- Requirement rows now expose hover controls for move, duplicate, and delete.
-- Required matrix cells now expose a compact assignment dropdown for active candidates in that group.
-- Assigned cells show the assigned candidate name instead of the generic `Conf` label.
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Candidate sheet now includes:
+  - Name
+  - Blackbook
+  - Subtitle
+  - Rate
+  - State
+  - per-date hold statuses
+- The Blackbook cell supports:
+  - search and link
+  - create from row
+  - unlink
+  - edit blackbook details
+  - immediate dietary/allergen visibility
+
+## Reference doc findings for the future PDF/deck generator
+- Location decks are landscape 16:9, one option per page, not a normal report.
+- Location option pages need:
+  - name/studio
+  - status per production date
+  - full structured address
+  - PDF/website links
+  - 4 hero/reference images
+  - map
+  - daylight/blackout
+  - sqm, shooting area, ceiling height
+  - access/loading/facilities/client/HMU/styling/catering notes
+- Casting decks need:
+  - model/talent name and role
+  - UK/FR agency
+  - book/social/polas/self-tape/models.com links
+  - stats: height, eyes, hair, bust, waist, hips, shoe
+  - 3 hero images
+  - status per production date
+  - client-safe notes
+- Crew/status sheet needs:
+  - role
+  - confirmed person per role/date
+  - email/phone/address/city/postcode/country
+  - travel/parking/taxi/NDA
+  - dietaries and dietary counts
 
 ## Verification
-- Prisma migration deployed successfully.
-- Prisma client generated successfully.
+- Prisma migration deployed.
+- Prisma client generated.
 - Backend build passed.
 - Frontend build passed.
 - Frontend copied to `/var/www/agent`.
-- PM2 process `0` reloaded successfully.
-- Date status + requirement controls pass built, copied to `/var/www/agent`, and PM2 reloaded successfully.
-- Slot assignment pass built, copied to `/var/www/agent`, and PM2 reloaded successfully.
+- PM2 process `0` reloaded.
+- Health check passed: `GET /api/health`.
 
 ## Known gaps / technical debt
-- This is the first operational matrix pass. It does not yet include the reusable Blackbook schema.
-- Legacy `OptionsBoard`, `OptionsCategory`, `Option`, and `OptionPhoto` still exist. They are not removed yet because they preserve the earlier client options/PDF work.
-- Candidate photos/client presentation are not reconnected to the new matrix candidate model yet.
-- Requirement row reorder is currently a simple order nudge via up/down controls, not drag-and-drop.
-- If multiple confirmed candidates exist for the same role/date, the matrix maps them to required slots by row order and candidate order unless an explicit slot assignment overrides it.
-- Date statuses exist in the matrix, but are not yet surfaced in the main Dates tab or calendar views.
-- Master timeline/date-first view is not implemented yet.
+- No final PDF/deck generator work was done by design.
+- The old `OptionsBoard`, `OptionsCategory`, `Option`, `OptionPhoto`, and `optionsPdf.ts` still exist for legacy compatibility.
+- Candidate photos are still attached to the old flat `Option` model, not yet to `OptionCandidate` or `BlackbookEntry`.
+- Existing GANNI location candidates are not automatically linked to blackbook entries yet; each can now be linked or converted from the candidate sheet.
+- Blackbook does not yet have a standalone main navigation page.
+- Dietaries are now stored on blackbook entries, but production-specific dietary overrides are not implemented yet.
+- Main Dates tab and calendar do not yet show option/hold status summaries.
 
-## Suggested next build
-1. Surface date status in the main Dates tab and calendar views.
-2. Add proper drag/drop row reorder rather than temporary up/down order nudges.
-3. Add Blackbook entries and link candidates to reusable people/companies/locations.
-4. Rebuild client presentation/PDF from candidate groups once Blackbook/photos are in place.
-5. Add date-first timeline/master chasing view.
+## Exact next step
+Build the media/data bridge before PDFs:
+1. Add candidate/blackbook photo storage so each candidate can carry deck images independently of the legacy flat options board.
+2. Add a bulk action to convert existing candidates in a group into blackbook entries.
+3. Add a status/crew list export view that pulls confirmed assignments and dietaries from blackbook.
+4. Then pause for the revised client deck design before replacing `optionsPdf.ts` with the smart landscape generator.

@@ -5,6 +5,8 @@ import { randomUUID } from "node:crypto";
 import { Router, Request, Response } from "express";
 import multer from "multer";
 import {
+  BlackbookCategory,
+  BlackbookEntryType,
   CandidateDateHoldStatus,
   OptionAvailability,
   OptionCandidateState,
@@ -41,6 +43,60 @@ type OptionFieldBody = {
   internalNotes?: string | null;
   clientNotes?: string | null;
   order?: number;
+  blackbookEntryId?: string | null;
+};
+
+type BlackbookFieldBody = {
+  entryType?: BlackbookEntryType;
+  category?: BlackbookCategory;
+  displayName?: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  companyName?: string | null;
+  jobTitle?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  tags?: string[];
+  notes?: string | null;
+  defaultRate?: number | string | null;
+  rateUnit?: string | null;
+  currency?: string;
+  dietaryNotes?: string | null;
+  dietaryFlags?: string[];
+  allergens?: string[];
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postcode?: string | null;
+  country?: string | null;
+  locationType?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  daylight?: boolean | null;
+  blackout?: boolean | null;
+  areaSqm?: number | string | null;
+  shootingAreaSqm?: number | string | null;
+  ceilingHeight?: string | null;
+  accessNotes?: string | null;
+  parkingNotes?: string | null;
+  travelNotes?: string | null;
+  facilities?: string | null;
+  ukAgency?: string | null;
+  frAgency?: string | null;
+  bookUrl?: string | null;
+  socialUrl?: string | null;
+  polasUrl?: string | null;
+  selfTapeUrl?: string | null;
+  modelsComUrl?: string | null;
+  height?: string | null;
+  eyes?: string | null;
+  hair?: string | null;
+  bust?: string | null;
+  waist?: string | null;
+  hips?: string | null;
+  shoe?: string | null;
 };
 
 function cleanPathPart(value: string): string {
@@ -53,6 +109,110 @@ function asNumber(value: unknown): number | null | undefined {
   if (value === null || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function optionalText(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function categoryFromRequirementType(type: OptionRequirementType): BlackbookCategory {
+  if (type === "CREW") return "CREW";
+  if (type === "SERVICE") return "SERVICE";
+  if (type === "LOCATION") return "LOCATION";
+  if (type === "EQUIPMENT") return "EQUIPMENT";
+  if (type === "TALENT") return "TALENT";
+  if (type === "TRANSPORT") return "TRANSPORT";
+  if (type === "POST") return "POST";
+  return "OTHER";
+}
+
+function entryTypeFromRequirementType(type: OptionRequirementType): BlackbookEntryType {
+  if (type === "LOCATION") return "LOCATION";
+  if (type === "TALENT") return "TALENT";
+  if (type === "SERVICE" || type === "EQUIPMENT" || type === "TRANSPORT" || type === "POST") return "SERVICE";
+  return "PERSON";
+}
+
+function blackbookDataFromBody(body: BlackbookFieldBody): Prisma.BlackbookEntryUpdateInput {
+  const data: Prisma.BlackbookEntryUpdateInput = {};
+  if (body.entryType !== undefined) data.entryType = body.entryType;
+  if (body.category !== undefined) data.category = body.category;
+  if (body.displayName !== undefined) data.displayName = body.displayName.trim();
+  if (body.firstName !== undefined) data.firstName = optionalText(body.firstName);
+  if (body.lastName !== undefined) data.lastName = optionalText(body.lastName);
+  if (body.companyName !== undefined) data.companyName = optionalText(body.companyName);
+  if (body.jobTitle !== undefined) data.jobTitle = optionalText(body.jobTitle);
+  if (body.email !== undefined) data.email = optionalText(body.email)?.toLowerCase() ?? null;
+  if (body.phone !== undefined) data.phone = optionalText(body.phone);
+  if (body.website !== undefined) data.website = optionalText(body.website);
+  if (body.tags !== undefined) data.tags = body.tags;
+  if (body.notes !== undefined) data.notes = optionalText(body.notes);
+  if (body.defaultRate !== undefined) data.defaultRate = asNumber(body.defaultRate);
+  if (body.rateUnit !== undefined) data.rateUnit = optionalText(body.rateUnit);
+  if (body.currency !== undefined) data.currency = body.currency;
+  if (body.dietaryNotes !== undefined) data.dietaryNotes = optionalText(body.dietaryNotes);
+  if (body.dietaryFlags !== undefined) data.dietaryFlags = body.dietaryFlags;
+  if (body.allergens !== undefined) data.allergens = body.allergens;
+  if (body.addressLine1 !== undefined) data.addressLine1 = optionalText(body.addressLine1);
+  if (body.addressLine2 !== undefined) data.addressLine2 = optionalText(body.addressLine2);
+  if (body.city !== undefined) data.city = optionalText(body.city);
+  if (body.region !== undefined) data.region = optionalText(body.region);
+  if (body.postcode !== undefined) data.postcode = optionalText(body.postcode);
+  if (body.country !== undefined) data.country = optionalText(body.country);
+  if (body.locationType !== undefined) data.locationType = optionalText(body.locationType);
+  if (body.latitude !== undefined) data.latitude = asNumber(body.latitude);
+  if (body.longitude !== undefined) data.longitude = asNumber(body.longitude);
+  if (body.daylight !== undefined) data.daylight = body.daylight;
+  if (body.blackout !== undefined) data.blackout = body.blackout;
+  if (body.areaSqm !== undefined) data.areaSqm = asNumber(body.areaSqm);
+  if (body.shootingAreaSqm !== undefined) data.shootingAreaSqm = asNumber(body.shootingAreaSqm);
+  if (body.ceilingHeight !== undefined) data.ceilingHeight = optionalText(body.ceilingHeight);
+  if (body.accessNotes !== undefined) data.accessNotes = optionalText(body.accessNotes);
+  if (body.parkingNotes !== undefined) data.parkingNotes = optionalText(body.parkingNotes);
+  if (body.travelNotes !== undefined) data.travelNotes = optionalText(body.travelNotes);
+  if (body.facilities !== undefined) data.facilities = optionalText(body.facilities);
+  if (body.ukAgency !== undefined) data.ukAgency = optionalText(body.ukAgency);
+  if (body.frAgency !== undefined) data.frAgency = optionalText(body.frAgency);
+  if (body.bookUrl !== undefined) data.bookUrl = optionalText(body.bookUrl);
+  if (body.socialUrl !== undefined) data.socialUrl = optionalText(body.socialUrl);
+  if (body.polasUrl !== undefined) data.polasUrl = optionalText(body.polasUrl);
+  if (body.selfTapeUrl !== undefined) data.selfTapeUrl = optionalText(body.selfTapeUrl);
+  if (body.modelsComUrl !== undefined) data.modelsComUrl = optionalText(body.modelsComUrl);
+  if (body.height !== undefined) data.height = optionalText(body.height);
+  if (body.eyes !== undefined) data.eyes = optionalText(body.eyes);
+  if (body.hair !== undefined) data.hair = optionalText(body.hair);
+  if (body.bust !== undefined) data.bust = optionalText(body.bust);
+  if (body.waist !== undefined) data.waist = optionalText(body.waist);
+  if (body.hips !== undefined) data.hips = optionalText(body.hips);
+  if (body.shoe !== undefined) data.shoe = optionalText(body.shoe);
+  return data;
+}
+
+function candidatePatchFromBlackbook(entry: {
+  id: string;
+  displayName: string;
+  companyName: string | null;
+  email: string | null;
+  phone: string | null;
+  website: string | null;
+  defaultRate: number | null;
+  rateUnit: string | null;
+  currency: string;
+}): Prisma.OptionCandidateUpdateInput {
+  return {
+    blackbookEntry: { connect: { id: entry.id } },
+    name: entry.displayName,
+    subtitle: entry.companyName,
+    contactEmail: entry.email,
+    contactPhone: entry.phone,
+    website: entry.website,
+    rate: entry.defaultRate,
+    rateUnit: entry.rateUnit,
+    currency: entry.currency,
+  };
 }
 
 function optionDataFromBody(body: OptionFieldBody): Prisma.OptionUpdateInput {
@@ -182,7 +342,7 @@ async function matrixResponse(productionId: string) {
         },
         candidates: {
           orderBy: { order: "asc" },
-          include: { dateStatuses: true, assignments: true },
+          include: { dateStatuses: true, assignments: true, blackbookEntry: true },
         },
       },
     }),
@@ -252,6 +412,108 @@ router.get("/production/:productionId/matrix", async (req: Request, res: Respons
     return;
   }
   res.json(data);
+});
+
+router.get("/blackbook", async (req: Request, res: Response): Promise<void> => {
+  const { q = "", category, entryType, limit = "12" } = req.query as {
+    q?: string;
+    category?: BlackbookCategory;
+    entryType?: BlackbookEntryType;
+    limit?: string;
+  };
+  const search = q.trim();
+  const where: Prisma.BlackbookEntryWhereInput = {};
+  if (category) where.category = category;
+  if (entryType) where.entryType = entryType;
+  if (search) {
+    where.OR = [
+      { displayName: { contains: search, mode: "insensitive" } },
+      { companyName: { contains: search, mode: "insensitive" } },
+      { email: { contains: search, mode: "insensitive" } },
+      { city: { contains: search, mode: "insensitive" } },
+      { country: { contains: search, mode: "insensitive" } },
+      { tags: { has: search } },
+    ];
+  }
+  const entries = await prisma.blackbookEntry.findMany({
+    where,
+    orderBy: [{ displayName: "asc" }],
+    take: Math.min(50, Math.max(1, Number(limit) || 12)),
+  });
+  res.json(entries);
+});
+
+router.post("/blackbook", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as BlackbookFieldBody;
+  const displayName = body.displayName?.trim();
+  if (!displayName) {
+    res.status(400).json({ error: "displayName is required" });
+    return;
+  }
+  const entry = await prisma.blackbookEntry.create({
+    data: {
+      displayName,
+      entryType: body.entryType ?? "PERSON",
+      category: body.category ?? "OTHER",
+      firstName: optionalText(body.firstName),
+      lastName: optionalText(body.lastName),
+      companyName: optionalText(body.companyName),
+      jobTitle: optionalText(body.jobTitle),
+      email: optionalText(body.email)?.toLowerCase() ?? null,
+      phone: optionalText(body.phone),
+      website: optionalText(body.website),
+      tags: body.tags ?? [],
+      notes: optionalText(body.notes),
+      defaultRate: asNumber(body.defaultRate),
+      rateUnit: optionalText(body.rateUnit),
+      currency: body.currency ?? "GBP",
+      dietaryNotes: optionalText(body.dietaryNotes),
+      dietaryFlags: body.dietaryFlags ?? [],
+      allergens: body.allergens ?? [],
+      addressLine1: optionalText(body.addressLine1),
+      addressLine2: optionalText(body.addressLine2),
+      city: optionalText(body.city),
+      region: optionalText(body.region),
+      postcode: optionalText(body.postcode),
+      country: optionalText(body.country),
+      locationType: optionalText(body.locationType),
+      latitude: asNumber(body.latitude),
+      longitude: asNumber(body.longitude),
+      daylight: body.daylight,
+      blackout: body.blackout,
+      areaSqm: asNumber(body.areaSqm),
+      shootingAreaSqm: asNumber(body.shootingAreaSqm),
+      ceilingHeight: optionalText(body.ceilingHeight),
+      accessNotes: optionalText(body.accessNotes),
+      parkingNotes: optionalText(body.parkingNotes),
+      travelNotes: optionalText(body.travelNotes),
+      facilities: optionalText(body.facilities),
+      ukAgency: optionalText(body.ukAgency),
+      frAgency: optionalText(body.frAgency),
+      bookUrl: optionalText(body.bookUrl),
+      socialUrl: optionalText(body.socialUrl),
+      polasUrl: optionalText(body.polasUrl),
+      selfTapeUrl: optionalText(body.selfTapeUrl),
+      modelsComUrl: optionalText(body.modelsComUrl),
+      height: optionalText(body.height),
+      eyes: optionalText(body.eyes),
+      hair: optionalText(body.hair),
+      bust: optionalText(body.bust),
+      waist: optionalText(body.waist),
+      hips: optionalText(body.hips),
+      shoe: optionalText(body.shoe),
+    },
+  });
+  res.status(201).json(entry);
+});
+
+router.patch("/blackbook/:entryId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as BlackbookFieldBody;
+  const entry = await prisma.blackbookEntry.update({
+    where: { id: req.params.entryId },
+    data: blackbookDataFromBody(body),
+  });
+  res.json(entry);
 });
 
 router.post("/production/:productionId/matrix/dates", async (req: Request, res: Response): Promise<void> => {
@@ -450,24 +712,28 @@ router.patch("/matrix/requirements/:requirementId/dates/:dateId/assignment", asy
 
 router.post("/matrix/groups/:groupId/candidates", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as OptionFieldBody & { activeState?: OptionCandidateState };
-  const group = await prisma.optionGroup.findUnique({ where: { id: req.params.groupId }, select: { id: true, productionId: true } });
+  const group = await prisma.optionGroup.findUnique({ where: { id: req.params.groupId }, select: { id: true, productionId: true, type: true } });
   if (!group) {
     res.status(404).json({ error: "Group not found" });
     return;
   }
+  const linkedEntry = body.blackbookEntryId
+    ? await prisma.blackbookEntry.findUnique({ where: { id: body.blackbookEntryId } })
+    : null;
   await prisma.optionCandidate.create({
     data: {
       productionId: group.productionId,
       groupId: group.id,
-      name: body.name?.trim() || "New candidate",
-      subtitle: body.subtitle,
-      website: body.website,
+      blackbookEntryId: linkedEntry?.id,
+      name: body.name?.trim() || linkedEntry?.displayName || "New candidate",
+      subtitle: body.subtitle ?? linkedEntry?.companyName,
+      website: body.website ?? linkedEntry?.website,
       contactName: body.contactName,
-      contactEmail: body.contactEmail,
-      contactPhone: body.contactPhone,
-      rate: asNumber(body.rate),
-      rateUnit: body.rateUnit,
-      currency: body.currency ?? "GBP",
+      contactEmail: body.contactEmail ?? linkedEntry?.email,
+      contactPhone: body.contactPhone ?? linkedEntry?.phone,
+      rate: asNumber(body.rate) ?? linkedEntry?.defaultRate,
+      rateUnit: body.rateUnit ?? linkedEntry?.rateUnit,
+      currency: body.currency ?? linkedEntry?.currency ?? "GBP",
       activeState: body.activeState ?? "ACTIVE",
       internalNotes: body.internalNotes,
       clientNotes: body.clientNotes,
@@ -480,6 +746,9 @@ router.post("/matrix/groups/:groupId/candidates", async (req: Request, res: Resp
 router.patch("/matrix/candidates/:candidateId", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as OptionFieldBody & { activeState?: OptionCandidateState };
   const data: Prisma.OptionCandidateUpdateInput = {};
+  if (body.blackbookEntryId !== undefined) {
+    data.blackbookEntry = body.blackbookEntryId ? { connect: { id: body.blackbookEntryId } } : { disconnect: true };
+  }
   if (body.name !== undefined) data.name = body.name;
   if (body.subtitle !== undefined) data.subtitle = body.subtitle;
   if (body.website !== undefined) data.website = body.website;
@@ -495,6 +764,56 @@ router.patch("/matrix/candidates/:candidateId", async (req: Request, res: Respon
   if (body.order !== undefined) data.order = body.order;
   const candidate = await prisma.optionCandidate.update({ where: { id: req.params.candidateId }, data });
   res.json(await matrixResponse(candidate.productionId));
+});
+
+router.post("/matrix/candidates/:candidateId/link-blackbook", async (req: Request, res: Response): Promise<void> => {
+  const { entryId, createFromCandidate = false } = req.body as { entryId?: string | null; createFromCandidate?: boolean };
+  const candidate = await prisma.optionCandidate.findUnique({
+    where: { id: req.params.candidateId },
+    include: { group: { select: { type: true } } },
+  });
+  if (!candidate) {
+    res.status(404).json({ error: "Candidate not found" });
+    return;
+  }
+
+  if (entryId === null) {
+    const updated = await prisma.optionCandidate.update({
+      where: { id: candidate.id },
+      data: { blackbookEntry: { disconnect: true } },
+    });
+    res.json(await matrixResponse(updated.productionId));
+    return;
+  }
+
+  let entry = entryId ? await prisma.blackbookEntry.findUnique({ where: { id: entryId } }) : null;
+  if (!entry && createFromCandidate) {
+    entry = await prisma.blackbookEntry.create({
+      data: {
+        displayName: candidate.name,
+        entryType: entryTypeFromRequirementType(candidate.group.type),
+        category: categoryFromRequirementType(candidate.group.type),
+        companyName: candidate.subtitle,
+        email: candidate.contactEmail,
+        phone: candidate.contactPhone,
+        website: candidate.website,
+        defaultRate: candidate.rate,
+        rateUnit: candidate.rateUnit,
+        currency: candidate.currency,
+        notes: candidate.internalNotes,
+      },
+    });
+  }
+  if (!entry) {
+    res.status(400).json({ error: "entryId or createFromCandidate is required" });
+    return;
+  }
+
+  const updated = await prisma.optionCandidate.update({
+    where: { id: candidate.id },
+    data: candidatePatchFromBlackbook(entry),
+  });
+  res.json(await matrixResponse(updated.productionId));
 });
 
 router.delete("/matrix/candidates/:candidateId", async (req: Request, res: Response): Promise<void> => {

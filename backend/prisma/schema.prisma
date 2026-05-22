@@ -22,6 +22,29 @@ enum ContactSource {
   OTHER
 }
 
+enum BlackbookEntryType {
+  PERSON
+  COMPANY
+  LOCATION
+  TALENT
+  SERVICE
+
+  @@map("pms_blackbook_entry_type")
+}
+
+enum BlackbookCategory {
+  CREW
+  SERVICE
+  LOCATION
+  EQUIPMENT
+  TALENT
+  TRANSPORT
+  POST
+  OTHER
+
+  @@map("pms_blackbook_category")
+}
+
 // PmsJobType avoids conflict with legacy "JobType" enum in shared DB
 enum PmsJobType {
   STILLS
@@ -241,6 +264,81 @@ model Contact {
   @@map("pms_contacts")
 }
 
+model BlackbookEntry {
+  id          String             @id @default(uuid())
+  entryType   BlackbookEntryType @default(PERSON)
+  category    BlackbookCategory  @default(OTHER)
+  displayName String
+  firstName   String?
+  lastName    String?
+  companyName String?
+  jobTitle    String?
+  email       String?
+  phone       String?
+  website     String?
+  tags        String[]           @default([])
+  notes       String?
+
+  // Commercial defaults
+  defaultRate Float?
+  rateUnit    String?
+  currency    String  @default("GBP")
+
+  // Person-level catering requirements. Production-specific overrides can be
+  // added later without losing the reusable blackbook baseline.
+  dietaryNotes String?
+  dietaryFlags String[] @default([])
+  allergens    String[] @default([])
+
+  // Structured location/company address fields for filtering and deck output.
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  region       String?
+  postcode     String?
+  country      String?
+  locationType String?
+  latitude     Float?
+  longitude    Float?
+
+  // Location/studio technical fields seen in the historical decks.
+  daylight        Boolean?
+  blackout        Boolean?
+  areaSqm         Float?
+  shootingAreaSqm Float?
+  ceilingHeight   String?
+  accessNotes     String?
+  parkingNotes    String?
+  travelNotes     String?
+  facilities      String?
+
+  // Talent/model fields from casting decks.
+  ukAgency     String?
+  frAgency     String?
+  bookUrl      String?
+  socialUrl    String?
+  polasUrl     String?
+  selfTapeUrl  String?
+  modelsComUrl String?
+  height       String?
+  eyes         String?
+  hair         String?
+  bust         String?
+  waist        String?
+  hips         String?
+  shoe         String?
+
+  optionCandidates OptionCandidate[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([entryType, category])
+  @@index([displayName])
+  @@index([email])
+  @@map("pms_blackbook_entries")
+}
+
 // ─── Opportunities ────────────────────────────────────────────────────────────
 
 model Opportunity {
@@ -360,8 +458,8 @@ model OptionGroup {
   order        Int                   @default(0)
   requirements OptionRequirement[]
   candidates   OptionCandidate[]
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 
   production Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
 
@@ -370,20 +468,20 @@ model OptionGroup {
 }
 
 model OptionRequirement {
-  id           String                  @id @default(uuid())
+  id           String                 @id @default(uuid())
   productionId String
   groupId      String
   name         String
   displayLabel String
-  type         OptionRequirementType   @default(OTHER)
-  slotNumber   Int                     @default(1)
-  activeState  OptionRequirementState  @default(ACTIVE)
+  type         OptionRequirementType  @default(OTHER)
+  slotNumber   Int                    @default(1)
+  activeState  OptionRequirementState @default(ACTIVE)
   notes        String?
-  order        Int                     @default(0)
+  order        Int                    @default(0)
   dateNeeds    RequirementDateNeed[]
   assignments  OptionSlotAssignment[]
-  createdAt    DateTime                @default(now())
-  updatedAt    DateTime                @updatedAt
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
 
   production Production  @relation(fields: [productionId], references: [id], onDelete: Cascade)
   group      OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
@@ -394,7 +492,7 @@ model OptionRequirement {
 }
 
 model RequirementDateNeed {
-  id           String   @id @default(uuid())
+  id            String   @id @default(uuid())
   requirementId String
   dateId        String
   isRequired    Boolean  @default(false)
@@ -411,32 +509,35 @@ model RequirementDateNeed {
 }
 
 model OptionCandidate {
-  id            String                       @id @default(uuid())
-  productionId  String
-  groupId       String
-  name          String
-  subtitle      String?
-  website       String?
-  contactName   String?
-  contactEmail  String?
-  contactPhone  String?
-  rate          Float?
-  rateUnit      String?
-  currency      String                       @default("GBP")
-  activeState   OptionCandidateState         @default(ACTIVE)
-  internalNotes String?
-  clientNotes   String?
-  order         Int                          @default(0)
-  dateStatuses  CandidateDateStatusRecord[]
-  assignments   OptionSlotAssignment[]
-  createdAt     DateTime                     @default(now())
-  updatedAt     DateTime                     @updatedAt
+  id               String                      @id @default(uuid())
+  productionId     String
+  groupId          String
+  blackbookEntryId String?
+  name             String
+  subtitle         String?
+  website          String?
+  contactName      String?
+  contactEmail     String?
+  contactPhone     String?
+  rate             Float?
+  rateUnit         String?
+  currency         String                      @default("GBP")
+  activeState      OptionCandidateState        @default(ACTIVE)
+  internalNotes    String?
+  clientNotes      String?
+  order            Int                         @default(0)
+  dateStatuses     CandidateDateStatusRecord[]
+  assignments      OptionSlotAssignment[]
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
 
-  production Production  @relation(fields: [productionId], references: [id], onDelete: Cascade)
-  group      OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  production     Production      @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  group          OptionGroup     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  blackbookEntry BlackbookEntry? @relation(fields: [blackbookEntryId], references: [id], onDelete: SetNull)
 
   @@index([productionId])
   @@index([groupId, order])
+  @@index([blackbookEntryId])
   @@map("pms_option_candidates")
 }
 
@@ -533,26 +634,26 @@ model OptionsCategory {
 }
 
 model Option {
-  id            String             @id @default(uuid())
-  categoryId    String
-  name          String
-  subtitle      String?
-  website       String?
-  contactName   String?
-  contactEmail  String?
-  contactPhone  String?
-  rate          Float?
-  rateUnit      String?
-  currency      String             @default("GBP")
-  status        OptionStatus       @default(OPTION)
-  isAvailable   OptionAvailability @default(UNKNOWN)
-  internalNotes String?
-  clientNotes   String?
-  photos        OptionPhoto[]
-  order         Int                @default(0)
+  id             String             @id @default(uuid())
+  categoryId     String
+  name           String
+  subtitle       String?
+  website        String?
+  contactName    String?
+  contactEmail   String?
+  contactPhone   String?
+  rate           Float?
+  rateUnit       String?
+  currency       String             @default("GBP")
+  status         OptionStatus       @default(OPTION)
+  isAvailable    OptionAvailability @default(UNKNOWN)
+  internalNotes  String?
+  clientNotes    String?
+  photos         OptionPhoto[]
+  order          Int                @default(0)
   libraryEntryId String?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   category OptionsCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
@@ -594,23 +695,23 @@ enum OptionAvailability {
 }
 
 model ProductionDate {
-  id           String                 @id @default(cuid())
-  productionId String
-  production   Production             @relation(fields: [productionId], references: [id], onDelete: Cascade)
-  dateType     ProductionDateType     @default(OTHER)
-  status       ProductionDateStatus   @default(PROPOSED)
-  date         DateTime               @db.Date
-  time         String?
-  location     String?
-  zoomLink     String?
-  notes        String?
-  label        String?
-  people       ProductionDatePerson[]
-  requirementNeeds RequirementDateNeed[]
-  candidateStatuses CandidateDateStatusRecord[]
+  id                    String                      @id @default(cuid())
+  productionId          String
+  production            Production                  @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  dateType              ProductionDateType          @default(OTHER)
+  status                ProductionDateStatus        @default(PROPOSED)
+  date                  DateTime                    @db.Date
+  time                  String?
+  location              String?
+  zoomLink              String?
+  notes                 String?
+  label                 String?
+  people                ProductionDatePerson[]
+  requirementNeeds      RequirementDateNeed[]
+  candidateStatuses     CandidateDateStatusRecord[]
   optionSlotAssignments OptionSlotAssignment[]
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
 
   @@map("pms_production_dates")
 }
