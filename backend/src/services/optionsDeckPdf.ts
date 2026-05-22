@@ -42,14 +42,14 @@ const TEXT = "#1a1a1f";
 const MUTED = "#7c7c78";
 const LIGHT_BORDER = "#deded8";
 
-const HOLD_STYLES: Record<CandidateDateHoldStatus, { label: string; fill: string; text: string }> = {
-  REQUESTED: { label: "REQUESTED", fill: "#ede9fe", text: "#6d28d9" },
-  FIRST_OPTION: { label: "FIRST OPTION", fill: "#16a34a", text: "#ffffff" },
-  SECOND_OPTION: { label: "SECOND OPTION", fill: "#dbeafe", text: "#1d4ed8" },
-  CONFIRMED: { label: "CONFIRMED", fill: "#15803d", text: "#ffffff" },
-  RELEASED: { label: "RELEASED", fill: "#e5e7eb", text: "#6b7280" },
-  UNAVAILABLE: { label: "NOT AVAILABLE", fill: "#fed7aa", text: "#9a3412" },
-  NA: { label: "N/A", fill: "#f3f4f6", text: "#9ca3af" },
+const HOLD_STYLES: Record<CandidateDateHoldStatus, { label: string; fill: string; text: string; stroke: string }> = {
+  REQUESTED: { label: "REQUESTED", fill: "#f5f3ff", text: "#6d28d9", stroke: "#ddd6fe" },
+  FIRST_OPTION: { label: "FIRST OPTION", fill: "#dcfce7", text: "#166534", stroke: "#86efac" },
+  SECOND_OPTION: { label: "SECOND OPTION", fill: "#eff6ff", text: "#1d4ed8", stroke: "#bfdbfe" },
+  CONFIRMED: { label: "CONFIRMED", fill: "#16a34a", text: "#ffffff", stroke: "#15803d" },
+  RELEASED: { label: "RELEASED", fill: "#f4f4f2", text: "#73736f", stroke: "#deded8" },
+  UNAVAILABLE: { label: "NOT AVAILABLE", fill: "#fff1e7", text: "#9a3412", stroke: "#fed7aa" },
+  NA: { label: "N/A", fill: "#fafafa", text: "#a3a3a0", stroke: "#e5e5e0" },
 };
 
 function formatDate(date: Date): string {
@@ -75,7 +75,9 @@ function candidateDisplayName(candidate: DeckCandidate): string {
 }
 
 function projectTitle(group: OptionsDeckGroup): string {
-  const parts = [group.production.brand, group.production.clientName].filter(Boolean);
+  const client = group.production.clientName?.replace(/^disney$/i, "Disney");
+  const brand = group.production.brand?.replace(/^ganni$/i, "GANNI");
+  const parts = [brand, client].filter(Boolean);
   return parts.length ? parts.join(" x ") : group.production.title;
 }
 
@@ -171,23 +173,27 @@ function drawStatusTable(doc: PDFKit.PDFDocument, candidate: DeckCandidate): voi
   const statuses = orderedStatuses(candidate).slice(0, 7);
   if (statuses.length === 0) return;
 
-  const x = 1274;
-  const y = 92;
-  const dateWidth = 162;
-  const statusWidth = 356;
-  const rowHeight = 30;
+  const x = 1300;
+  const y = 96;
+  const dateWidth = 152;
+  const statusWidth = 246;
+  const gap = 10;
+  const rowHeight = 24;
+  const rowGap = 7;
 
   statuses.forEach((item, index) => {
     const style = HOLD_STYLES[item.status];
-    const rowY = y + index * rowHeight;
-    doc.rect(x, rowY, dateWidth, rowHeight).fill("#ffffff").stroke(LIGHT_BORDER);
-    doc.rect(x + dateWidth, rowY, statusWidth, rowHeight).fill(style.fill).stroke(LIGHT_BORDER);
-    doc.font("Helvetica").fontSize(14).fillColor(TEXT).text(formatDate(item.date.date), x + 10, rowY + 8, { width: dateWidth - 20 });
+    const rowY = y + index * (rowHeight + rowGap);
+    doc.font("Helvetica").fontSize(13).fillColor("#555550").text(formatDate(item.date.date), x, rowY + 6, {
+      width: dateWidth,
+      align: "right",
+    });
+    doc.roundedRect(x + dateWidth + gap, rowY, statusWidth, rowHeight, 2).fillAndStroke(style.fill, style.stroke);
     doc
       .font("Helvetica-Bold")
-      .fontSize(13)
+      .fontSize(11)
       .fillColor(style.text)
-      .text(style.label, x + dateWidth + 10, rowY + 8, { width: statusWidth - 20, align: "center" });
+      .text(style.label, x + dateWidth + gap + 12, rowY + 7, { width: statusWidth - 24, align: "center", characterSpacing: 0 });
   });
 }
 
@@ -245,11 +251,7 @@ function drawFooter(doc: PDFKit.PDFDocument, group: OptionsDeckGroup, pageNumber
     width: PAGE_WIDTH - x - RIGHT,
     align: "right",
   });
-  doc.font("Helvetica").fontSize(15).fillColor(MUTED).text("unlimited.bond", x, 990, {
-    width: PAGE_WIDTH - x - RIGHT,
-    align: "right",
-  });
-  doc.font("Helvetica").fontSize(15).fillColor(MUTED).text(String(pageNumber), x, 1018, {
+  doc.font("Helvetica").fontSize(15).fillColor(MUTED).text("unlimited.bond", x, 994, {
     width: PAGE_WIDTH - x - RIGHT,
     align: "right",
   });
