@@ -87,6 +87,16 @@ enum ProductionDateType {
   OTHER
 }
 
+enum ProductionDateStatus {
+  PROPOSED
+  OPTIONED
+  CONFIRMED
+  RELEASED
+  CANCELLED
+
+  @@map("pms_production_date_status")
+}
+
 enum CrewStatus {
   REQUESTED
   FIRST_OPTION
@@ -567,6 +577,7 @@ model ProductionDate {
   productionId String
   production   Production             @relation(fields: [productionId], references: [id], onDelete: Cascade)
   dateType     ProductionDateType     @default(OTHER)
+  status       ProductionDateStatus   @default(PROPOSED)
   date         DateTime               @db.Date
   time         String?
   location     String?

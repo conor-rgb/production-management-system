@@ -9,10 +9,12 @@ type CandidateState = "ACTIVE" | "PARKED" | "RELEASED";
 type HoldStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFIRMED" | "RELEASED" | "UNAVAILABLE" | "NA";
 type PipelineState = "NOT_REQUIRED" | "NEEDED" | "REQUESTED" | "SECOND_OPTION" | "FIRST_OPTION" | "CONFIRMED" | "UNAVAILABLE" | "RELEASED";
 type ProductionDateType = "PPM" | "RECCE" | "FITTING" | "MEETING" | "SHOOT_DAY" | "POST_DELIVERY" | "OTHER";
+type ProductionDateStatus = "PROPOSED" | "OPTIONED" | "CONFIRMED" | "RELEASED" | "CANCELLED";
 
 interface MatrixDate {
   id: string;
   dateType: ProductionDateType;
+  status: ProductionDateStatus;
   date: string;
   time: string | null;
   label: string | null;
@@ -94,6 +96,7 @@ interface MatrixResponse {
 
 const REQUIREMENT_TYPES: RequirementType[] = ["CREW", "SERVICE", "LOCATION", "EQUIPMENT", "TALENT", "TRANSPORT", "POST", "OTHER"];
 const DATE_TYPES: ProductionDateType[] = ["MEETING", "RECCE", "PPM", "FITTING", "SHOOT_DAY", "POST_DELIVERY", "OTHER"];
+const DATE_STATUSES: ProductionDateStatus[] = ["PROPOSED", "OPTIONED", "CONFIRMED", "RELEASED", "CANCELLED"];
 const HOLD_STATUSES: HoldStatus[] = ["REQUESTED", "FIRST_OPTION", "SECOND_OPTION", "CONFIRMED", "RELEASED", "UNAVAILABLE", "NA"];
 
 const PIPELINE_ORDER: HoldStatus[] = ["CONFIRMED", "FIRST_OPTION", "SECOND_OPTION", "REQUESTED", "UNAVAILABLE", "RELEASED", "NA"];
@@ -152,6 +155,15 @@ function holdClass(status: HoldStatus | null): string {
   if (status === "RELEASED") return "border-gray-200 bg-gray-50 text-gray-400";
   if (status === "NA") return "border-gray-200 bg-white text-gray-300";
   return "border-gray-200 bg-white text-gray-300";
+}
+
+function dateStatusClass(status: ProductionDateStatus | null): string {
+  if (status === "CONFIRMED") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "OPTIONED") return "border-lime-200 bg-lime-50 text-lime-700";
+  if (status === "PROPOSED") return "border-sky-200 bg-sky-50 text-sky-700";
+  if (status === "RELEASED") return "border-gray-200 bg-gray-50 text-gray-500";
+  if (status === "CANCELLED") return "border-red-200 bg-red-50 text-red-600";
+  return "border-gray-200 bg-white text-gray-400";
 }
 
 function shortPipeline(state: PipelineState): string {
@@ -282,6 +294,19 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
     setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/requirements/${requirementId}`, patch));
   }
 
+  async function duplicateRequirement(requirementId: string) {
+    setMatrix(await api.post<MatrixResponse>(`/api/options/matrix/requirements/${requirementId}/duplicate`, {}));
+  }
+
+  async function deleteRequirement(requirementId: string) {
+    if (!window.confirm("Delete this requirement slot? The candidate sheet will remain.")) return;
+    setMatrix(await api.delete(`/api/options/matrix/requirements/${requirementId}`).then(() => api.get<MatrixResponse>(`/api/options/production/${productionId}/matrix`)));
+  }
+
+  async function updateDate(dateId: string, patch: Partial<MatrixDate>) {
+    setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/dates/${dateId}`, patch));
+  }
+
   async function addCandidate(groupId: string) {
     setMatrix(await api.post<MatrixResponse>(`/api/options/matrix/groups/${groupId}/candidates`, { name: "New candidate" }));
   }
@@ -335,6 +360,9 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
           onOpenGroup={setSelectedGroupId}
           onPatchNeed={patchNeed}
           onUpdateRequirement={updateRequirement}
+          onDuplicateRequirement={duplicateRequirement}
+          onDeleteRequirement={deleteRequirement}
+          onUpdateDate={updateDate}
         />
       )}
 
@@ -344,13 +372,16 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
   );
 }
 
-function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement }: {
+function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, onDuplicateRequirement, onDeleteRequirement, onUpdateDate }: {
   matrix: MatrixResponse;
   onOpenGroup: (groupId: string) => void;
   onPatchNeed: (requirementId: string, dateId: string, isRequired: boolean) => Promise<void>;
   onUpdateRequirement: (requirementId: string, patch: Partial<OptionRequirement>) => Promise<void>;
+  onDuplicateRequirement: (requirementId: string) => Promise<void>;
+  onDeleteRequirement: (requirementId: string) => Promise<void>;
+  onUpdateDate: (dateId: string, patch: Partial<MatrixDate>) => Promise<void>;
 }) {
-  const gridColumns = `220px 92px ${matrix.dates.map(() => "112px").join(" ")}`;
+  const gridColumns = `260px 132px 76px ${matrix.dates.map(() => "128px").join(" ")}`;
 
   if (matrix.groups.length === 0) {
     return (
@@ -368,16 +399,40 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement }: 
       <div className="min-w-max">
         <div className="sticky top-0 z-20 grid min-h-9 items-center gap-x-2 border-b border-gray-200 bg-[#f8f8f6] px-3 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
           <div>Requirement</div>
-          <div>Type</div>
-          {matrix.dates.map((date) => <div key={date.id} className="text-center">{dateLabel(date)}</div>)}
+          <div>Type / state</div>
+          <div />
+          {matrix.dates.map((date) => (
+            <div key={date.id} className="flex flex-col items-center gap-1 py-1">
+              <span className="text-center">{dateLabel(date)}</span>
+              <PillDropdown
+                value={date.status}
+                options={DATE_STATUSES}
+                onChange={(status) => status ? onUpdateDate(date.id, { status }) : Promise.resolve()}
+                classNameForValue={dateStatusClass}
+              />
+            </div>
+          ))}
         </div>
         {matrix.groups.flatMap((group) => group.requirements.map((requirement) => (
-          <div key={requirement.id} className={`grid min-h-12 items-center gap-x-2 border-b border-gray-100 px-3 text-xs hover:bg-[#f8f8f6] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
+          <div key={requirement.id} className={`group grid min-h-12 items-center gap-x-2 border-b border-gray-100 px-3 text-xs hover:bg-[#f8f8f6] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
             <div className="min-w-0">
               <EditableText value={requirement.displayLabel} onSave={(displayLabel) => onUpdateRequirement(requirement.id, { displayLabel })} className="font-semibold text-gray-900" />
               <button onClick={() => onOpenGroup(group.id)} className="mt-0.5 truncate text-[11px] text-gray-400 hover:text-gray-900">Open {group.name} options {"->"} {group.candidates.length} candidates</button>
             </div>
-            <span className="rounded bg-gray-100 px-2 py-1 text-[10px] font-semibold uppercase text-gray-500">{label(requirement.type)}</span>
+            <div className="flex items-center gap-1">
+              <PillDropdown
+                value={requirement.type}
+                options={REQUIREMENT_TYPES}
+                onChange={(type) => type ? onUpdateRequirement(requirement.id, { type }) : Promise.resolve()}
+                classNameForValue={() => "border-gray-200 bg-gray-50 text-gray-600"}
+              />
+            </div>
+            <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+              <button onClick={() => onUpdateRequirement(requirement.id, { order: requirement.order - 1 })} title="Move up" className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">↑</button>
+              <button onClick={() => onUpdateRequirement(requirement.id, { order: requirement.order + 1 })} title="Move down" className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">↓</button>
+              <button onClick={() => onDuplicateRequirement(requirement.id)} title="Duplicate" className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">⧉</button>
+              <button onClick={() => onDeleteRequirement(requirement.id)} title="Delete" className="grid h-7 w-7 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>
+            </div>
             {matrix.dates.map((date) => {
               const need = needFor(requirement, date.id);
               const isRequired = Boolean(need?.isRequired);

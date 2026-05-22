@@ -10,6 +10,17 @@
 - Clicking/opening a requirement row takes you into the shared candidate sheet for that role/service group.
 - Multi-slot requirements share one candidate sheet:
   - `Photo Assistant 1`, `Photo Assistant 2`, and `Photo Assistant 3` can all point to the same `Photo Assistant` candidate pool.
+- Added production date status for matrix date columns:
+  - proposed
+  - optioned
+  - confirmed
+  - released
+  - cancelled
+- Added requirement row controls:
+  - change requirement type
+  - move row up/down
+  - duplicate requirement slot
+  - delete requirement slot
 
 ## Schema
 - Added matrix models:
@@ -23,6 +34,7 @@
   - `OptionRequirementState`
   - `OptionCandidateState`
   - `CandidateDateHoldStatus`
+  - `ProductionDateStatus`
 - Added relations:
   - `Production.optionGroups`
   - `Production.optionRequirements`
@@ -31,6 +43,7 @@
   - `ProductionDate.candidateStatuses`
 - Migration:
   - `backend/prisma/migrations/20260522100000_options_matrix/migration.sql`
+  - `backend/prisma/migrations/20260522110000_production_date_status/migration.sql`
 - Prisma migration deployed and Prisma client regenerated.
 
 ## Backend
@@ -44,6 +57,9 @@
   - `PATCH /api/options/matrix/candidates/:candidateId`
   - `DELETE /api/options/matrix/candidates/:candidateId`
   - `PATCH /api/options/matrix/candidates/:candidateId/dates/:dateId`
+  - `POST /api/options/matrix/requirements/:requirementId/duplicate`
+  - `DELETE /api/options/matrix/requirements/:requirementId`
+  - `PATCH /api/options/matrix/dates/:dateId`
 - Existing legacy Options Board, photo, and PDF endpoints remain in place for compatibility.
 - The new date endpoint creates normal `ProductionDate` rows, so dates remain part of the production record.
 
@@ -80,6 +96,8 @@
   - one status dropdown per production date
   - delete candidate
   - add candidate
+- Matrix date headers now show styled date status dropdowns.
+- Requirement rows now expose hover controls for move, duplicate, and delete.
 
 ## Verification
 - Prisma migration deployed successfully.
@@ -88,20 +106,20 @@
 - Frontend build passed.
 - Frontend copied to `/var/www/agent`.
 - PM2 process `0` reloaded successfully.
+- Date status + requirement controls pass built, copied to `/var/www/agent`, and PM2 reloaded successfully.
 
 ## Known gaps / technical debt
 - This is the first operational matrix pass. It does not yet include the reusable Blackbook schema.
 - Legacy `OptionsBoard`, `OptionsCategory`, `Option`, and `OptionPhoto` still exist. They are not removed yet because they preserve the earlier client options/PDF work.
 - Candidate photos/client presentation are not reconnected to the new matrix candidate model yet.
-- Requirement row reorder is not implemented yet.
-- Requirement deletion is not implemented yet.
+- Requirement row reorder is currently a simple order nudge via up/down controls, not drag-and-drop.
 - Candidate assignment to specific slots after confirmation is not implemented yet; currently slots share the candidate pool.
-- Date statuses such as proposed/optioned/confirmed/released for the date itself are not implemented yet.
+- Date statuses exist in the matrix, but are not yet surfaced in the main Dates tab or calendar views.
 - Master timeline/date-first view is not implemented yet.
 
 ## Suggested next build
-1. Add requirement row reorder/delete.
-2. Add date-level status: proposed, optioned, confirmed, released, cancelled.
+1. Surface date status in the main Dates tab and calendar views.
+2. Add proper drag/drop row reorder rather than temporary up/down order nudges.
 3. Add slot assignment for confirmed candidates.
 4. Add Blackbook entries and link candidates to reusable people/companies/locations.
 5. Rebuild client presentation/PDF from candidate groups once Blackbook/photos are in place.

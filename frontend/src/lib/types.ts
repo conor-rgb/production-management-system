@@ -7,6 +7,7 @@ export type LostReason = "COMPETITOR_WON" | "BUDGET_PULLED" | "NO_RESPONSE" | "T
 export type ProductionStatus = "PRE_PRO" | "SHOOT" | "POST" | "WRAPPED" | "PLANNING" | "CONFIRMED" | "IN_PRODUCTION" | "WRAP" | "DELIVERED" | "INVOICED" | "CLOSED";
 export type FreeAgentInvoiceStatus = "NOT_RAISED" | "DRAFT" | "SENT" | "VIEWED" | "PAID" | "OVERDUE";
 export type ProductionDateType = "PPM" | "RECCE" | "FITTING" | "MEETING" | "SHOOT_DAY" | "POST_DELIVERY" | "OTHER";
+export type ProductionDateStatus = "PROPOSED" | "OPTIONED" | "CONFIRMED" | "RELEASED" | "CANCELLED";
 export type CrewStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFIRMED" | "RELEASED";
 export type JobFolder = "Briefs" | "Estimates" | "Budgets" | "Contracts" | "Crew Deals" | "Receipts" | "References" | "Selects" | "Delivery" | "Mail Attachments";
 export type BudgetStatus = "DRAFT" | "SENT" | "CONFIRMED" | "IN_PRODUCTION" | "WRAPPED";
@@ -156,6 +157,7 @@ export interface ProductionDate {
   id: string;
   productionId: string;
   dateType: ProductionDateType;
+  status: ProductionDateStatus;
   date: string;
   time?: string;
   location?: string;

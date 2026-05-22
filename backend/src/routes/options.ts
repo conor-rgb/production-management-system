@@ -11,6 +11,7 @@ import {
   OptionRequirementState,
   OptionRequirementType,
   OptionStatus,
+  ProductionDateStatus,
   Prisma,
   ProductionDateType,
 } from "@prisma/client";
@@ -169,7 +170,7 @@ async function matrixResponse(productionId: string) {
     prisma.productionDate.findMany({
       where: { productionId },
       orderBy: [{ date: "asc" }, { time: "asc" }, { createdAt: "asc" }],
-      select: { id: true, dateType: true, date: true, time: true, label: true, location: true, notes: true },
+      select: { id: true, dateType: true, status: true, date: true, time: true, label: true, location: true, notes: true },
     }),
     prisma.optionGroup.findMany({
       where: { productionId },
@@ -197,6 +198,7 @@ async function matrixResponse(productionId: string) {
 function matrixDateData(body: Record<string, unknown>) {
   return {
     dateType: body.dateType as ProductionDateType | undefined,
+    status: body.status as ProductionDateStatus | undefined,
     date: body.date ? new Date(String(body.date)) : undefined,
     time: body.time as string | null | undefined,
     location: body.location as string | null | undefined,
@@ -323,6 +325,63 @@ router.patch("/matrix/requirements/:requirementId", async (req: Request, res: Re
   if (body.order !== undefined) data.order = body.order;
   const requirement = await prisma.optionRequirement.update({ where: { id: req.params.requirementId }, data });
   res.json(await matrixResponse(requirement.productionId));
+});
+
+router.post("/matrix/requirements/:requirementId/duplicate", async (req: Request, res: Response): Promise<void> => {
+  const requirement = await prisma.optionRequirement.findUnique({
+    where: { id: req.params.requirementId },
+    include: { dateNeeds: true },
+  });
+  if (!requirement) {
+    res.status(404).json({ error: "Requirement not found" });
+    return;
+  }
+  const slotNumber = await prisma.optionRequirement.count({ where: { groupId: requirement.groupId } }) + 1;
+  const created = await prisma.optionRequirement.create({
+    data: {
+      productionId: requirement.productionId,
+      groupId: requirement.groupId,
+      name: requirement.name,
+      displayLabel: slotLabel(requirement.name, slotNumber, slotNumber),
+      type: requirement.type,
+      slotNumber,
+      activeState: requirement.activeState,
+      notes: requirement.notes,
+      order: requirement.order + 1,
+    },
+  });
+  if (requirement.dateNeeds.length) {
+    await prisma.requirementDateNeed.createMany({
+      data: requirement.dateNeeds.map((need) => ({
+        requirementId: created.id,
+        dateId: need.dateId,
+        isRequired: need.isRequired,
+        notes: need.notes,
+      })),
+      skipDuplicates: true,
+    });
+  }
+  res.status(201).json(await matrixResponse(requirement.productionId));
+});
+
+router.delete("/matrix/requirements/:requirementId", async (req: Request, res: Response): Promise<void> => {
+  const requirement = await prisma.optionRequirement.findUnique({ where: { id: req.params.requirementId }, select: { id: true, productionId: true } });
+  if (!requirement) {
+    res.status(404).json({ error: "Requirement not found" });
+    return;
+  }
+  await prisma.optionRequirement.delete({ where: { id: requirement.id } });
+  res.json(await matrixResponse(requirement.productionId));
+});
+
+router.patch("/matrix/dates/:dateId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { status?: ProductionDateStatus; label?: string | null; dateType?: ProductionDateType };
+  const data: Prisma.ProductionDateUpdateInput = {};
+  if (body.status !== undefined) data.status = body.status;
+  if (body.label !== undefined) data.label = body.label;
+  if (body.dateType !== undefined) data.dateType = body.dateType;
+  const date = await prisma.productionDate.update({ where: { id: req.params.dateId }, data, select: { productionId: true } });
+  res.json(await matrixResponse(date.productionId));
 });
 
 router.patch("/matrix/requirements/:requirementId/dates/:dateId", async (req: Request, res: Response): Promise<void> => {

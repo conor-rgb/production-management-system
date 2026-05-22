@@ -6,6 +6,7 @@ import {
   PmsJobType,
   Prisma,
   ProductionDateType,
+  ProductionDateStatus,
   ProductionStatus,
 } from "@prisma/client";
 import prisma from "../prisma";
@@ -105,6 +106,7 @@ function productionDataFromBody(body: Record<string, unknown>) {
 function dateDataFromBody(body: Record<string, unknown>) {
   return {
     dateType: body.dateType as ProductionDateType | undefined,
+    status: body.status as ProductionDateStatus | undefined,
     date: body.date ? new Date(String(body.date)) : undefined,
     time: body.time as string | null | undefined,
     location: body.location as string | null | undefined,
