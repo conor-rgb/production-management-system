@@ -7,6 +7,7 @@ type BlackbookLifecycleStatus = "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT"
 type BlackbookEntryType = "PERSON" | "COMPANY" | "LOCATION" | "TALENT" | "SERVICE";
 type BlackbookOutreachStatus = "NOT_CONTACTED" | "CONTACTED" | "REPLIED" | "FOLLOW_UP" | "NOT_INTERESTED" | "CONVERTED" | "ARCHIVED";
 type ViewKey = "ALL" | "TARGETS" | "IN_TOUCH" | "CLIENTS" | "SUPPLIERS" | "COMPANIES";
+type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 interface BlackbookConfigCategory {
   id: string;
@@ -102,6 +103,13 @@ function outreachClass(status: BlackbookOutreachStatus): string {
   return "border-gray-200 bg-gray-50 text-gray-400";
 }
 
+function InlineSaveStatus({ status }: { status: SaveStatus }) {
+  if (status === "idle") return null;
+  const label = status === "saving" ? "Saving..." : status === "saved" ? "Saved" : "Save failed";
+  const className = status === "saving" ? "text-gray-400" : status === "saved" ? "text-emerald-600" : "text-red-600";
+  return <span className={`ml-2 text-[10px] font-medium ${className}`}>{label}</span>;
+}
+
 export default function Contacts() {
   const [view, setView] = useState<ViewKey>("ALL");
   const [query, setQuery] = useState("");
@@ -117,6 +125,7 @@ export default function Contacts() {
   const [listMatches, setListMatches] = useState<BlackbookEntry[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
+  const [listEntrySaveStatus, setListEntrySaveStatus] = useState<Record<string, SaveStatus>>({});
 
   const selectedList = useMemo(() => lists.find((list) => list.id === selectedListId) ?? null, [lists, selectedListId]);
   const selectedListEntryMap = useMemo(() => new Map((selectedList?.entries ?? []).map((item) => [item.entry.id, item])), [selectedList]);
@@ -206,8 +215,18 @@ export default function Contacts() {
   }
 
   async function updateListEntry(itemId: string, patch: Partial<Pick<BlackbookTargetListEntry, "status" | "notes" | "nextFollowUpAt">>) {
-    await api.patch(`/api/options/blackbook/list-entries/${itemId}`, patch);
-    await refreshAll();
+    setListEntrySaveStatus((current) => ({ ...current, [itemId]: "saving" }));
+    try {
+      await api.patch(`/api/options/blackbook/list-entries/${itemId}`, patch);
+      await refreshAll();
+      setListEntrySaveStatus((current) => ({ ...current, [itemId]: "saved" }));
+      window.setTimeout(() => {
+        setListEntrySaveStatus((current) => ({ ...current, [itemId]: "idle" }));
+      }, 1400);
+    } catch (error) {
+      console.error(error);
+      setListEntrySaveStatus((current) => ({ ...current, [itemId]: "error" }));
+    }
   }
 
   async function removeListEntry(itemId: string) {
@@ -353,6 +372,7 @@ export default function Contacts() {
                   entry={entry}
                   categories={categories}
                   listEntry={selectedListEntryMap.get(entry.id)}
+                  saveStatus={selectedListEntryMap.get(entry.id) ? listEntrySaveStatus[selectedListEntryMap.get(entry.id)!.id] ?? "idle" : "idle"}
                   onOpen={() => setSelectedEntryId(entry.id)}
                   onUpdateListEntry={updateListEntry}
                   onRemoveListEntry={removeListEntry}
@@ -371,6 +391,7 @@ function BlackbookRow({
   entry,
   categories,
   listEntry,
+  saveStatus,
   onOpen,
   onUpdateListEntry,
   onRemoveListEntry,
@@ -378,6 +399,7 @@ function BlackbookRow({
   entry: BlackbookEntry;
   categories: BlackbookConfigCategory[];
   listEntry?: BlackbookTargetListEntry;
+  saveStatus: SaveStatus;
   onOpen: () => void;
   onUpdateListEntry: (itemId: string, patch: Partial<Pick<BlackbookTargetListEntry, "status" | "notes" | "nextFollowUpAt">>) => Promise<void>;
   onRemoveListEntry: (itemId: string) => Promise<void>;
@@ -402,7 +424,7 @@ function BlackbookRow({
         <>
           <select
             value={listEntry.status}
-            onChange={(event) => onUpdateListEntry(listEntry.id, { status: event.target.value as BlackbookOutreachStatus })}
+            onChange={(event) => { onUpdateListEntry(listEntry.id, { status: event.target.value as BlackbookOutreachStatus }).catch(console.error); }}
             className={`h-8 rounded-full border px-2 text-[11px] font-medium outline-none ${outreachClass(listEntry.status)}`}
           >
             {Object.entries(OUTREACH_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -410,7 +432,7 @@ function BlackbookRow({
           <input
             type="date"
             value={listEntry.nextFollowUpAt?.slice(0, 10) ?? ""}
-            onChange={(event) => onUpdateListEntry(listEntry.id, { nextFollowUpAt: event.target.value || null })}
+            onChange={(event) => { onUpdateListEntry(listEntry.id, { nextFollowUpAt: event.target.value || null }).catch(console.error); }}
             className="h-8 rounded border border-gray-200 px-2 text-xs text-gray-600 outline-none focus:border-gray-500"
           />
           <button onClick={() => onRemoveListEntry(listEntry.id)} className="grid h-8 w-8 place-items-center rounded text-gray-300 hover:bg-red-50 hover:text-red-600" title="Remove from list">
@@ -420,10 +442,11 @@ function BlackbookRow({
             <input
               key={`${listEntry.id}-${listEntry.notes ?? ""}`}
               defaultValue={listEntry.notes ?? ""}
-              onBlur={(event) => onUpdateListEntry(listEntry.id, { notes: event.target.value })}
+              onBlur={(event) => { onUpdateListEntry(listEntry.id, { notes: event.target.value }).catch(console.error); }}
               placeholder="Outreach notes..."
               className="h-8 w-full rounded border border-transparent bg-transparent px-2 text-xs text-gray-500 outline-none hover:border-gray-200 hover:bg-white focus:border-gray-500"
             />
+            <InlineSaveStatus status={saveStatus} />
           </div>
         </>
       ) : (

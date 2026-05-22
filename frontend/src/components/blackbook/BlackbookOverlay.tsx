@@ -6,6 +6,7 @@ import { api } from "../../lib/api";
 type BlackbookEntryType = "PERSON" | "COMPANY" | "LOCATION" | "TALENT" | "SERVICE";
 type BlackbookCategory = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" | "TRANSPORT" | "POST" | "OTHER";
 type BlackbookLifecycleStatus = "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT" | "SUPPLIER" | "PREFERRED_SUPPLIER" | "DO_NOT_USE" | "ARCHIVED";
+type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 interface BlackbookConfigType {
   id: string;
@@ -182,12 +183,22 @@ function BlackbookDetail({
   onRefresh: () => void;
 }) {
   const { entry } = data;
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const category = categories.find((item) => item.id === entry.categoryConfigId);
   const typeNames = category?.types.filter((type) => entry.typeIds.includes(type.id)).map((type) => type.name) ?? [];
 
   async function patch(patchData: Partial<BlackbookEntry>) {
-    await api.patch(`/api/options/blackbook/${entry.id}`, patchData);
-    onRefresh();
+    setSaveStatus("saving");
+    try {
+      await api.patch(`/api/options/blackbook/${entry.id}`, patchData);
+      await onRefresh();
+      setSaveStatus("saved");
+      window.setTimeout(() => setSaveStatus("idle"), 1400);
+    } catch (error) {
+      console.error(error);
+      setSaveStatus("error");
+      throw error;
+    }
   }
   const emailCount = data.emailMessages.length;
   const optionCount = entry.optionCandidates.length;
@@ -208,6 +219,7 @@ function BlackbookDetail({
           {(entry.targetLists?.length ?? 0) > 0 && <p className="mt-2 text-xs text-violet-600">{entry.targetLists?.map((item) => `${item.list.name}: ${item.status.toLowerCase().replace(/_/g, " ")}`).join(" · ")}</p>}
         </div>
         <div className="space-y-3">
+          <SaveIndicator status={saveStatus} />
           <LifecycleEditor value={entry.lifecycleStatus} onChange={(lifecycleStatus) => patch({ lifecycleStatus })} />
           <CategoryEditor entry={entry} categories={categories} onSave={patch} />
         </div>
@@ -280,11 +292,22 @@ function LifecycleEditor({ value, onChange }: { value: BlackbookLifecycleStatus;
   return (
     <div className="w-[280px] rounded-lg border border-gray-200 p-3">
       <label className="text-[11px] font-medium uppercase tracking-[0.06em] text-gray-400">Relationship</label>
-      <select value={value} onChange={(event) => void onChange(event.target.value as BlackbookLifecycleStatus)} className="mt-1 h-9 w-full rounded border border-gray-200 px-2 text-xs">
+      <select value={value} onChange={(event) => { onChange(event.target.value as BlackbookLifecycleStatus).catch(console.error); }} className="mt-1 h-9 w-full rounded border border-gray-200 px-2 text-xs">
         {options.map((option) => <option key={option} value={option}>{option.toLowerCase().replace(/_/g, " ")}</option>)}
       </select>
     </div>
   );
+}
+
+function SaveIndicator({ status }: { status: SaveStatus }) {
+  if (status === "idle") return <div className="h-5" />;
+  const label = status === "saving" ? "Saving..." : status === "saved" ? "Saved" : "Save failed";
+  const className = status === "saving"
+    ? "text-gray-400"
+    : status === "saved"
+      ? "text-emerald-600"
+      : "text-red-600";
+  return <div className={`h-5 text-right text-[11px] font-medium ${className}`}>{label}</div>;
 }
 
 function MetricCard({ label, value }: { label: string; value: number }) {
@@ -298,7 +321,7 @@ function MetricCard({ label, value }: { label: string; value: number }) {
 
 function NotesEditor({ value, onSave, placeholder }: { value: string; onSave: (value: string) => Promise<void>; placeholder: string }) {
   const [draft, setDraft] = useState(value);
-  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<SaveStatus>("idle");
 
   useEffect(() => {
     setDraft(value);
@@ -306,11 +329,16 @@ function NotesEditor({ value, onSave, placeholder }: { value: string; onSave: (v
 
   async function save() {
     if (draft === value) return;
-    setSaving(true);
+    setStatus("saving");
     try {
       await onSave(draft);
+      setStatus("saved");
+      window.setTimeout(() => setStatus("idle"), 1400);
+    } catch (error) {
+      console.error(error);
+      setDraft(value);
+      setStatus("error");
     } finally {
-      setSaving(false);
     }
   }
 
@@ -323,7 +351,9 @@ function NotesEditor({ value, onSave, placeholder }: { value: string; onSave: (v
         placeholder={placeholder}
         className="min-h-28 w-full resize-y rounded-md border border-gray-200 bg-[#fffdf3] p-3 text-sm leading-6 text-gray-800 outline-none shadow-inner focus:border-amber-300"
       />
-      <div className="mt-1 flex justify-end text-[10px] text-gray-400">{saving ? "Saving..." : "Autosaves on blur"}</div>
+      <div className={`mt-1 flex justify-end text-[10px] ${status === "saved" ? "text-emerald-600" : status === "error" ? "text-red-600" : "text-gray-400"}`}>
+        {status === "saving" ? "Saving..." : status === "saved" ? "Saved" : status === "error" ? "Save failed - reverted" : "Autosaves on blur"}
+      </div>
     </div>
   );
 }
@@ -549,7 +579,7 @@ function CategoryEditor({ entry, categories, onSave }: { entry: BlackbookEntry; 
   return (
     <div className="w-[280px] rounded-lg border border-gray-200 p-3">
       <label className="text-[11px] font-medium uppercase tracking-[0.06em] text-gray-400">Category</label>
-      <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); void onSave({ categoryConfigId: event.target.value || null, typeIds: [] }); }} className="mt-1 h-9 w-full rounded border border-gray-200 px-2 text-xs">
+      <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); onSave({ categoryConfigId: event.target.value || null, typeIds: [] }).catch(console.error); }} className="mt-1 h-9 w-full rounded border border-gray-200 px-2 text-xs">
         <option value="">Uncategorised</option>
         {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select>
