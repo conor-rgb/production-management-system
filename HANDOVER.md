@@ -6,6 +6,11 @@
   - Email and phone render stacked as plain text with small icons, not as visible text boxes.
   - The option identity cell is back to name, Blackbook link, and subtitle only.
   - Clicking the contact text still opens the compact edit popover.
+- Follow-up sheet polish:
+  - Option identity cells now show one clear title line and optional subtitle only.
+  - Blackbook linking moved into the Contact column as a small icon-only control.
+  - Linked Blackbook record names are no longer repeated under the option title.
+  - Address column width reduced so the table reads more tightly.
 - Added compact email/phone display to Options candidate rows.
 - Contact details render in a dedicated narrow Contact column.
 - Clicking the contact line opens a small contact details popover.

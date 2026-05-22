@@ -679,11 +679,12 @@ function NoteCell({ value, onSave, placeholder, tone }: { value: string; onSave:
   );
 }
 
-function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook }: {
+function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook, mode = "label" }: {
   group: OptionGroup;
   candidate: OptionCandidate;
   onLink: (payload: { entryId?: string | null; createFromCandidate?: boolean; create?: CreateBlackbookPayload }) => Promise<void>;
   onOpenBlackbook: (entryId: string) => void;
+  mode?: "label" | "icon";
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(candidate.name);
@@ -749,11 +750,13 @@ function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook }: {
           setOpen((current) => !current);
           setQuery(candidate.name);
         }}
-        className={`inline-flex h-5 max-w-[150px] items-center gap-1 rounded px-1.5 text-left text-[10px] transition ${entry ? "border border-transparent bg-transparent font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900" : "border border-transparent bg-transparent text-gray-300 hover:bg-gray-100 hover:text-gray-600"}`}
+        className={mode === "icon"
+          ? `grid h-5 w-5 place-items-center rounded text-[10px] transition ${entry ? "text-gray-600 hover:bg-gray-100 hover:text-gray-950" : "text-gray-300 hover:bg-gray-100 hover:text-gray-600"}`
+          : `inline-flex h-5 max-w-[150px] items-center gap-1 rounded px-1.5 text-left text-[10px] transition ${entry ? "border border-transparent bg-transparent font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900" : "border border-transparent bg-transparent text-gray-300 hover:bg-gray-100 hover:text-gray-600"}`}
         title={linkedTitle}
       >
         {entry ? <BookOpen size={10} /> : <Plus size={10} />}
-        <span className="truncate">{entry ? entry.displayName : "link record"}</span>
+        {mode === "label" && <span className="truncate">{entry ? entry.displayName : "link record"}</span>}
       </button>
       {open && (
         <div className="absolute left-0 top-full z-50 mt-1 w-[280px] rounded-md border border-gray-200 bg-white p-2 shadow-xl">
@@ -1233,9 +1236,9 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   const [dragCandidateId, setDragCandidateId] = useState<string | null>(null);
   const [dropCandidateId, setDropCandidateId] = useState<string | null>(null);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
-  const gridColumns = `56px 320px ${dates.map(() => "92px").join(" ")} 150px 230px 170px 82px 240px 58px 88px 34px`;
+  const gridColumns = `56px 320px ${dates.map(() => "92px").join(" ")} 160px 230px 170px 82px 200px 58px 88px 34px`;
   const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
-  const minimumSheetWidth = 1396 + (dates.length * 92);
+  const minimumSheetWidth = 1366 + (dates.length * 92);
 
   function setSort(nextKey: CandidateSortKey) {
     if (sortKey === nextKey) {
@@ -1360,7 +1363,7 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
   gridColumns: string;
   onOpenPhotos: () => void;
   onUpdateCandidate: (candidateId: string, patch: Partial<OptionCandidate>) => Promise<void>;
-  onLinkBlackbook: (candidateId: string, payload: { entryId?: string | null; createFromCandidate?: boolean }) => Promise<void>;
+  onLinkBlackbook: (candidateId: string, payload: { entryId?: string | null; createFromCandidate?: boolean; create?: CreateBlackbookPayload }) => Promise<void>;
   onOpenBlackbook: (entryId: string) => void;
   onUpdateCandidateDate: (candidateId: string, dateId: string, status: HoldStatus | null) => Promise<void>;
   onUploadPhoto: (candidateId: string, file: File) => Promise<void>;
@@ -1438,10 +1441,7 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
         <div className="flex min-w-0 items-center gap-2">
           <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="text-[13px] font-semibold text-gray-900" placeholder="Candidate" />
         </div>
-        <div className="mt-1 flex min-w-0 items-center gap-2">
-          <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
-          {candidate.subtitle && <span className="truncate text-[11px] text-gray-400">{candidate.subtitle}</span>}
-        </div>
+        {candidate.subtitle && <div className="mt-1 truncate text-[11px] text-gray-400">{candidate.subtitle}</div>}
       </div>
       {dates.map((date) => {
         const status = statusFor(candidate, date.id)?.status ?? null;
@@ -1458,7 +1458,13 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
           </div>
         );
       })}
-      <CandidateContactCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />
+      <CandidateContactCell
+        group={group}
+        candidate={candidate}
+        onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)}
+        onLink={(payload) => onLinkBlackbook(candidate.id, payload)}
+        onOpenBlackbook={onOpenBlackbook}
+      />
       <NoteCell
         value={candidate.clientNotes ?? ""}
         onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })}
@@ -1491,9 +1497,12 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
   );
 }
 
-function CandidateContactCell({ candidate, onUpdate }: {
+function CandidateContactCell({ group, candidate, onUpdate, onLink, onOpenBlackbook }: {
+  group: OptionGroup;
   candidate: OptionCandidate;
   onUpdate: (patch: Partial<OptionCandidate>) => Promise<void>;
+  onLink: (payload: { entryId?: string | null; createFromCandidate?: boolean; create?: CreateBlackbookPayload }) => Promise<void>;
+  onOpenBlackbook: (entryId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [emailDraft, setEmailDraft] = useState(candidate.contactEmail ?? candidate.blackbookEntry?.email ?? "");
@@ -1531,10 +1540,17 @@ function CandidateContactCell({ candidate, onUpdate }: {
   }
 
   return (
-    <div ref={ref} className="relative min-w-0">
+    <div ref={ref} className="relative flex min-w-0 items-start gap-1.5">
+      <BlackbookLinkControl
+        group={group}
+        candidate={candidate}
+        onLink={onLink}
+        onOpenBlackbook={onOpenBlackbook}
+        mode="icon"
+      />
       <button
         onClick={() => setOpen(true)}
-        className={`block max-w-full text-left text-[10.5px] leading-4 ${hasContact ? "text-gray-500" : "text-gray-300"} hover:text-gray-900`}
+        className={`block min-w-0 flex-1 text-left text-[10.5px] leading-4 ${hasContact ? "text-gray-500" : "text-gray-300"} hover:text-gray-900`}
         title={hasContact ? "Edit contact details" : "Add contact details"}
       >
         {email ? (
