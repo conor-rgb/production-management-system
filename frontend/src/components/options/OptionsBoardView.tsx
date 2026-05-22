@@ -187,6 +187,23 @@ function dateLabel(date: MatrixDate): string {
   return `${date.label || label(date.dateType)} ${formatted}`;
 }
 
+function formatMoney(value: number | null, currency = "GBP"): string {
+  if (value === null || Number.isNaN(value)) return "";
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value);
+}
+
+function blackbookMeta(entry: BlackbookEntry | null): string[] {
+  if (!entry) return [];
+  return [entry.companyName, entry.jobTitle, entry.email, entry.phone, entry.city].filter((item): item is string => Boolean(item));
+}
+
+function blackbookFlags(entry: BlackbookEntry | null): string[] {
+  if (!entry) return [];
+  const dietary = [...entry.dietaryFlags, ...entry.allergens, entry.dietaryNotes].filter((item): item is string => Boolean(item));
+  const rate = entry.defaultRate !== null ? formatMoney(entry.defaultRate, entry.currency) : "";
+  return [rate && entry.rateUnit ? `${rate} ${entry.rateUnit}` : rate, ...dietary].filter(Boolean);
+}
+
 function needFor(requirement: OptionRequirement, dateId: string): RequirementDateNeed | undefined {
   return requirement.dateNeeds.find((need) => need.dateId === dateId);
 }
@@ -488,7 +505,7 @@ function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook }: {
         title={dietary || entry?.notes || "Link to blackbook"}
       >
         {entry ? <BookOpen size={12} /> : <Link2 size={12} />}
-        <span className="min-w-0 flex-1 truncate">{entry ? entry.displayName : "Link blackbook"}</span>
+        <span className="min-w-0 flex-1 truncate">{entry ? "Blackbook linked" : "Link blackbook"}</span>
       </button>
       {dietary && <div className="mt-0.5 truncate text-[10px] text-amber-700">{dietary}</div>}
       {open && (
@@ -791,19 +808,46 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   onDeleteCandidate: (candidateId: string) => Promise<void>;
   onAddCandidate: () => Promise<void>;
 }) {
-  const gridColumns = `220px 210px 150px 95px 120px ${dates.map(() => "126px").join(" ")} 44px`;
+  const gridColumns = `300px 180px 180px 95px 120px ${dates.map(() => "126px").join(" ")} 44px`;
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <div className="min-w-max">
         <div className="sticky top-0 z-20 grid min-h-9 items-center gap-x-3 border-b border-gray-200 bg-[#f8f8f6] px-3 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
-          <div>Name</div><div>Blackbook</div><div>Subtitle</div><div className="text-right">Rate</div><div>State</div>
+          <div>Blackbook source</div><div>Project option</div><div>Project note</div><div className="text-right">Project rate</div><div>State</div>
           {dates.map((date) => <div key={date.id} className="text-center">{dateLabel(date)}</div>)}
           <div />
         </div>
         {group.candidates.map((candidate) => (
-          <div key={candidate.id} className={`grid min-h-12 items-center gap-x-3 border-b border-gray-100 px-3 text-xs hover:bg-[#f8f8f6] ${candidate.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
-            <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="font-semibold text-gray-900" placeholder="Candidate" />
-            <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
+          <div key={candidate.id} className={`grid min-h-[64px] items-center gap-x-3 border-b border-gray-100 px-3 py-2 text-xs hover:bg-[#f8f8f6] ${candidate.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
+            <div className="min-w-0">
+              {candidate.blackbookEntry ? (
+                <button onClick={() => onOpenBlackbook(candidate.blackbookEntry!.id)} className="block w-full min-w-0 rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-left hover:border-emerald-300">
+                  <div className="flex items-center gap-2">
+                    <BookOpen size={12} className="shrink-0 text-emerald-700" />
+                    <span className="truncate text-xs font-semibold text-emerald-900">{candidate.blackbookEntry.displayName}</span>
+                    <span className="shrink-0 rounded bg-white/70 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.06em] text-emerald-700">Source</span>
+                  </div>
+                  <div className="mt-1 truncate text-[10px] text-emerald-700">{blackbookMeta(candidate.blackbookEntry).join(" · ") || "Master Blackbook record"}</div>
+                  {blackbookFlags(candidate.blackbookEntry).length > 0 && <div className="mt-1 truncate text-[10px] text-amber-700">{blackbookFlags(candidate.blackbookEntry).join(" · ")}</div>}
+                </button>
+              ) : (
+                <div className="rounded border border-dashed border-gray-200 bg-white px-2 py-1.5">
+                  <div className="text-[11px] text-gray-400">No Blackbook source linked</div>
+                  <div className="mt-1">
+                    <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
+                  </div>
+                </div>
+              )}
+              {candidate.blackbookEntry && (
+                <div className="mt-1">
+                  <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
+                </div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="font-semibold text-gray-900" placeholder="Project alias" />
+              {candidate.blackbookEntry && candidate.name !== candidate.blackbookEntry.displayName && <div className="mt-1 truncate text-[10px] text-gray-400">Alias for this option</div>}
+            </div>
             <EditableText value={candidate.subtitle ?? ""} onSave={(subtitle) => onUpdateCandidate(candidate.id, { subtitle })} className="text-gray-500" placeholder="Subtitle" />
             <EditableText value={candidate.rate?.toString() ?? ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className="text-right tabular-nums text-gray-700" placeholder="0" />
             <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />
