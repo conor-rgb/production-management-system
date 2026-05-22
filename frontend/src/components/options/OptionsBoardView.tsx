@@ -956,6 +956,8 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   const [photoCandidate, setPhotoCandidate] = useState<OptionCandidate | null>(null);
   const [sortKey, setSortKey] = useState<CandidateSortKey>("manual");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [dragCandidateId, setDragCandidateId] = useState<string | null>(null);
+  const [dropCandidateId, setDropCandidateId] = useState<string | null>(null);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
   const gridColumns = `64px 250px 210px 92px 82px 92px ${dates.map(() => "96px").join(" ")} 36px`;
   const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
@@ -969,17 +971,19 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
     }
   }
 
-  async function moveCandidate(candidateId: string, direction: "up" | "down") {
-    const manualOrder = sortedCandidates(group.candidates, "manual", "asc");
-    const index = manualOrder.findIndex((candidate) => candidate.id === candidateId);
-    const target = direction === "up" ? index - 1 : index + 1;
-    if (index < 0 || target < 0 || target >= manualOrder.length) return;
-    const next = manualOrder.slice();
-    const [candidate] = next.splice(index, 1);
+  async function dropCandidate(targetCandidateId: string) {
+    if (!dragCandidateId || dragCandidateId === targetCandidateId) return;
+    const source = candidates.findIndex((candidate) => candidate.id === dragCandidateId);
+    const target = candidates.findIndex((candidate) => candidate.id === targetCandidateId);
+    if (source < 0 || target < 0) return;
+    const next = candidates.slice();
+    const [candidate] = next.splice(source, 1);
     next.splice(target, 0, candidate);
     await onReorderCandidates(next.map((item) => item.id));
     setSortKey("manual");
     setSortDirection("asc");
+    setDragCandidateId(null);
+    setDropCandidateId(null);
   }
 
   function SortHeader({ sort, children, align = "left" }: { sort: CandidateSortKey; children: React.ReactNode; align?: "left" | "center" | "right" }) {
@@ -1022,7 +1026,22 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
             onUpdateCandidateDate={onUpdateCandidateDate}
             onUploadPhoto={onUploadPhoto}
             onUploadPdf={onUploadPdf}
-            onMoveCandidate={moveCandidate}
+            isReorderDragging={dragCandidateId === candidate.id}
+            isReorderTarget={dropCandidateId === candidate.id && dragCandidateId !== candidate.id}
+            onReorderDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", candidate.id);
+              setDragCandidateId(candidate.id);
+              setDropCandidateId(null);
+            }}
+            onReorderDragOver={() => {
+              if (dragCandidateId && dragCandidateId !== candidate.id) setDropCandidateId(candidate.id);
+            }}
+            onReorderDrop={() => dropCandidate(candidate.id).catch((err: Error) => window.alert(err.message))}
+            onReorderDragEnd={() => {
+              setDragCandidateId(null);
+              setDropCandidateId(null);
+            }}
             onDeleteCandidate={onDeleteCandidate}
           />
         ))}
@@ -1048,7 +1067,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   );
 }
 
-function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onMoveCandidate, onDeleteCandidate }: {
+function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, isReorderDragging, isReorderTarget, onReorderDragStart, onReorderDragOver, onReorderDrop, onReorderDragEnd, onDeleteCandidate }: {
   candidate: OptionCandidate;
   group: OptionGroup;
   dates: MatrixDate[];
@@ -1060,7 +1079,12 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
   onUpdateCandidateDate: (candidateId: string, dateId: string, status: HoldStatus | null) => Promise<void>;
   onUploadPhoto: (candidateId: string, file: File) => Promise<void>;
   onUploadPdf: (candidateId: string, file: File) => Promise<void>;
-  onMoveCandidate: (candidateId: string, direction: "up" | "down") => Promise<void>;
+  isReorderDragging: boolean;
+  isReorderTarget: boolean;
+  onReorderDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
+  onReorderDragOver: () => void;
+  onReorderDrop: () => void;
+  onReorderDragEnd: () => void;
   onDeleteCandidate: (candidateId: string) => Promise<void>;
 }) {
   const [dragActive, setDragActive] = useState(false);
@@ -1096,6 +1120,10 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
           event.preventDefault();
           event.dataTransfer.dropEffect = "copy";
           setDragActive(true);
+        } else if (event.dataTransfer.types.includes("text/plain")) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          onReorderDragOver();
         }
       }}
       onDragLeave={(event) => {
@@ -1103,11 +1131,15 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
       }}
       onDrop={(event) => {
         event.preventDefault();
-        void uploadDropped(imageFiles(event.dataTransfer.files)).catch((err: Error) => window.alert(err.message));
+        if (event.dataTransfer.types.includes("Files")) {
+          void uploadDropped(imageFiles(event.dataTransfer.files)).catch((err: Error) => window.alert(err.message));
+        } else {
+          onReorderDrop();
+        }
       }}
       className={`relative grid min-h-[64px] items-center gap-x-2 border-b px-2 py-2 text-xs transition ${
-        dragActive ? "border-gray-400 bg-blue-50 ring-1 ring-inset ring-blue-300" : "border-gray-100 hover:bg-[#f8f8f6]"
-      } ${candidate.activeState === "RELEASED" ? "opacity-45" : ""}`}
+        dragActive ? "border-gray-400 bg-blue-50 ring-1 ring-inset ring-blue-300" : isReorderTarget ? "border-gray-300 bg-gray-100 ring-1 ring-inset ring-gray-300" : "border-gray-100 hover:bg-[#f8f8f6]"
+      } ${candidate.activeState === "RELEASED" ? "opacity-45" : ""} ${isReorderDragging ? "opacity-45" : ""}`}
       style={{ gridTemplateColumns: gridColumns }}
     >
       {dragActive && (
@@ -1142,8 +1174,15 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
         );
       })}
       <div className="flex items-center justify-center gap-0.5 opacity-45 transition hover:opacity-100">
-        <button onClick={() => onMoveCandidate(candidate.id, "up").catch(console.error)} title="Move up" className="grid h-7 w-4 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">↑</button>
-        <button onClick={() => onMoveCandidate(candidate.id, "down").catch(console.error)} title="Move down" className="grid h-7 w-4 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">↓</button>
+        <button
+          draggable
+          onDragStart={onReorderDragStart}
+          onDragEnd={onReorderDragEnd}
+          title="Drag to reorder"
+          className="grid h-7 w-5 cursor-grab place-items-center rounded text-[13px] leading-none text-gray-400 active:cursor-grabbing hover:bg-white hover:text-gray-900"
+        >
+          ⋮⋮
+        </button>
         <button onClick={() => onDeleteCandidate(candidate.id)} title="Delete" className="grid h-7 w-4 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={12} /></button>
       </div>
     </div>
