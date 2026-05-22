@@ -145,6 +145,7 @@ export default function Productions() {
     const next = new URLSearchParams(searchParams);
     next.set("production", id);
     next.delete("view");
+    next.delete("optionGroup");
     next.set("tab", "options");
     setSearchParams(next, { replace: true });
   }
@@ -152,6 +153,7 @@ export default function Productions() {
   function closeOptions() {
     const next = new URLSearchParams(searchParams);
     next.set("tab", "Overview");
+    next.delete("optionGroup");
     setSearchParams(next, { replace: true });
   }
 

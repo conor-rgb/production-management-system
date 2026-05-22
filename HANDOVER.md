@@ -1,6 +1,11 @@
 # HANDOVER - 2026-05-22 - Google Places Address Picker for Options / Blackbook
 
 ## Built This Session
+- Follow-up URL pass:
+  - Options candidate sheets now persist in the URL with `optionGroup=<groupId>`.
+  - Opening a role/service/location sheet updates the browser URL.
+  - Refreshing that URL reopens the same options sheet instead of returning to the matrix.
+  - Backing out to the matrix clears `optionGroup`.
 - Follow-up frontend pass:
   - Website is now the first field in the Options row Links dropdown.
   - Website counts toward the compact Links cell summary.

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ArrowLeft, BookOpen, Download, Image as ImageIcon, Link2, Plus, Trash2, Upload, X } from "lucide-react";
 import { api } from "../../lib/api";
 import { COUNTRY_OPTIONS, countryName } from "../../lib/countries";
@@ -706,9 +707,10 @@ function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook }: {
 }
 
 export default function OptionsBoardView({ productionId, onBack }: { productionId: string; onBack: () => void }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [matrix, setMatrix] = useState<MatrixResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(searchParams.get("optionGroup"));
   const [showRoleForm, setShowRoleForm] = useState(false);
   const [showDateForm, setShowDateForm] = useState(false);
   const [openBlackbookEntryId, setOpenBlackbookEntryId] = useState<string | null>(null);
@@ -724,6 +726,35 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
   }
 
   useEffect(() => { void load(); }, [productionId]);
+
+  useEffect(() => {
+    if (!matrix) return;
+    const groupId = searchParams.get("optionGroup");
+    if (groupId && matrix.groups.some((group) => group.id === groupId)) {
+      setSelectedGroupId(groupId);
+    } else if (!groupId) {
+      setSelectedGroupId(null);
+    }
+  }, [matrix, searchParams]);
+
+  function openGroup(groupId: string) {
+    const next = new URLSearchParams(searchParams);
+    next.set("production", productionId);
+    next.set("tab", "options");
+    next.set("optionGroup", groupId);
+    next.delete("view");
+    setSelectedGroupId(groupId);
+    setSearchParams(next);
+  }
+
+  function closeGroup() {
+    const next = new URLSearchParams(searchParams);
+    next.set("production", productionId);
+    next.set("tab", "options");
+    next.delete("optionGroup");
+    setSelectedGroupId(null);
+    setSearchParams(next);
+  }
 
   async function patchNeed(requirementId: string, dateId: string, isRequired: boolean) {
     setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/requirements/${requirementId}/dates/${dateId}`, { isRequired }));
@@ -848,7 +879,7 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
       <div className="flex min-h-12 items-center justify-between gap-3 border-b border-gray-200 px-4">
-        <button onClick={selectedGroup ? () => setSelectedGroupId(null) : onBack} className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900">
+        <button onClick={selectedGroup ? closeGroup : onBack} className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900">
           <ArrowLeft size={15} /> {selectedGroup ? "Matrix" : `${matrix.production.jobCode ?? "Production"} ${matrix.production.brand ?? matrix.production.clientName ?? ""}`}
         </button>
         <div className="min-w-0 text-center">
@@ -890,7 +921,7 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
       ) : (
         <MatrixTable
           matrix={matrix}
-          onOpenGroup={setSelectedGroupId}
+          onOpenGroup={openGroup}
           onPatchNeed={patchNeed}
           onUpdateRequirement={updateRequirement}
           onDuplicateRequirement={duplicateRequirement}
