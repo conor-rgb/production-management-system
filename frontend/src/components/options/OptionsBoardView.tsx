@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowLeft, BookOpen, Download, ExternalLink, FileText, Globe, Image as ImageIcon, Link2, Plus, Share2, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Download, ExternalLink, FileText, Globe, Image as ImageIcon, Plus, Share2, Trash2, Upload, X } from "lucide-react";
 import { api } from "../../lib/api";
 import { COUNTRY_OPTIONS, countryName } from "../../lib/countries";
 import BlackbookOverlay from "../blackbook/BlackbookOverlay";
@@ -628,6 +628,57 @@ function EditableText({ value, onSave, className = "", placeholder = "" }: { val
   return <button onClick={() => setEditing(true)} className={`w-full truncate text-left ${className}`}>{value || <span className="text-gray-300">{placeholder}</span>}</button>;
 }
 
+function NoteCell({ value, onSave, placeholder, tone }: { value: string; onSave: (value: string) => Promise<void>; placeholder: string; tone: "deck" | "internal" }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => setDraft(value), [value]);
+  useEffect(() => {
+    function close(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  async function save() {
+    if (draft !== value) await onSave(draft);
+  }
+
+  return (
+    <div ref={ref} className="relative min-w-0">
+      <button
+        onClick={() => setOpen(true)}
+        className={`block max-h-10 w-full overflow-hidden text-left text-[11px] leading-5 ${tone === "deck" ? "text-gray-600" : "italic text-gray-400"}`}
+        title={value || placeholder}
+      >
+        {value ? (
+          <span className="line-clamp-2">{value}</span>
+        ) : (
+          <span className="text-gray-300">{placeholder}</span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-[300px] rounded-lg border border-amber-100 bg-[#fffdf3] p-3 shadow-xl">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-amber-700">{tone === "deck" ? "Deck note" : "Internal note"}</div>
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => { save().catch(console.error); }}
+            autoFocus
+            placeholder={placeholder}
+            className="min-h-28 w-full resize-y border-0 bg-transparent text-sm leading-6 text-gray-800 outline-none"
+          />
+          <div className="mt-2 flex justify-end gap-2">
+            <button onClick={() => { setDraft(value); setOpen(false); }} className="rounded px-2 py-1 text-[11px] text-gray-500 hover:bg-white">Cancel</button>
+            <button onClick={() => { save().then(() => setOpen(false)).catch(console.error); }} className="rounded bg-gray-900 px-3 py-1.5 text-[11px] font-medium text-white">Done</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook }: {
   group: OptionGroup;
   candidate: OptionCandidate;
@@ -698,11 +749,11 @@ function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook }: {
           setOpen((current) => !current);
           setQuery(candidate.name);
         }}
-        className={`inline-flex h-5 max-w-[92px] items-center gap-1 rounded px-1.5 text-left text-[10px] transition ${entry ? "border border-transparent bg-transparent font-medium text-gray-800 underline decoration-gray-300 underline-offset-2 hover:bg-gray-100" : "border border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-700"}`}
+        className={`inline-flex h-5 max-w-[150px] items-center gap-1 rounded px-1.5 text-left text-[10px] transition ${entry ? "border border-transparent bg-transparent font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900" : "border border-transparent bg-transparent text-gray-300 hover:bg-gray-100 hover:text-gray-600"}`}
         title={linkedTitle}
       >
-        {entry ? <BookOpen size={10} /> : <Link2 size={10} />}
-        <span className="truncate">{entry ? "Blackbook" : "Link"}</span>
+        {entry ? <BookOpen size={10} /> : <Plus size={10} />}
+        <span className="truncate">{entry ? entry.displayName : "link record"}</span>
       </button>
       {open && (
         <div className="absolute left-0 top-full z-50 mt-1 w-[280px] rounded-md border border-gray-200 bg-white p-2 shadow-xl">
@@ -1182,9 +1233,9 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   const [dragCandidateId, setDragCandidateId] = useState<string | null>(null);
   const [dropCandidateId, setDropCandidateId] = useState<string | null>(null);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
-  const gridColumns = `56px 300px ${dates.map(() => "86px").join(" ")} 220px 82px 240px 58px 88px 34px`;
+  const gridColumns = `56px 320px ${dates.map(() => "92px").join(" ")} 230px 170px 82px 240px 58px 88px 34px`;
   const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
-  const minimumSheetWidth = 1088 + (dates.length * 86);
+  const minimumSheetWidth = 1246 + (dates.length * 92);
 
   function setSort(nextKey: CandidateSortKey) {
     if (sortKey === nextKey) {
@@ -1233,12 +1284,13 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
             const parts = compactDateLabel(date);
             return (
               <SortHeader key={date.id} sort={`date:${date.id}`} align="center">
-                <span className="block truncate leading-3">{parts.top}</span>
+                <span className="block truncate text-[10px] font-semibold leading-3 text-gray-600">{parts.top}</span>
                 <span className="block truncate text-[9px] leading-3 tracking-normal text-gray-400">{parts.bottom}</span>
               </SortHeader>
             );
           })}
-          <SortHeader sort="notes">Notes</SortHeader>
+          <SortHeader sort="notes">Deck notes</SortHeader>
+          <div>Internal</div>
           <SortHeader sort="links" align="center">Links</SortHeader>
           <div>Address</div>
           <SortHeader sort="rate" align="right">Rate</SortHeader>
@@ -1383,7 +1435,7 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
       <PhotoThumb candidate={candidate} onOpen={onOpenPhotos} />
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
-          <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="font-semibold text-gray-900" placeholder="Candidate" />
+          <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="text-[13px] font-semibold text-gray-900" placeholder="Candidate" />
         </div>
         <div className="mt-1 flex min-w-0 items-center gap-2">
           <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
@@ -1393,7 +1445,7 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
       {dates.map((date) => {
         const status = statusFor(candidate, date.id)?.status ?? null;
         return (
-          <div key={date.id} className="flex justify-center">
+          <div key={date.id} className="flex justify-center border-l border-gray-100/80 pl-2">
             <PillDropdown
               value={status}
               options={HOLD_STATUSES}
@@ -1405,7 +1457,18 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
           </div>
         );
       })}
-      <EditableText value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} className="text-[11px] text-gray-500" placeholder="Deck note" />
+      <NoteCell
+        value={candidate.clientNotes ?? ""}
+        onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })}
+        placeholder="Deck note"
+        tone="deck"
+      />
+      <NoteCell
+        value={candidate.internalNotes ?? ""}
+        onSave={(internalNotes) => onUpdateCandidate(candidate.id, { internalNotes })}
+        placeholder="Internal note"
+        tone="internal"
+      />
       <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />
       <CandidateAddressCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />
       <EditableText value={candidate.rate && candidate.rate > 0 ? candidate.rate.toString() : ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className={`pr-1 text-right tabular-nums ${candidate.rate && candidate.rate > 0 ? "text-gray-700" : "text-gray-300"}`} placeholder="—" />

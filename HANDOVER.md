@@ -2,6 +2,11 @@
 
 ## Built This Session
 - Follow-up Options candidate sheet design pass:
+  - Date headers are now visually stronger, with the status/date axis directly after the option identity.
+  - Candidate notes are split into Deck notes and Internal notes.
+  - Both note cells stay compact in the table but open into a sticky-note style multi-line editor.
+  - Option titles are slightly larger and remain on one line.
+  - Blackbook linking now shows a quiet linked record label or a grey plus for unlinked rows; the literal "Blackbook" label is no longer repeated.
   - Candidate sheets now sit on a cleaner bordered sheet surface instead of a raw grid on white.
   - Reworked candidate sheet column widths to a constrained readable table width so related fields stay visually grouped on wide screens.
   - Reordered candidate sheet columns so date availability appears immediately after the option identity, followed by deck notes.
