@@ -1,90 +1,41 @@
-# HANDOVER - 2026-05-22 - Options Deck Notes And Links
+# HANDOVER - 2026-05-22 - Options Candidate Sheet Column Tightening
 
 ## Built This Session
-- Added project-option deck link fields to `OptionCandidate`.
-- Added a `Deck notes` column to the Options candidate sheet.
-- Added a compact `Links` column to the Options candidate sheet.
-- Added a links popover for each option candidate:
-  - Book URL,
-  - Social URL,
-  - models.com URL,
-  - PDF URL.
-- Added authenticated PDF upload by dropping a PDF into the Links popover.
-- Uploaded candidate PDFs are stored in the production Options candidate folder and receive a tokenised public URL.
-- Added an unauthenticated public route for those tokenised PDF links only.
-- Updated PDF deck links so option-level links override Blackbook links, with Blackbook as fallback.
-- Updated PDF deck notes rendering to use the option candidate `clientNotes` field in a larger bottom-left block closer to the mockups.
-- Tightened right alignment of PDF date-status pills.
-
-## Schema / Migration
-- Updated `backend/prisma/schema.prisma`.
-- Added to `OptionCandidate`:
-  - `bookUrl`,
-  - `socialUrl`,
-  - `modelsComUrl`,
-  - `pdfUrl`,
-  - `pdfFilename`,
-  - `pdfStoredPath`,
-  - `pdfSizeBytes`,
-  - `pdfPublicToken`.
-- Migration applied non-interactively:
-  - `20260522170500_option_candidate_deck_links`
-- Important: the generated diff attempted to drop `pms_sessions`; that was removed from the migration before deploy.
-
-## Backend
-- Updated `backend/src/routes/options.ts`:
-  - candidate create/update accepts link fields,
-  - Blackbook linking copies available book/social/models/pdf fields into the project option,
-  - added `POST /api/options/matrix/candidates/:candidateId/pdf`.
-- Added `backend/src/routes/publicOptions.ts`:
-  - `GET /api/public/options/candidate-pdfs/:token`
-  - streams only the uploaded candidate PDF matching the public token.
-- Updated `backend/src/server.ts` to mount the public options route before authenticated routes.
-- Updated `backend/src/services/optionsDeckPdf.ts`:
-  - option-level links preferred over Blackbook links,
-  - notes block enlarged,
-  - date status labels right-aligned in compact pills.
+- Tightened the Options candidate sheet columns.
+- Reduced the breathing room past the Links column.
+- Made date columns narrower and more consistent.
+- Added compact fixed-width date status pills so row controls line up under date headers.
+- Shortened `Project rate` header to `Rate`.
+- Reduced grid gaps and side padding for candidate sheet rows and headers.
 
 ## Frontend
 - Updated `frontend/src/components/options/OptionsBoardView.tsx`.
-- Candidate sheet columns now include:
-  - Image,
-  - Option,
-  - Deck notes,
-  - Links,
-  - Project rate,
-  - State,
-  - date columns.
-- Links popover supports editing link fields and dropping a PDF file.
-- Existing row-level image drag/drop remains unchanged.
+- Candidate sheet grid changed from:
+  - `72px 260px 220px 120px 95px 120px [126px dates] 44px`
+- To:
+  - `64px 250px 210px 92px 82px 92px [96px dates] 36px`
+- `PillDropdown` now accepts `compact` for date-status cells.
+- Date headers truncate with full label available as a title tooltip.
+
+## Backend
+- No backend changes.
 
 ## Deployment / Verification
-- Prisma migration deployed.
-- Prisma client generated.
-- Backend build passed.
 - Frontend build passed.
 - Frontend copied to `/var/www/agent`.
-- PM2 process `0` reloaded.
-- Health check passed.
-- Direct PDF smoke render passed:
-  - group: `Location`,
-  - bytes: `817773`.
+- No PM2 reload required.
 
-## Current Options / PDF State
-- Candidate sheets now have project-level deck notes and project-level deck links.
-- The deck export is now more appropriate for crew/service/talent lists such as photographers, HMU, florists, styling, and catering.
-- PDF files can be uploaded per option candidate and surfaced as public PDF links in exported decks.
-- Public PDF links are tokenised and do not expose raw filesystem paths.
+## Current Options Sheet State
+- Candidate sheet columns are denser and better aligned.
+- Image, option, deck notes, links, rate, state, and date columns should now read more like a spreadsheet.
+- Existing links popover, PDF upload, image drag/drop, and PDF export remain unchanged.
 
 ## Known Gaps / Technical Debt
-- Public PDF links are security-by-random-token. There is no expiry/revoke UI yet.
-- No delete/clear PDF button in the Links popover yet; users can replace by dropping a new PDF.
-- The Links popover is functional but not yet highly designed.
-- The candidate `subtitle` field is no longer visible in the sheet after adding Deck notes; it still exists in the database and Blackbook overlay.
-- Needs another visual QA pass against the mockup; the structure is in place but typography/spacing may still need tuning.
+- Needs visual QA in-browser on wide screens with several dates.
+- If very long date labels are important, a future pass could split date headers into two lines instead of truncating.
+- Candidate subtitle is still not visible in the main candidate sheet.
 
 ## Exact Next Steps
-1. Generate a fresh GANNI x Disney deck with notes and links filled in.
-2. Compare against the mockups and tune PDF typography/positioning.
-3. Add PDF clear/revoke controls and image reorder controls.
-4. Decide whether subtitle/location should return to the sheet or live only in Blackbook/details.
+1. Review the candidate sheet on the GANNI x Disney options page.
+2. If dates still feel wide, reduce date columns from 96px to 88px and use shorter date labels.
+3. Continue PDF visual tuning once sheet spacing is accepted.

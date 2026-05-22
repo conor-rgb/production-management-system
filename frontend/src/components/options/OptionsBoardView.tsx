@@ -317,12 +317,13 @@ function candidateSummary(group: OptionGroup, dateId: string): string {
   return lines.length ? lines.join("\n") : "No candidates yet";
 }
 
-function PillDropdown<T extends string>({ value, options, onChange, classNameForValue, placeholder = "blank" }: {
+function PillDropdown<T extends string>({ value, options, onChange, classNameForValue, placeholder = "blank", compact = false }: {
   value: T | null;
   options: readonly T[];
   onChange: (value: T | null) => Promise<void>;
   classNameForValue: (value: T | null) => string;
   placeholder?: string;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -337,7 +338,10 @@ function PillDropdown<T extends string>({ value, options, onChange, classNameFor
 
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen((current) => !current)} className={`inline-flex min-h-7 items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${classNameForValue(value)}`}>
+      <button
+        onClick={() => setOpen((current) => !current)}
+        className={`inline-flex min-h-7 items-center justify-center gap-1 rounded border py-1 text-[10px] font-semibold uppercase ${compact ? "w-[86px] px-1" : "px-2"} ${classNameForValue(value)}`}
+      >
         {value ? label(value) : placeholder}
         <span className="text-[9px] opacity-60">▾</span>
       </button>
@@ -899,13 +903,13 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
 }) {
   const [photoCandidate, setPhotoCandidate] = useState<OptionCandidate | null>(null);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
-  const gridColumns = `72px 260px 220px 120px 95px 120px ${dates.map(() => "126px").join(" ")} 44px`;
+  const gridColumns = `64px 250px 210px 92px 82px 92px ${dates.map(() => "96px").join(" ")} 36px`;
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <div className="min-w-max">
-        <div className="sticky top-0 z-20 grid min-h-9 items-center gap-x-3 border-b border-gray-200 bg-[#f8f8f6] px-3 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
-          <div>Image</div><div>Option</div><div>Deck notes</div><div>Links</div><div className="text-right">Project rate</div><div>State</div>
-          {dates.map((date) => <div key={date.id} className="text-center">{dateLabel(date)}</div>)}
+        <div className="sticky top-0 z-20 grid min-h-9 items-center gap-x-2 border-b border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
+          <div className="pl-1">Image</div><div>Option</div><div>Deck notes</div><div>Links</div><div className="pr-1 text-right">Rate</div><div>State</div>
+          {dates.map((date) => <div key={date.id} className="truncate text-center" title={dateLabel(date)}>{dateLabel(date)}</div>)}
           <div />
         </div>
         {group.candidates.map((candidate) => (
@@ -1003,7 +1007,7 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
         event.preventDefault();
         void uploadDropped(imageFiles(event.dataTransfer.files)).catch((err: Error) => window.alert(err.message));
       }}
-      className={`relative grid min-h-[64px] items-center gap-x-3 border-b px-3 py-2 text-xs transition ${
+      className={`relative grid min-h-[64px] items-center gap-x-2 border-b px-2 py-2 text-xs transition ${
         dragActive ? "border-gray-400 bg-blue-50 ring-1 ring-inset ring-blue-300" : "border-gray-100 hover:bg-[#f8f8f6]"
       } ${candidate.activeState === "RELEASED" ? "opacity-45" : ""}`}
       style={{ gridTemplateColumns: gridColumns }}
@@ -1022,19 +1026,21 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
       </div>
       <EditableText value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} className="text-gray-500" placeholder="Notes for deck" />
       <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />
-      <EditableText value={candidate.rate?.toString() ?? ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className="text-right tabular-nums text-gray-700" placeholder="0" />
+      <EditableText value={candidate.rate?.toString() ?? ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className="pr-1 text-right tabular-nums text-gray-700" placeholder="0" />
       <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />
       {dates.map((date) => {
         const status = statusFor(candidate, date.id)?.status ?? null;
         return (
-          <PillDropdown
-            key={date.id}
-            value={status}
-            options={HOLD_STATUSES}
-            onChange={(nextStatus) => onUpdateCandidateDate(candidate.id, date.id, nextStatus)}
-            classNameForValue={holdClass}
-            placeholder="blank"
-          />
+          <div key={date.id} className="flex justify-center">
+            <PillDropdown
+              value={status}
+              options={HOLD_STATUSES}
+              onChange={(nextStatus) => onUpdateCandidateDate(candidate.id, date.id, nextStatus)}
+              classNameForValue={holdClass}
+              placeholder="blank"
+              compact
+            />
+          </div>
         );
       })}
       <button onClick={() => onDeleteCandidate(candidate.id)} className="grid h-8 w-8 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
