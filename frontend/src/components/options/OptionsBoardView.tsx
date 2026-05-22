@@ -349,6 +349,12 @@ function addressSummary(candidate: OptionCandidate): string {
   return [candidate.addressLine1, candidate.city, candidate.postcode, countryName(candidate.country)].filter(Boolean).join(", ");
 }
 
+function addressDisplayLines(candidate: OptionCandidate): string[] {
+  const cityLine = [candidate.city, candidate.postcode].filter(Boolean).join(", ");
+  const regionLine = [candidate.region, countryName(candidate.country)].filter(Boolean).join(", ");
+  return [candidate.addressLine1, candidate.addressLine2, cityLine, regionLine].filter((line): line is string => Boolean(line));
+}
+
 function compareText(a: string | null | undefined, b: string | null | undefined): number {
   return (a ?? "").localeCompare(b ?? "", undefined, { sensitivity: "base" });
 }
@@ -1309,6 +1315,7 @@ function CandidateAddressCell({ candidate, onUpdate }: {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const summary = addressSummary(candidate);
+  const lines = addressDisplayLines(candidate);
 
   useEffect(() => {
     function close(event: MouseEvent) {
@@ -1323,12 +1330,19 @@ function CandidateAddressCell({ candidate, onUpdate }: {
       <button
         onClick={() => setOpen((current) => !current)}
         title={summary || "Add address"}
-        className={`inline-flex min-h-7 max-w-[100px] items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
-          summary ? "border-gray-300 bg-white text-gray-700" : "border-gray-200 bg-white text-gray-400"
+        className={`block w-full min-w-0 text-left text-[10px] leading-[1.25] ${
+          summary ? "text-gray-600 hover:text-gray-900" : "rounded border border-gray-200 bg-white px-2 py-1 font-semibold uppercase text-gray-400"
         }`}
       >
-        <span className="truncate">{summary || "address"}</span>
-        <span className="text-[9px] opacity-60">▾</span>
+        {lines.length ? (
+          <span className="block max-h-[52px] overflow-hidden">
+            {lines.map((line) => (
+              <span key={line} className="block truncate">{line}</span>
+            ))}
+          </span>
+        ) : (
+          <span>address <span className="text-[9px] opacity-60">▾</span></span>
+        )}
       </button>
       {open && (
         <div className="absolute left-0 top-full z-50 mt-1 w-[340px] rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
@@ -1362,10 +1376,29 @@ function CandidateAddressCell({ candidate, onUpdate }: {
 }
 
 function AddressInput({ label: inputLabel, value, onSave }: { label: string; value: string; onSave: (value: string) => Promise<void> }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+
+  async function save() {
+    if (draft !== value) await onSave(draft);
+  }
+
   return (
     <label className="mb-2 block text-[11px] text-gray-500">
       <span className="mb-1 block">{inputLabel}</span>
-      <EditableText value={value} onSave={onSave} className="rounded border border-gray-200 px-2 py-1 text-gray-800" placeholder="" />
+      <input
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => { save().catch(console.error); }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            setDraft(value);
+            event.currentTarget.blur();
+          }
+        }}
+        className="h-8 w-full rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-800 outline-none focus:border-gray-500"
+      />
     </label>
   );
 }

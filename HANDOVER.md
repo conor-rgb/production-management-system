@@ -1,5 +1,17 @@
 # HANDOVER - 2026-05-22 - Structured Addresses for Options and Blackbook
 
+## Latest UI Pass
+- Refined the options sheet Address cell.
+- Populated addresses now render as compact plain multi-line text:
+  - line 1,
+  - line 2 when present,
+  - city and postcode,
+  - region and country when present.
+- Removed the boxed/pill treatment from populated address cells so the address reads like a normal sheet value.
+- Empty address cells still show a small "address" add affordance.
+- Replaced the collapsed inline edit controls inside the address dropdown with fixed-height text inputs.
+- Frontend rebuild passed, copied to `/var/www/agent`, and `pm2 reload 0` completed.
+
 ## Built This Session
 - Added structured address fields to option candidates so location board rows can carry billing-ready address data.
 - Added a compact Address dropdown cell to the options sheet, matching the existing Links dropdown pattern.
