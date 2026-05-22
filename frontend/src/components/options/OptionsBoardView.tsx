@@ -30,6 +30,14 @@ interface RequirementDateNeed {
   notes: string | null;
 }
 
+interface OptionSlotAssignment {
+  id: string;
+  requirementId: string;
+  candidateId: string;
+  dateId: string;
+  notes: string | null;
+}
+
 interface CandidateDateStatus {
   id: string;
   candidateId: string;
@@ -50,6 +58,7 @@ interface OptionRequirement {
   notes: string | null;
   order: number;
   dateNeeds: RequirementDateNeed[];
+  assignments: OptionSlotAssignment[];
 }
 
 interface OptionCandidate {
@@ -70,6 +79,7 @@ interface OptionCandidate {
   clientNotes: string | null;
   order: number;
   dateStatuses: CandidateDateStatus[];
+  assignments: OptionSlotAssignment[];
 }
 
 interface OptionGroup {
@@ -118,9 +128,19 @@ function statusFor(candidate: OptionCandidate, dateId: string): CandidateDateSta
   return candidate.dateStatuses.find((status) => status.dateId === dateId);
 }
 
+function assignmentFor(requirement: OptionRequirement, dateId: string): OptionSlotAssignment | undefined {
+  return requirement.assignments.find((assignment) => assignment.dateId === dateId);
+}
+
+function candidateById(group: OptionGroup, candidateId: string | null | undefined): OptionCandidate | undefined {
+  if (!candidateId) return undefined;
+  return group.candidates.find((candidate) => candidate.id === candidateId);
+}
+
 function pipelineFor(group: OptionGroup, requirement: OptionRequirement, dateId: string): PipelineState {
   const need = needFor(requirement, dateId);
   if (!need?.isRequired) return "NOT_REQUIRED";
+  if (assignmentFor(requirement, dateId)) return "CONFIRMED";
   const statuses = group.candidates
     .filter((candidate) => candidate.activeState === "ACTIVE")
     .map((candidate) => statusFor(candidate, dateId)?.status)
@@ -240,6 +260,65 @@ function PillDropdown<T extends string>({ value, options, onChange, classNameFor
   );
 }
 
+function AssignmentDropdown({ group, assignedCandidateId, onChange }: {
+  group: OptionGroup;
+  assignedCandidateId: string | null;
+  onChange: (candidateId: string | null) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const activeCandidates = group.candidates.filter((candidate) => candidate.activeState === "ACTIVE");
+
+  useEffect(() => {
+    function close(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((current) => !current);
+        }}
+        title="Assign candidate to this slot"
+        className="grid h-7 w-5 place-items-center rounded text-[10px] text-gray-400 hover:bg-white hover:text-gray-900"
+      >
+        ▾
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 min-w-[190px] overflow-hidden rounded-md border border-gray-200 bg-white p-1 shadow-lg">
+          <button
+            onClick={() => {
+              setOpen(false);
+              void onChange(null);
+            }}
+            className="mb-1 flex w-full items-center rounded px-2 py-1.5 text-left text-[11px] text-gray-400 hover:bg-gray-50"
+          >
+            Clear assignment
+          </button>
+          {activeCandidates.map((candidate) => (
+            <button
+              key={candidate.id}
+              onClick={() => {
+                setOpen(false);
+                void onChange(candidate.id);
+              }}
+              className={`mb-1 flex w-full items-center rounded px-2 py-1.5 text-left text-[11px] last:mb-0 ${candidate.id === assignedCandidateId ? "bg-emerald-50 font-semibold text-emerald-800" : "text-gray-700 hover:bg-gray-50"}`}
+            >
+              {candidate.name}
+            </button>
+          ))}
+          {activeCandidates.length === 0 && <div className="px-2 py-2 text-[11px] text-gray-400">No active candidates</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EditableText({ value, onSave, className = "", placeholder = "" }: { value: string; onSave: (value: string) => Promise<void>; className?: string; placeholder?: string }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -307,6 +386,10 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
     setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/dates/${dateId}`, patch));
   }
 
+  async function assignSlot(requirementId: string, dateId: string, candidateId: string | null) {
+    setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/requirements/${requirementId}/dates/${dateId}/assignment`, { candidateId }));
+  }
+
   async function addCandidate(groupId: string) {
     setMatrix(await api.post<MatrixResponse>(`/api/options/matrix/groups/${groupId}/candidates`, { name: "New candidate" }));
   }
@@ -363,6 +446,7 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
           onDuplicateRequirement={duplicateRequirement}
           onDeleteRequirement={deleteRequirement}
           onUpdateDate={updateDate}
+          onAssignSlot={assignSlot}
         />
       )}
 
@@ -372,7 +456,7 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
   );
 }
 
-function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, onDuplicateRequirement, onDeleteRequirement, onUpdateDate }: {
+function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, onDuplicateRequirement, onDeleteRequirement, onUpdateDate, onAssignSlot }: {
   matrix: MatrixResponse;
   onOpenGroup: (groupId: string) => void;
   onPatchNeed: (requirementId: string, dateId: string, isRequired: boolean) => Promise<void>;
@@ -380,6 +464,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   onDuplicateRequirement: (requirementId: string) => Promise<void>;
   onDeleteRequirement: (requirementId: string) => Promise<void>;
   onUpdateDate: (dateId: string, patch: Partial<MatrixDate>) => Promise<void>;
+  onAssignSlot: (requirementId: string, dateId: string, candidateId: string | null) => Promise<void>;
 }) {
   const gridColumns = `260px 132px 76px ${matrix.dates.map(() => "128px").join(" ")}`;
 
@@ -437,19 +522,32 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
               const need = needFor(requirement, date.id);
               const isRequired = Boolean(need?.isRequired);
               const pipeline = pipelineFor(group, requirement, date.id);
+              const assignment = assignmentFor(requirement, date.id);
+              const assignedCandidate = candidateById(group, assignment?.candidateId);
               return (
-                <button
+                <div
                   key={date.id}
-                  title={candidateSummary(group, date.id)}
-                  onClick={() => onPatchNeed(requirement.id, date.id, !isRequired)}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation();
-                    onOpenGroup(group.id);
-                  }}
-                  className={`mx-auto inline-flex min-h-8 min-w-[82px] items-center justify-center rounded border px-2 text-[11px] font-semibold ${pipelineClass(pipeline)}`}
+                  className="relative mx-auto flex min-h-8 min-w-[96px] items-center justify-center gap-1"
                 >
-                  {isRequired ? shortPipeline(pipeline) : ""}
-                </button>
+                  <button
+                    title={candidateSummary(group, date.id)}
+                    onClick={() => onPatchNeed(requirement.id, date.id, !isRequired)}
+                    onDoubleClick={(event) => {
+                      event.stopPropagation();
+                      onOpenGroup(group.id);
+                    }}
+                    className={`inline-flex min-h-8 min-w-[82px] items-center justify-center rounded border px-2 text-[11px] font-semibold ${pipelineClass(pipeline)}`}
+                  >
+                    {isRequired ? assignedCandidate?.name ?? shortPipeline(pipeline) : ""}
+                  </button>
+                  {isRequired && (
+                    <AssignmentDropdown
+                      group={group}
+                      assignedCandidateId={assignment?.candidateId ?? null}
+                      onChange={(candidateId) => onAssignSlot(requirement.id, date.id, candidateId)}
+                    />
+                  )}
+                </div>
               );
             })}
           </div>

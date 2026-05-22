@@ -381,6 +381,7 @@ model OptionRequirement {
   notes        String?
   order        Int                     @default(0)
   dateNeeds    RequirementDateNeed[]
+  assignments  OptionSlotAssignment[]
   createdAt    DateTime                @default(now())
   updatedAt    DateTime                @updatedAt
 
@@ -427,6 +428,7 @@ model OptionCandidate {
   clientNotes   String?
   order         Int                          @default(0)
   dateStatuses  CandidateDateStatusRecord[]
+  assignments   OptionSlotAssignment[]
   createdAt     DateTime                     @default(now())
   updatedAt     DateTime                     @updatedAt
 
@@ -453,6 +455,25 @@ model CandidateDateStatusRecord {
   @@unique([candidateId, dateId])
   @@index([dateId])
   @@map("pms_candidate_date_statuses")
+}
+
+model OptionSlotAssignment {
+  id            String   @id @default(uuid())
+  requirementId String
+  candidateId   String
+  dateId        String
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  requirement OptionRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  candidate   OptionCandidate   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  date        ProductionDate    @relation(fields: [dateId], references: [id], onDelete: Cascade)
+
+  @@unique([requirementId, dateId])
+  @@index([candidateId])
+  @@index([dateId])
+  @@map("pms_option_slot_assignments")
 }
 
 enum OptionRequirementType {
@@ -587,6 +608,7 @@ model ProductionDate {
   people       ProductionDatePerson[]
   requirementNeeds RequirementDateNeed[]
   candidateStatuses CandidateDateStatusRecord[]
+  optionSlotAssignments OptionSlotAssignment[]
   createdAt    DateTime               @default(now())
   updatedAt    DateTime               @updatedAt
 

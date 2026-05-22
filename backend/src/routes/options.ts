@@ -178,11 +178,11 @@ async function matrixResponse(productionId: string) {
       include: {
         requirements: {
           orderBy: { order: "asc" },
-          include: { dateNeeds: true },
+          include: { dateNeeds: true, assignments: true },
         },
         candidates: {
           orderBy: { order: "asc" },
-          include: { dateStatuses: true },
+          include: { dateStatuses: true, assignments: true },
         },
       },
     }),
@@ -403,6 +403,42 @@ router.patch("/matrix/requirements/:requirementId/dates/:dateId", async (req: Re
       isRequired: isRequired ?? true,
       notes,
     },
+  });
+  res.json(await matrixResponse(requirement.productionId));
+});
+
+router.patch("/matrix/requirements/:requirementId/dates/:dateId/assignment", async (req: Request, res: Response): Promise<void> => {
+  const { candidateId, notes } = req.body as { candidateId?: string | null; notes?: string | null };
+  const requirement = await prisma.optionRequirement.findUnique({
+    where: { id: req.params.requirementId },
+    select: { id: true, productionId: true, groupId: true },
+  });
+  if (!requirement) {
+    res.status(404).json({ error: "Requirement not found" });
+    return;
+  }
+
+  if (!candidateId) {
+    await prisma.optionSlotAssignment.deleteMany({ where: { requirementId: requirement.id, dateId: req.params.dateId } });
+    res.json(await matrixResponse(requirement.productionId));
+    return;
+  }
+
+  const candidate = await prisma.optionCandidate.findUnique({ where: { id: candidateId }, select: { id: true, groupId: true } });
+  if (!candidate || candidate.groupId !== requirement.groupId) {
+    res.status(400).json({ error: "Candidate must belong to the same option group as the requirement" });
+    return;
+  }
+
+  await prisma.optionSlotAssignment.upsert({
+    where: { requirementId_dateId: { requirementId: requirement.id, dateId: req.params.dateId } },
+    update: { candidateId, notes },
+    create: { requirementId: requirement.id, dateId: req.params.dateId, candidateId, notes },
+  });
+  await prisma.requirementDateNeed.upsert({
+    where: { requirementId_dateId: { requirementId: requirement.id, dateId: req.params.dateId } },
+    update: { isRequired: true },
+    create: { requirementId: requirement.id, dateId: req.params.dateId, isRequired: true },
   });
   res.json(await matrixResponse(requirement.productionId));
 });
