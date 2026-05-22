@@ -218,9 +218,11 @@ function escapeHtml(text: string) {
 export default function Email() {
   const { openDraft, openReply: openDraftReply } = useDrafts();
   const initialComposeHandled = useRef(false);
+  const initialParams = new URLSearchParams(window.location.search);
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [threads, setThreads] = useState<EmailThread[]>([]);
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(new URLSearchParams(window.location.search).get("thread"));
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(initialParams.get("thread"));
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(initialParams.get("message"));
   const [thread, setThread] = useState<EmailThread | null>(null);
   const [activeAccountId, setActiveAccountId] = useState("");
   const [folder, setFolder] = useState<Folder>("inbox");
@@ -260,10 +262,28 @@ export default function Email() {
     }
   }
 
-  async function loadThread(id: string) {
-    const data = await api.get<EmailThread>(`/api/email/threads/${id}?limit=10`);
+  async function loadThread(id: string, messageId?: string | null) {
+    const params = new URLSearchParams({ limit: messageId ? "500" : "10" });
+    if (messageId) params.set("message", messageId);
+    const data = await api.get<EmailThread>(`/api/email/threads/${id}?${params.toString()}`);
     setThread(data);
     setThreads((items) => items.map((item) => item.id === id ? { ...item, isRead: true } : item));
+  }
+
+  function selectThread(id: string, messageId: string | null = null) {
+    setSelectedThreadId(id);
+    setSelectedMessageId(messageId);
+    const params = new URLSearchParams(window.location.search);
+    params.set("thread", id);
+    if (messageId) params.set("message", messageId);
+    else params.delete("message");
+    window.history.replaceState(null, "", `/email?${params.toString()}`);
+  }
+
+  function clearSelectedThread() {
+    setSelectedThreadId(null);
+    setSelectedMessageId(null);
+    window.history.replaceState(null, "", "/email");
   }
 
   async function loadOlderMessages() {
@@ -314,9 +334,9 @@ export default function Email() {
     return () => clearTimeout(timer);
   }, [search]);
   useEffect(() => {
-    if (selectedThreadId) loadThread(selectedThreadId).catch(console.error);
+    if (selectedThreadId) loadThread(selectedThreadId, selectedMessageId).catch(console.error);
     else setThread(null);
-  }, [selectedThreadId]);
+  }, [selectedThreadId, selectedMessageId]);
 
   const unreadCount = threads.filter((item) => !item.isRead).length;
   const groupedThreads = useMemo(() => {
@@ -359,7 +379,7 @@ export default function Email() {
         productionId,
       });
       setPreviewFile(file);
-      if (selectedThreadId) await loadThread(selectedThreadId);
+      if (selectedThreadId) await loadThread(selectedThreadId, selectedMessageId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to file attachment");
     } finally {
@@ -419,7 +439,7 @@ export default function Email() {
             <div key={group.label}>
               <div className="hidden px-4 py-2 text-[11px] uppercase tracking-wide text-gray-400 md:block">{group.label}</div>
               {group.items.map((item) => (
-                <ThreadRow key={item.id} thread={item} active={selectedThreadId === item.id} onClick={() => setSelectedThreadId(item.id)} />
+                <ThreadRow key={item.id} thread={item} active={selectedThreadId === item.id} onClick={() => selectThread(item.id)} />
               ))}
             </div>
           ))}
@@ -436,22 +456,23 @@ export default function Email() {
         {thread ? (
           <ThreadDetail
             thread={thread}
+            focusedMessageId={selectedMessageId}
             filingAttachment={filingAttachment}
             onOpenAttachment={(attachment) => { fileAttachment(attachment, thread.linkedProductionId).catch(console.error); }}
             loadingOlder={loadingOlder}
             onLoadOlder={() => { loadOlderMessages().catch(console.error); }}
-            onBack={() => setSelectedThreadId(null)}
+            onBack={clearSelectedThread}
             onOpenReply={() => openReply(thread)}
-            onFlag={async () => { await api.post(`/api/email/threads/${thread.id}/star`, { starred: !thread.isFlagged }); await loadThread(thread.id); await loadThreads(); }}
+            onFlag={async () => { await api.post(`/api/email/threads/${thread.id}/star`, { starred: !thread.isFlagged }); await loadThread(thread.id, selectedMessageId); await loadThreads(); }}
             onArchive={async () => {
               if (folder === "archived") await api.post(`/api/email/threads/${thread.id}/unarchive`, {});
               else await api.post(`/api/email/threads/${thread.id}/archive`, {});
-              setSelectedThreadId(null);
+              clearSelectedThread();
               await loadThreads();
             }}
             onOpenPeople={() => setPeopleThread(thread)}
             onCreateOpportunity={() => setOpportunityThread(thread)}
-            onLinked={async () => { await loadThread(thread.id); await loadThreads(); }}
+            onLinked={async () => { await loadThread(thread.id, selectedMessageId); await loadThreads(); }}
           />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center text-gray-400">
@@ -469,7 +490,7 @@ export default function Email() {
           onSaved={(file) => {
             setSaveAttachment(null);
             setPreviewFile(file);
-            if (selectedThreadId) loadThread(selectedThreadId).catch(console.error);
+            if (selectedThreadId) loadThread(selectedThreadId, selectedMessageId).catch(console.error);
           }}
         />
       )}
@@ -563,13 +584,16 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
   );
 }
 
-function ThreadDetail({ thread, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onArchive, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onArchive: () => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
+function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onArchive, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; focusedMessageId: string | null; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onArchive: () => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
   const [expandedAttachments, setExpandedAttachments] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const attachments = thread.attachments ?? [];
   const visibleAttachments = expandedAttachments ? attachments : attachments.slice(0, 3);
   const latestId = thread.messages[thread.messages.length - 1]?.id;
-  const defaultExpanded = useMemo(() => new Set(thread.messages.filter((message) => message.id === latestId || (!message.isFromMe && !thread.isRead)).map((message) => message.id)), [thread.id, latestId, thread.isRead]);
+  const defaultExpanded = useMemo(() => {
+    if (focusedMessageId) return new Set([focusedMessageId]);
+    return new Set(thread.messages.filter((message) => message.id === latestId || (!message.isFromMe && !thread.isRead)).map((message) => message.id));
+  }, [thread.messages, latestId, thread.isRead, focusedMessageId]);
   const participantNames = thread.participantNames?.join(", ") || thread.participants.join(", ");
 
   return (
@@ -632,6 +656,7 @@ function ThreadDetail({ thread, filingAttachment, loadingOlder, onOpenAttachment
             onOpenAttachment={onOpenAttachment}
             latest={message.id === latestId}
             defaultExpanded={defaultExpanded.has(message.id)}
+            focused={focusedMessageId === message.id}
             showNewDivider={index > 0 && !message.isFromMe && !thread.isRead}
           />
         ))}
@@ -1015,8 +1040,9 @@ function AttachmentChip({ attachment, filing, onOpen }: { attachment: EmailAttac
   );
 }
 
-function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, defaultExpanded, showNewDivider }: { message: EmailMessage; filingAttachment: string; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; latest: boolean; defaultExpanded: boolean; showNewDivider: boolean }) {
+function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, defaultExpanded, focused, showNewDivider }: { message: EmailMessage; filingAttachment: string; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; latest: boolean; defaultExpanded: boolean; focused: boolean; showNewDivider: boolean }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const articleRef = useRef<HTMLElement | null>(null);
   const [showImages, setShowImages] = useState(false);
   const [showQuoted, setShowQuoted] = useState(false);
   const name = message.resolvedFromName || message.fromName || message.fromAddress;
@@ -1047,6 +1073,18 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, def
     };
   }, [expanded, message.bodyHtml, message.bodyText, showImages]);
 
+  useEffect(() => {
+    setExpanded(defaultExpanded);
+  }, [defaultExpanded, message.id]);
+
+  useEffect(() => {
+    if (!focused) return;
+    const timer = window.setTimeout(() => {
+      articleRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [focused]);
+
   return (
     <>
       {showNewDivider && (
@@ -1056,7 +1094,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, def
           <span className="h-px flex-1 bg-gray-200" />
         </div>
       )}
-      <article className={`group border-b border-gray-100 ${message.isFromMe ? "bg-[#f8f8f6]" : "bg-white"}`}>
+      <article ref={articleRef} className={`group border-b border-gray-100 transition-shadow ${focused ? "relative z-[1] ring-2 ring-blue-200" : ""} ${message.isFromMe ? "bg-[#f8f8f6]" : "bg-white"}`}>
         <button
           onClick={() => !latest && setExpanded((current) => !current)}
           className="grid min-h-12 w-full grid-cols-[40px_1fr_auto_auto] items-center gap-2 px-2 text-left transition-all duration-200"

@@ -1132,8 +1132,9 @@ export async function getThreads(options: ThreadListOptions) {
   };
 }
 
-export async function getThread(threadId: string, options?: { before?: Date; limit?: number }) {
-  const limit = Math.min(Math.max(options?.limit ?? THREAD_MESSAGE_LIMIT, 1), 50);
+export async function getThread(threadId: string, options?: { before?: Date; limit?: number; messageId?: string }) {
+  const maxLimit = options?.messageId ? 500 : 50;
+  const limit = Math.min(Math.max(options?.limit ?? THREAD_MESSAGE_LIMIT, 1), maxLimit);
   const thread = await prisma.emailThread.findUnique({
     where: { id: threadId },
     include: {

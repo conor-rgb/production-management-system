@@ -611,6 +611,7 @@ router.get("/threads/:threadId", async (req: Request, res: Response): Promise<vo
   const thread = await getThread(req.params.threadId, {
     before: before && !Number.isNaN(before.getTime()) ? before : undefined,
     limit: intValue(req.query.limit),
+    messageId: typeof req.query.message === "string" ? req.query.message : undefined,
   });
   if (!thread) {
     res.status(404).json({ error: "Thread not found" });
