@@ -427,12 +427,13 @@ router.get("/production/:productionId/matrix", async (req: Request, res: Respons
 });
 
 router.get("/blackbook", async (req: Request, res: Response): Promise<void> => {
-  const { q = "", category, entryType, lifecycleStatus, categoryConfigId, companyEntryId, listId, limit = "12" } = req.query as {
+  const { q = "", category, entryType, lifecycleStatus, categoryConfigId, typeId, companyEntryId, listId, limit = "12" } = req.query as {
     q?: string;
     category?: BlackbookCategory;
     entryType?: BlackbookEntryType;
     lifecycleStatus?: BlackbookLifecycleStatus;
     categoryConfigId?: string;
+    typeId?: string;
     companyEntryId?: string;
     listId?: string;
     limit?: string;
@@ -443,6 +444,7 @@ router.get("/blackbook", async (req: Request, res: Response): Promise<void> => {
   if (entryType) where.entryType = entryType;
   if (lifecycleStatus) where.lifecycleStatus = lifecycleStatus;
   if (categoryConfigId) where.categoryConfigId = categoryConfigId;
+  if (typeId) where.typeIds = { has: typeId };
   if (companyEntryId) where.companyEntryId = companyEntryId;
   if (listId) where.targetLists = { some: { listId } };
   if (search) {

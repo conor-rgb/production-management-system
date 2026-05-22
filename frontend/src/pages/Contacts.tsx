@@ -11,7 +11,9 @@ type ViewKey = "ALL" | "TARGETS" | "IN_TOUCH" | "CLIENTS" | "SUPPLIERS" | "COMPA
 interface BlackbookConfigCategory {
   id: string;
   name: string;
+  broadType: string;
   color: string;
+  types: Array<{ id: string; name: string; slug: string }>;
 }
 
 interface BlackbookTargetList {
@@ -113,9 +115,12 @@ export default function Contacts() {
   const [newEntryName, setNewEntryName] = useState("");
   const [listSearch, setListSearch] = useState("");
   const [listMatches, setListMatches] = useState<BlackbookEntry[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
 
   const selectedList = useMemo(() => lists.find((list) => list.id === selectedListId) ?? null, [lists, selectedListId]);
   const selectedListEntryMap = useMemo(() => new Map((selectedList?.entries ?? []).map((item) => [item.entry.id, item])), [selectedList]);
+  const selectedCategory = useMemo(() => categories.find((category) => category.id === selectedCategoryId) ?? null, [categories, selectedCategoryId]);
 
   const loadSettings = useCallback(async () => {
     const [categoryData, listData] = await Promise.all([
@@ -136,11 +141,13 @@ export default function Contacts() {
       if (view === "CLIENTS") params.set("lifecycleStatus", "CLIENT");
       if (view === "SUPPLIERS") params.set("category", "SERVICE");
       if (view === "COMPANIES") params.set("entryType", "COMPANY");
+      if (selectedCategoryId) params.set("categoryConfigId", selectedCategoryId);
+      if (selectedTypeId) params.set("typeId", selectedTypeId);
       setEntries(await api.get<BlackbookEntry[]>(`/api/options/blackbook?${params.toString()}`));
     } finally {
       setLoading(false);
     }
-  }, [query, selectedListId, view]);
+  }, [query, selectedCategoryId, selectedListId, selectedTypeId, view]);
 
   useEffect(() => { loadSettings().catch(console.error); }, [loadSettings]);
   useEffect(() => { loadEntries().catch(console.error); }, [loadEntries]);
@@ -215,6 +222,11 @@ export default function Contacts() {
     await refreshAll();
   }
 
+  function clearFilters() {
+    setSelectedCategoryId(null);
+    setSelectedTypeId(null);
+  }
+
   return (
     <div className="flex h-full min-h-0 bg-white">
       <aside className="flex w-[280px] shrink-0 flex-col border-r border-gray-200 bg-[#fbfbfa]">
@@ -230,12 +242,31 @@ export default function Contacts() {
         </div>
         <nav className="space-y-1 border-b border-gray-200 p-2">
           {VIEWS.map((item) => (
-            <button key={item.key} onClick={() => { setView(item.key); setSelectedListId(null); }} className={`w-full rounded-lg px-3 py-2 text-left ${view === item.key && !selectedListId ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-white"}`}>
+            <button key={item.key} onClick={() => { setView(item.key); setSelectedListId(null); clearFilters(); }} className={`w-full rounded-lg px-3 py-2 text-left ${view === item.key && !selectedListId ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-white"}`}>
               <div className="text-sm font-medium">{item.label}</div>
               <div className={`text-[11px] ${view === item.key && !selectedListId ? "text-white/60" : "text-gray-400"}`}>{item.description}</div>
             </button>
           ))}
         </nav>
+        <div className="border-b border-gray-200 p-2">
+          <div className="mb-2 flex items-center justify-between px-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+            <span>Categories</span>
+            {(selectedCategoryId || selectedTypeId) && <button onClick={clearFilters} className="text-[10px] font-medium normal-case tracking-normal text-gray-500 hover:text-gray-900">Clear</button>}
+          </div>
+          <div className="space-y-1">
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => { setSelectedCategoryId(category.id); setSelectedTypeId(null); }}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs ${selectedCategoryId === category.id ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-600 hover:bg-white"}`}
+              >
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: category.color }} />
+                <span className="min-w-0 flex-1 truncate">{category.name}</span>
+                <span className="text-[10px] text-gray-400">{category.types.length}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="min-h-0 flex-1 overflow-auto p-2">
           <div className="mb-2 flex items-center gap-2 px-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400"><ListPlus size={13} /> Target lists</div>
           {lists.map((list) => (
@@ -255,13 +286,32 @@ export default function Contacts() {
         <div className="flex min-h-16 items-center justify-between border-b border-gray-200 px-5">
           <div>
             <h2 className="text-base font-semibold text-gray-900">{selectedList ? selectedList.name : VIEWS.find((item) => item.key === view)?.label}</h2>
-            <p className="text-xs text-gray-400">{counts.all} shown · {counts.targets} targets · {counts.clients} clients · {counts.suppliers} suppliers</p>
+            <p className="text-xs text-gray-400">{counts.all} shown · {counts.targets} targets · {counts.clients} clients · {counts.suppliers} suppliers{selectedCategory ? ` · ${selectedCategory.name}` : ""}</p>
           </div>
           <div className="flex items-center gap-2">
             <input value={newEntryName} onChange={(event) => setNewEntryName(event.target.value)} placeholder={view === "COMPANIES" ? "New company" : "New person / supplier"} className="h-9 w-52 rounded-lg border border-gray-200 px-3 text-xs outline-none focus:border-gray-500" />
             <button onClick={addEntry} className="inline-flex h-9 items-center gap-2 rounded-lg bg-gray-900 px-3 text-xs font-medium text-white"><Plus size={14} /> Add</button>
           </div>
         </div>
+        {selectedCategory && (
+          <div className="flex items-center gap-2 overflow-x-auto border-b border-gray-100 px-5 py-2">
+            <button
+              onClick={() => setSelectedTypeId(null)}
+              className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-medium ${selectedTypeId ? "border-gray-200 text-gray-500 hover:bg-gray-50" : "border-gray-900 bg-gray-900 text-white"}`}
+            >
+              All {selectedCategory.name}
+            </button>
+            {selectedCategory.types.map((type) => (
+              <button
+                key={type.id}
+                onClick={() => setSelectedTypeId(type.id)}
+                className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-medium ${selectedTypeId === type.id ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+              >
+                {type.name}
+              </button>
+            ))}
+          </div>
+        )}
         {selectedList && (
           <div className="flex items-center justify-between gap-4 border-b border-gray-100 bg-[#fbfbfa] px-5 py-3">
             <div className="relative w-[340px]">
@@ -347,7 +397,7 @@ function BlackbookRow({
         </div>
         <p className="mt-0.5 truncate text-xs text-gray-400">{[entry.companyEntry?.displayName ?? entry.companyName, entry.email, entry.phone].filter(Boolean).join(" · ")}</p>
       </button>
-      <div className="truncate text-xs text-gray-500">{category?.name ?? entry.entryType.toLowerCase()}</div>
+      <div className="truncate text-xs text-gray-500">{[category?.name ?? entry.entryType.toLowerCase(), category?.types.filter((type) => entry.typeIds.includes(type.id)).map((type) => type.name).join(", ")].filter(Boolean).join(" · ")}</div>
       {listEntry ? (
         <>
           <select

@@ -1,53 +1,41 @@
-# HANDOVER - 2026-05-22 - Blackbook Target List Workflow Pass
+# HANDOVER - 2026-05-22 - Blackbook Category/Type Filter Pass
 
 ## Built This Session
-- Added the operational target-list workflow to the Blackbook CRM page.
-- Target lists can now be created from the left sidebar.
-- Selecting a target list now turns the main table into an outreach workflow view.
-- Existing Blackbook records can be searched and added to the selected target list.
-- New records created while a target list is selected are automatically added to that list.
-- Each target-list row now supports:
-  - outreach status
-  - next follow-up date
-  - outreach notes
-  - remove from list
-- Target lists can be archived from the selected-list toolbar.
-- Existing company/person linking from the previous pass remains in the Blackbook overlay.
+- Added category and type filtering to the Blackbook CRM list.
+- The left sidebar now shows the configured Blackbook categories from Settings.
+- Clicking a category filters the CRM list by that category.
+- When a category is selected, a horizontal type chip bar appears above the list.
+- Clicking a type chip filters entries by that multi-select type.
+- Rows now show both category and selected type names where available.
+- Filters compose with existing views and target lists:
+  - Targets + Crew
+  - Supplier contacts + Florists
+  - Target list + Locations + Studio
+  - etc.
+- Clear button resets the category/type filters.
 
 ## Schema
 - No schema changes in this pass.
-- Uses the existing `BlackbookTargetList` and `BlackbookTargetListEntry` models from the unified CRM migration.
+- Uses existing `BlackbookEntry.categoryConfigId` and `BlackbookEntry.typeIds`.
 
 ## Backend
 - Added:
-  - `PATCH /api/options/blackbook/lists/:listId`
-  - `DELETE /api/options/blackbook/list-entries/:itemId`
-- Reused:
-  - `GET /api/options/blackbook/lists`
-  - `POST /api/options/blackbook/lists`
-  - `POST /api/options/blackbook/lists/:listId/entries`
-  - `PATCH /api/options/blackbook/list-entries/:itemId`
-  - `GET /api/options/blackbook?listId=...`
+  - `typeId` filter support on `GET /api/options/blackbook`
+- Existing filter support reused:
+  - `categoryConfigId`
+  - `category`
+  - `entryType`
+  - `lifecycleStatus`
+  - `listId`
 
 ## Frontend
 - Updated `frontend/src/pages/Contacts.tsx`.
-- Added selected-list toolbar:
-  - add existing Blackbook entry to list
-  - archive current list
-  - show entry count
-- Added outreach columns when a target list is selected:
-  - status dropdown
-  - follow-up date
-  - remove button
-  - notes row
-- Status styling follows the existing pill language:
-  - not contacted
-  - contacted
-  - replied
-  - follow-up
-  - not interested
-  - converted
-  - archived
+- Extended Blackbook category typing to include:
+  - `broadType`
+  - `types`
+- Added sidebar category filter block.
+- Added active category type-chip bar.
+- Category/type filters reset when switching major CRM views.
 
 ## Verification
 - Backend build passed.
@@ -59,16 +47,16 @@
 ## Known Gaps / Technical Debt
 - Outreach notes save on blur. This avoids a PATCH on every keystroke, but there is not yet a subtle saved indicator.
 - Target list archive is one-way in the UI. The backend keeps archived lists; a future Settings/Admin view can expose restoration.
-- Supplier contacts are currently a broad Blackbook view; the next pass should expose category/type filters directly so Crew, Location, Florist, Caterer, AV, Transport, etc. can be segmented cleanly.
 - Existing Contacts have not been bulk migrated into Blackbook yet.
 - The email overlay links to `?message=...`, but Email still needs the exact target-message expansion/minimise behaviour.
 - Company comms aggregation is based on known email addresses. It now benefits from linked people, but contacts without email addresses will still not contribute messages.
+- Supplier view still applies the broad legacy `SERVICE` filter. Category chips now let you get to all configured groups, but supplier taxonomy can be refined further once records are migrated/classified.
 - No Airtable-style template designer or client PDF options designer yet.
 
 ## Exact Next Steps
-1. Add category/type filters to the CRM list so supplier groups work as a proper blackbook.
-2. Bulk migrate existing Contacts into Blackbook and auto-link by email.
-3. Wire Email `?message=` behavior so a clicked activity opens the full thread with that message expanded.
-4. Add company-level notes/files once the activity model is settled.
-5. Add saved indicators/toasts for target-list status, notes, and follow-up date updates.
+1. Bulk migrate existing Contacts into Blackbook and auto-link by email.
+2. Wire Email `?message=` behavior so a clicked activity opens the full thread with that message expanded.
+3. Add company-level notes/files once the activity model is settled.
+4. Add saved indicators/toasts for target-list status, notes, and follow-up date updates.
+5. Refine supplier/client taxonomy after real migrated data is visible.
 6. Then continue into the Blackbook-backed outreach workflow and PDF/template planning.
