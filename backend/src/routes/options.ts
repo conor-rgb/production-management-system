@@ -10,6 +10,7 @@ import {
   BlackbookLifecycleStatus,
   BlackbookOutreachStatus,
   CandidateDateHoldStatus,
+  ContactType,
   OptionAvailability,
   OptionCandidateState,
   OptionRequirementState,
@@ -105,6 +106,109 @@ type BlackbookFieldBody = {
   hips?: string | null;
   shoe?: string | null;
 };
+
+type LegacyContactWithCompany = Prisma.ContactGetPayload<{ include: { company: true } }>;
+
+function displayNameFromContact(contact: LegacyContactWithCompany): string {
+  return [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim() || contact.email || "Unnamed contact";
+}
+
+function lifecycleFromContactType(type: ContactType): BlackbookLifecycleStatus {
+  return type === "SUPPLIER" ? "SUPPLIER" : "CLIENT";
+}
+
+function categoryFromContactType(type: ContactType): BlackbookCategory {
+  return type === "SUPPLIER" ? "SERVICE" : "OTHER";
+}
+
+function parseCompanyAddress(address?: string | null): Pick<Prisma.BlackbookEntryUncheckedCreateInput, "addressLine1" | "city" | "postcode" | "country"> {
+  if (!address?.trim()) return {};
+  const parts = address.split(",").map((part) => part.trim()).filter(Boolean);
+  return {
+    addressLine1: parts[0] ?? address.trim(),
+    city: parts.length > 2 ? parts[parts.length - 3] : undefined,
+    postcode: parts.length > 1 ? parts[parts.length - 2] : undefined,
+    country: parts.length > 1 ? parts[parts.length - 1] : undefined,
+  };
+}
+
+async function ensureBlackbookCompany(company: LegacyContactWithCompany["company"]): Promise<string | null> {
+  if (!company) return null;
+  const existing = await prisma.blackbookEntry.findFirst({
+    where: {
+      entryType: "COMPANY",
+      OR: [
+        { displayName: { equals: company.name, mode: "insensitive" } },
+        { companyName: { equals: company.name, mode: "insensitive" } },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  const address = parseCompanyAddress(company.address);
+  if (existing) {
+    await prisma.blackbookEntry.update({
+      where: { id: existing.id },
+      data: {
+        website: existing.website || company.website || undefined,
+        notes: existing.notes || company.notes || undefined,
+        addressLine1: existing.addressLine1 || address.addressLine1,
+        city: existing.city || address.city,
+        postcode: existing.postcode || address.postcode,
+        country: existing.country || address.country,
+      },
+    });
+    return existing.id;
+  }
+  const created = await prisma.blackbookEntry.create({
+    data: {
+      entryType: "COMPANY",
+      lifecycleStatus: "CLIENT",
+      category: "OTHER",
+      displayName: company.name,
+      companyName: company.name,
+      website: company.website,
+      notes: company.notes,
+      ...address,
+    },
+  });
+  return created.id;
+}
+
+async function mergeBlackbookDuplicate(primaryId: string, duplicateId: string): Promise<void> {
+  if (primaryId === duplicateId) return;
+  const [primary, duplicate] = await Promise.all([
+    prisma.blackbookEntry.findUnique({ where: { id: primaryId }, include: { targetLists: true } }),
+    prisma.blackbookEntry.findUnique({ where: { id: duplicateId }, include: { targetLists: true } }),
+  ]);
+  if (!primary || !duplicate) return;
+
+  await prisma.optionCandidate.updateMany({ where: { blackbookEntryId: duplicateId }, data: { blackbookEntryId: primaryId } });
+  await prisma.blackbookEntry.updateMany({ where: { companyEntryId: duplicateId }, data: { companyEntryId: primaryId } });
+
+  for (const item of duplicate.targetLists) {
+    const existing = primary.targetLists.find((primaryItem) => primaryItem.listId === item.listId);
+    if (existing) {
+      await prisma.blackbookTargetListEntry.delete({ where: { id: item.id } });
+    } else {
+      await prisma.blackbookTargetListEntry.update({ where: { id: item.id }, data: { entryId: primaryId } });
+    }
+  }
+
+  await prisma.blackbookEntry.update({
+    where: { id: primaryId },
+    data: {
+      email: primary.email || duplicate.email || undefined,
+      phone: primary.phone || duplicate.phone || undefined,
+      companyName: primary.companyName || duplicate.companyName || undefined,
+      jobTitle: primary.jobTitle || duplicate.jobTitle || undefined,
+      notes: primary.notes || duplicate.notes || undefined,
+      contactId: primary.contactId || duplicate.contactId || undefined,
+      companyEntryId: primary.companyEntryId || duplicate.companyEntryId || undefined,
+      tags: Array.from(new Set([...primary.tags, ...duplicate.tags])),
+    },
+  });
+  await prisma.blackbookEntry.delete({ where: { id: duplicateId } });
+}
 
 function cleanPathPart(value: string): string {
   const cleaned = value.replace(/[\\/:\*\?"<>\|]/g, " ").replace(/\s+/g, " ").trim();
@@ -613,6 +717,113 @@ router.post("/blackbook", async (req: Request, res: Response): Promise<void> => 
     },
   });
   res.status(201).json(entry);
+});
+
+router.post("/blackbook/migrate-contacts", async (_req: Request, res: Response): Promise<void> => {
+  const contacts = await prisma.contact.findMany({
+    include: { company: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  let createdCompanies = 0;
+  let createdPeople = 0;
+  let linkedPeople = 0;
+  let mergedDuplicates = 0;
+
+  const companyCountBefore = await prisma.blackbookEntry.count({ where: { entryType: "COMPANY" } });
+
+  for (const contact of contacts) {
+    const companyEntryId = await ensureBlackbookCompany(contact.company);
+    const email = contact.email?.trim().toLowerCase() || null;
+    const displayName = displayNameFromContact(contact);
+    const existing = await prisma.blackbookEntry.findFirst({
+      where: {
+        OR: [
+          { contactId: contact.id },
+          ...(email ? [{ email: { equals: email, mode: "insensitive" as const } }] : []),
+        ],
+      },
+      orderBy: [
+        { contactId: "desc" },
+        { createdAt: "asc" },
+      ],
+    });
+    const lifecycleStatus = lifecycleFromContactType(contact.type);
+    const category = categoryFromContactType(contact.type);
+
+    if (existing) {
+      await prisma.blackbookEntry.update({
+        where: { id: existing.id },
+        data: {
+          contactId: contact.id,
+          displayName: existing.displayName || displayName,
+          firstName: existing.firstName || contact.firstName || undefined,
+          lastName: existing.lastName || contact.lastName || undefined,
+          email: existing.email || email || undefined,
+          phone: existing.phone || contact.phone || undefined,
+          companyName: existing.companyName || contact.company?.name || undefined,
+          companyEntryId: existing.companyEntryId || companyEntryId || undefined,
+          jobTitle: existing.jobTitle || contact.jobTitle || undefined,
+          notes: existing.notes || contact.notes || undefined,
+          lifecycleStatus: existing.lifecycleStatus === "IN_TOUCH" ? lifecycleStatus : existing.lifecycleStatus,
+          category: existing.category === "OTHER" ? category : existing.category,
+          tags: Array.from(new Set([...existing.tags, ...contact.tags])),
+        },
+      });
+      linkedPeople++;
+    } else {
+      await prisma.blackbookEntry.create({
+        data: {
+          entryType: "PERSON",
+          lifecycleStatus,
+          category,
+          displayName,
+          firstName: contact.firstName,
+          lastName: contact.lastName,
+          email,
+          phone: contact.phone,
+          companyName: contact.company?.name,
+          companyEntryId,
+          jobTitle: contact.jobTitle,
+          notes: contact.notes,
+          tags: contact.tags,
+          contactId: contact.id,
+        },
+      });
+      createdPeople++;
+    }
+  }
+
+  const duplicateEmails = await prisma.$queryRaw<Array<{ email: string }>>`
+    SELECT lower(email) AS email
+    FROM pms_blackbook_entries
+    WHERE email IS NOT NULL AND email <> ''
+    GROUP BY lower(email)
+    HAVING count(*) > 1
+  `;
+  for (const item of duplicateEmails) {
+    const duplicates = await prisma.blackbookEntry.findMany({
+      where: { email: { equals: item.email, mode: "insensitive" } },
+      orderBy: [{ contactId: "desc" }, { createdAt: "asc" }],
+    });
+    const [primary, ...rest] = duplicates;
+    if (!primary) continue;
+    for (const duplicate of rest) {
+      await mergeBlackbookDuplicate(primary.id, duplicate.id);
+      mergedDuplicates++;
+    }
+  }
+
+  const companyCountAfter = await prisma.blackbookEntry.count({ where: { entryType: "COMPANY" } });
+  createdCompanies = Math.max(0, companyCountAfter - companyCountBefore);
+
+  res.json({
+    contactsScanned: contacts.length,
+    createdCompanies,
+    createdPeople,
+    linkedPeople,
+    mergedDuplicates,
+  });
 });
 
 router.get("/blackbook/:entryId/crm", async (req: Request, res: Response): Promise<void> => {

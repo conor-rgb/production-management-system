@@ -1,62 +1,61 @@
-# HANDOVER - 2026-05-22 - Blackbook Category/Type Filter Pass
+# HANDOVER - 2026-05-22 - Blackbook Contact Migration Pass
 
 ## Built This Session
-- Added category and type filtering to the Blackbook CRM list.
-- The left sidebar now shows the configured Blackbook categories from Settings.
-- Clicking a category filters the CRM list by that category.
-- When a category is selected, a horizontal type chip bar appears above the list.
-- Clicking a type chip filters entries by that multi-select type.
-- Rows now show both category and selected type names where available.
-- Filters compose with existing views and target lists:
-  - Targets + Crew
-  - Supplier contacts + Florists
-  - Target list + Locations + Studio
-  - etc.
-- Clear button resets the category/type filters.
+- Added a repeatable legacy Contact -> Blackbook migration endpoint.
+- Migration maps legacy Companies into company-type Blackbook records.
+- Migration maps legacy Contacts into person-type Blackbook records.
+- Existing Blackbook records are matched by:
+  - `contactId`
+  - email address
+- Migrated person records are attached to the matching company Blackbook entry.
+- Existing Blackbook records are updated rather than duplicated where email/contact matches.
+- Duplicate Blackbook records with the same email are merged:
+  - option candidates are reassigned
+  - target-list memberships are preserved
+  - child people/company links are reassigned
+  - useful tags and sparse fields are retained
+- Ran the migration once on production data.
 
 ## Schema
 - No schema changes in this pass.
-- Uses existing `BlackbookEntry.categoryConfigId` and `BlackbookEntry.typeIds`.
+- Uses existing `BlackbookEntry.contactId` and `BlackbookEntry.companyEntryId`.
 
 ## Backend
 - Added:
-  - `typeId` filter support on `GET /api/options/blackbook`
-- Existing filter support reused:
-  - `categoryConfigId`
-  - `category`
-  - `entryType`
-  - `lifecycleStatus`
-  - `listId`
+  - `POST /api/options/blackbook/migrate-contacts`
+- Endpoint scans legacy `pms_contacts` and `pms_companies`, then creates/updates Blackbook records.
+- Endpoint remains protected by the app auth stack; the first production run was executed locally through Prisma to avoid opening an unauthenticated migration route.
 
 ## Frontend
-- Updated `frontend/src/pages/Contacts.tsx`.
-- Extended Blackbook category typing to include:
-  - `broadType`
-  - `types`
-- Added sidebar category filter block.
-- Added active category type-chip bar.
-- Category/type filters reset when switching major CRM views.
+- No frontend changes in this pass.
 
 ## Verification
 - Backend build passed.
-- Frontend build passed.
-- Frontend copied to `/var/www/agent`.
 - PM2 process `0` reloaded.
 - Health check passed after reload.
+- Migration run result:
+  - contacts scanned: 2
+  - companies created: 0
+  - people created: 1
+  - existing people linked: 1
+  - duplicate email records merged: 0
+- Verified Disney/Daisy/Becky records:
+  - Disney exists as a company Blackbook record.
+  - Daisy Caren-Vispi is linked to her legacy Contact and attached to Disney.
+  - Becky Cabot was created in Blackbook, linked to her legacy Contact, and attached to Disney.
 
 ## Known Gaps / Technical Debt
 - Outreach notes save on blur. This avoids a PATCH on every keystroke, but there is not yet a subtle saved indicator.
 - Target list archive is one-way in the UI. The backend keeps archived lists; a future Settings/Admin view can expose restoration.
-- Existing Contacts have not been bulk migrated into Blackbook yet.
 - The email overlay links to `?message=...`, but Email still needs the exact target-message expansion/minimise behaviour.
 - Company comms aggregation is based on known email addresses. It now benefits from linked people, but contacts without email addresses will still not contribute messages.
 - Supplier view still applies the broad legacy `SERVICE` filter. Category chips now let you get to all configured groups, but supplier taxonomy can be refined further once records are migrated/classified.
 - No Airtable-style template designer or client PDF options designer yet.
 
 ## Exact Next Steps
-1. Bulk migrate existing Contacts into Blackbook and auto-link by email.
-2. Wire Email `?message=` behavior so a clicked activity opens the full thread with that message expanded.
-3. Add company-level notes/files once the activity model is settled.
-4. Add saved indicators/toasts for target-list status, notes, and follow-up date updates.
-5. Refine supplier/client taxonomy after real migrated data is visible.
+1. Wire Email `?message=` behavior so a clicked activity opens the full thread with that message expanded.
+2. Add company-level notes/files once the activity model is settled.
+3. Add saved indicators/toasts for target-list status, notes, and follow-up date updates.
+4. Refine supplier/client taxonomy now that legacy Contacts are in Blackbook.
+5. Add a proper admin button/confirmation for future Contact -> Blackbook migration runs.
 6. Then continue into the Blackbook-backed outreach workflow and PDF/template planning.
