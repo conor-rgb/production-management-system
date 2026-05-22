@@ -1,6 +1,23 @@
 # HANDOVER - 2026-05-22 - Google Places Address Picker for Options / Blackbook
 
 ## Built This Session
+- Follow-up Blackbook compact profile pass:
+  - Read the current Blackbook and Options schema before changing layout.
+  - Reworked the Blackbook profile side into compact disclosure rows instead of large padded cards.
+  - Profile header now uses smaller type, tighter chips, and compact metric pills.
+  - Relationship/category editing now sits in a small Profile section.
+  - Links, notes, address, company/people, and job-option actions are collapsed into sleek expandable rows.
+  - Added a Blackbook-side address manager using Google Places autocomplete plus manual fallback.
+  - Address manager creates reusable `BlackbookAddress` records and can set default billing.
+  - Manual address entry is compact and still stores country as a two-letter accounting/API-friendly code.
+  - Added "Add to job options" from the Blackbook profile:
+    - search/select production,
+    - choose an existing option role/sheet,
+    - or create a new role/sheet with quantity and type,
+    - adds the Blackbook record as a linked `OptionCandidate`.
+  - Added backend endpoint:
+    - `POST /api/options/blackbook/:entryId/add-to-options`
+  - Endpoint uses existing `OptionGroup`, `OptionRequirement`, and `OptionCandidate` models and snapshots reusable Blackbook data into the deck row.
 - Follow-up Blackbook UX pass:
   - Profile controls are now compact and organised in the left profile column.
   - The activity side is now a single chronological feed instead of separate project/options/email blocks.
@@ -105,7 +122,8 @@
 - Manual address entry remains available for private homes, load-ins, unofficial entrances, and non-standard production details.
 
 ## Known Gaps / Technical Debt
-- The Blackbook overlay still shows the original single structured address section; it does not yet manage multiple saved addresses visually.
+- Blackbook address editing currently supports creating saved addresses from Places/manual entry and showing saved addresses compactly; editing/deleting existing saved addresses from the profile overlay is still a follow-up.
+- The new Blackbook-to-options action adds a candidate to a role/sheet but does not yet jump the UI directly to that option sheet after saving.
 - Option PDF/export templates do not yet render selected addresses.
 - Places search is region-biased to common production countries in the backend service; expand/remove `includedRegionCodes` if global search needs to be broader.
 - No hard monthly quota guard is implemented in-app; rely on Google Cloud budgets/API restrictions for now.
@@ -116,6 +134,7 @@
    - `Claridge's`
    - `Hilton Park Lane`
    - `Big Sky Studios London`
-2. Add multi-address management to the Blackbook overlay so addresses can be edited centrally.
-3. Decide how selected addresses should appear in options PDF/deck templates.
-4. Consider adding API usage logging/counts if Places usage grows beyond internal use.
+2. Add edit/delete controls for saved addresses in the compact Blackbook address manager.
+3. After adding a Blackbook record to job options, optionally deep-link to `/productions?production=[id]&tab=options&optionGroup=[groupId]`.
+4. Decide how selected addresses should appear in options PDF/deck templates.
+5. Consider adding API usage logging/counts if Places usage grows beyond internal use.

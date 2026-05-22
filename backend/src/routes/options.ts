@@ -1261,6 +1261,104 @@ router.patch("/blackbook/:entryId", async (req: Request, res: Response): Promise
   res.json(entry);
 });
 
+router.post("/blackbook/:entryId/add-to-options", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as {
+    productionId?: string;
+    groupId?: string;
+    groupName?: string;
+    groupType?: OptionRequirementType;
+    quantity?: number;
+  };
+  if (!body.productionId) {
+    res.status(400).json({ error: "productionId is required" });
+    return;
+  }
+
+  const entry = await prisma.blackbookEntry.findUnique({
+    where: { id: req.params.entryId },
+    include: { addresses: { orderBy: [{ isDefaultBilling: "desc" }, { type: "asc" }, { createdAt: "asc" }] } },
+  });
+  if (!entry) {
+    res.status(404).json({ error: "Blackbook entry not found" });
+    return;
+  }
+
+  const production = await prisma.production.findUnique({ where: { id: body.productionId }, select: { id: true } });
+  if (!production) {
+    res.status(404).json({ error: "Production not found" });
+    return;
+  }
+
+  let group = body.groupId
+    ? await prisma.optionGroup.findFirst({ where: { id: body.groupId, productionId: production.id } })
+    : null;
+
+  if (!group) {
+    const name = body.groupName?.trim();
+    if (!name) {
+      res.status(400).json({ error: "Choose a role or enter a new role name" });
+      return;
+    }
+    const type = body.groupType ?? "OTHER";
+    const quantity = Math.max(1, Math.floor(Number(body.quantity ?? 1)));
+    const order = await prisma.optionGroup.count({ where: { productionId: production.id } });
+    group = await prisma.optionGroup.create({
+      data: { productionId: production.id, name, type, order },
+    });
+    await prisma.optionRequirement.createMany({
+      data: Array.from({ length: quantity }, (_, index) => ({
+        productionId: production.id,
+        groupId: group!.id,
+        name,
+        displayLabel: slotLabel(name, index + 1, quantity),
+        type,
+        slotNumber: index + 1,
+        order: order + index,
+      })),
+    });
+  }
+
+  const existing = await prisma.optionCandidate.findFirst({
+    where: { productionId: production.id, groupId: group.id, blackbookEntryId: entry.id },
+    select: { id: true },
+  });
+  if (existing) {
+    res.json(await matrixResponse(production.id));
+    return;
+  }
+
+  const selectedAddress = entry.addresses.find((address) => address.isDefaultBilling) ?? entry.addresses[0] ?? null;
+  await prisma.optionCandidate.create({
+    data: {
+      production: { connect: { id: production.id } },
+      group: { connect: { id: group.id } },
+      blackbookEntry: { connect: { id: entry.id } },
+      selectedAddress: selectedAddress ? { connect: { id: selectedAddress.id } } : undefined,
+      name: entry.displayName,
+      subtitle: entry.companyName,
+      contactEmail: entry.email,
+      contactPhone: entry.phone,
+      website: entry.website,
+      bookUrl: entry.bookUrl,
+      socialUrl: entry.socialUrl,
+      modelsComUrl: entry.modelsComUrl,
+      pdfUrl: entry.polasUrl ?? entry.selfTapeUrl,
+      addressLine1: selectedAddress?.addressLine1 ?? selectedAddress?.formattedAddress ?? selectedAddress?.placeName ?? entry.addressLine1,
+      addressLine2: selectedAddress?.addressLine2 ?? entry.addressLine2,
+      city: selectedAddress?.city ?? entry.city,
+      region: selectedAddress?.region ?? entry.region,
+      postcode: selectedAddress?.postcode ?? entry.postcode,
+      country: selectedAddress?.country ?? entry.country,
+      locationType: entry.locationType,
+      rate: entry.defaultRate,
+      rateUnit: entry.rateUnit,
+      currency: entry.currency,
+      order: await prisma.optionCandidate.count({ where: { groupId: group.id } }),
+    },
+  });
+  res.status(201).json(await matrixResponse(production.id));
+});
+
 router.post("/production/:productionId/matrix/dates", async (req: Request, res: Response): Promise<void> => {
   const { date } = req.body as { date?: string };
   if (!date) {

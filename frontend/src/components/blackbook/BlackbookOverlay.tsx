@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { X, Search, Mail, Briefcase, CalendarDays, Tag, Users, UserPlus, Building2 } from "lucide-react";
+import { X, Search, Mail, Briefcase, CalendarDays, Tag, Users, UserPlus, Building2, MapPin, Plus, Link2, ChevronDown } from "lucide-react";
 import { api } from "../../lib/api";
 import { COUNTRY_OPTIONS, countryName } from "../../lib/countries";
 
@@ -8,6 +8,7 @@ type BlackbookEntryType = "PERSON" | "COMPANY" | "LOCATION" | "TALENT" | "SERVIC
 type BlackbookCategory = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" | "TRANSPORT" | "POST" | "OTHER";
 type BlackbookLifecycleStatus = "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT" | "SUPPLIER" | "PREFERRED_SUPPLIER" | "DO_NOT_USE" | "ARCHIVED";
 type SaveStatus = "idle" | "saving" | "saved" | "error";
+type RequirementType = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" | "TRANSPORT" | "POST" | "OTHER";
 
 interface BlackbookAddress {
   id: string;
@@ -62,11 +63,57 @@ interface BlackbookEntry {
   region: string | null;
   postcode: string | null;
   country: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   locationType: string | null;
   notes: string | null;
   dietaryNotes: string | null;
   dietaryFlags: string[];
   allergens: string[];
+}
+
+interface PlaceSearchResult {
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+  description: string;
+  types: string[];
+}
+
+interface NormalizedPlace {
+  placeId: string;
+  placeName: string | null;
+  formattedAddress: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  region: string | null;
+  postcode: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  website: string | null;
+  phone: string | null;
+}
+
+interface ProductionSummary {
+  id: string;
+  title: string;
+  jobCode: string | null;
+  clientName: string | null;
+  brand: string | null;
+  status: string;
+}
+
+interface OptionGroupSummary {
+  id: string;
+  name: string;
+  type: RequirementType;
+}
+
+interface MatrixSummary {
+  production: Pick<ProductionSummary, "id" | "title" | "jobCode" | "clientName" | "brand">;
+  groups: OptionGroupSummary[];
 }
 
 interface BlackbookCrmResponse {
@@ -255,117 +302,78 @@ function BlackbookDetail({
   const timelineItems = buildTimelineItems(data);
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(360px,440px)_minmax(420px,1fr)] divide-x divide-gray-200 bg-white">
-      <div className="min-h-0 overflow-auto p-6">
-      <div className="mb-5">
-        <div>
-          <div className="mb-2 flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full" style={{ background: category?.color ?? "#d1d5db" }} />
-            <span className="text-[11px] uppercase tracking-[0.08em] text-gray-400">{category?.name ?? entry.category.toLowerCase()}</span>
-          </div>
-          <h1 className="text-2xl font-semibold text-gray-900">{entry.displayName}</h1>
-          <p className="mt-1 text-sm text-gray-500">{[entry.companyEntry?.displayName ?? entry.companyName, entry.email, entry.phone].filter(Boolean).join(" · ")}</p>
-          {typeNames.length > 0 && <p className="mt-2 text-xs text-gray-500">{typeNames.join(" · ")}</p>}
-          {(entry.targetLists?.length ?? 0) > 0 && <p className="mt-2 text-xs text-violet-600">{entry.targetLists?.map((item) => `${item.list.name}: ${item.status.toLowerCase().replace(/_/g, " ")}`).join(" · ")}</p>}
-        </div>
-        <div className="mt-4">
-          <SaveIndicator status={saveStatus} />
-        </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <LifecycleEditor value={entry.lifecycleStatus} onChange={(lifecycleStatus) => patch({ lifecycleStatus })} />
-          <CategoryEditor entry={entry} categories={categories} onSave={patch} />
-        </div>
-      </div>
-
-      <div className="mb-5 grid grid-cols-4 gap-2">
-        <MetricCard label={entry.entryType === "COMPANY" ? "People" : "Company people"} value={entry.entryType === "COMPANY" ? entry.people?.length ?? 0 : entry.companyEntry ? 1 : 0} />
-        <MetricCard label="Emails" value={emailCount} />
-        <MetricCard label="Options" value={optionCount} />
-        <MetricCard label="Jobs / Opps" value={productionCount + opportunityCount} />
-      </div>
-
-      <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">{entry.entryType === "COMPANY" ? "Company notes" : "Record notes"}</h3>
-          {entry.entryType === "COMPANY" && data.rollup && (
-            <span className="shrink-0 text-[11px] text-gray-400">{data.rollup.emailAddresses.length} email addresses in rollup</span>
-          )}
-        </div>
-        <NotesEditor value={entry.notes ?? ""} onSave={(notes) => patch({ notes })} placeholder={entry.entryType === "COMPANY" ? "Add company-level context, client preferences, relationship notes, billing quirks..." : "Add relationship notes, preferences, context..."} />
-      </section>
-
-      <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">Links</h3>
-          {entry.website && (
-            <a href={entry.website} target="_blank" rel="noreferrer" className="truncate text-[11px] text-blue-600 hover:underline">
-              {entry.website}
-            </a>
-          )}
-        </div>
-        <InlineField label="Website" value={entry.website ?? ""} onSave={(website) => patch({ website })} />
-      </section>
-
-      {(entry.entryType === "LOCATION" || entry.entryType === "COMPANY" || entry.category === "LOCATION") && (
-        <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">Structured address</h3>
-            <span className="text-[11px] text-gray-400">{[entry.addressLine1, entry.city, entry.postcode, countryName(entry.country)].filter(Boolean).join(", ") || "No address yet"}</span>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <InlineField label="Address 1" value={entry.addressLine1 ?? ""} onSave={(addressLine1) => patch({ addressLine1 })} />
-            <InlineField label="Address 2" value={entry.addressLine2 ?? ""} onSave={(addressLine2) => patch({ addressLine2 })} />
-            <InlineField label="City" value={entry.city ?? ""} onSave={(city) => patch({ city })} />
-            <InlineField label="Region" value={entry.region ?? ""} onSave={(region) => patch({ region })} />
-            <InlineField label="Postcode" value={entry.postcode ?? ""} onSave={(postcode) => patch({ postcode })} />
-            <label className="block text-[11px] font-medium uppercase tracking-[0.06em] text-gray-400">
-              Country
-              <select
-                value={entry.country ?? ""}
-                onChange={(event) => patch({ country: event.target.value || null }).catch(console.error)}
-                className="mt-1 h-9 w-full rounded border border-gray-200 bg-white px-2 text-xs normal-case tracking-normal text-gray-800 outline-none focus:border-gray-500"
-              >
-                <option value="">Select country...</option>
-                {COUNTRY_OPTIONS.map((country) => <option key={country.code} value={country.code}>{country.name}</option>)}
-              </select>
-            </label>
-            <InlineField label="Location type" value={entry.locationType ?? ""} onSave={(locationType) => patch({ locationType })} />
-          </div>
-          <p className="mt-3 text-[10px] text-gray-400">Country is stored as a two-letter code for future accounting/API use.</p>
-        </section>
-      )}
-
-      {(entry.addresses?.length ?? 0) > 0 && (
-        <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">Saved addresses</h3>
-          <div className="space-y-2">
-            {entry.addresses?.map((address) => (
-              <div key={address.id} className="rounded-lg border border-gray-100 bg-[#fbfbfa] p-3">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-gray-800">{address.label || address.placeName || addressTypeLabel(address.type)}</p>
-                  {address.isDefaultBilling && <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-medium text-white">billing</span>}
-                </div>
-                <div className="text-xs leading-5 text-gray-500">
-                  {addressLines(address).map((line) => <p key={line}>{line}</p>)}
-                </div>
+    <div className="grid h-full min-h-0 grid-cols-[minmax(320px,390px)_minmax(460px,1fr)] divide-x divide-gray-200 bg-white">
+      <div className="min-h-0 overflow-auto bg-white">
+        <div className="sticky top-0 z-10 border-b border-gray-200 bg-white px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: category?.color ?? "#d1d5db" }} />
+                <span className="truncate text-[10px] uppercase tracking-[0.08em] text-gray-400">{category?.name ?? entry.category.toLowerCase()}</span>
               </div>
-            ))}
+              <h1 className="truncate text-lg font-semibold text-gray-900">{entry.displayName}</h1>
+              <p className="mt-0.5 truncate text-xs text-gray-500">{[entry.companyEntry?.displayName ?? entry.companyName, entry.email, entry.phone].filter(Boolean).join(" · ") || entry.entryType.toLowerCase()}</p>
+            </div>
+            <SaveIndicator status={saveStatus} />
           </div>
-        </section>
-      )}
+          <div className="mt-2 flex flex-wrap gap-1">
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">{entry.lifecycleStatus.toLowerCase().replace(/_/g, " ")}</span>
+            {typeNames.slice(0, 3).map((name) => <span key={name} className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">{name}</span>)}
+            {typeNames.length > 3 && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">+{typeNames.length - 3}</span>}
+          </div>
+          <div className="mt-3 grid grid-cols-4 gap-1.5">
+            <MetricPill label={entry.entryType === "COMPANY" ? "People" : "Co"} value={entry.entryType === "COMPANY" ? entry.people?.length ?? 0 : entry.companyEntry ? 1 : 0} />
+            <MetricPill label="Mail" value={emailCount} />
+            <MetricPill label="Options" value={optionCount} />
+            <MetricPill label="Jobs" value={productionCount + opportunityCount} />
+          </div>
+        </div>
 
-      {(entry.dietaryNotes || entry.dietaryFlags.length || entry.allergens.length) && (
-        <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-amber-800">Dietaries</h3>
-          <p className="text-sm text-amber-900">{[...entry.dietaryFlags, ...entry.allergens, entry.dietaryNotes].filter(Boolean).join(" · ")}</p>
-        </section>
-      )}
+        <div className="space-y-1 p-3">
+          <DisclosureSection title="Profile" summary={[entry.lifecycleStatus.toLowerCase().replace(/_/g, " "), category?.name].filter(Boolean).join(" · ")} defaultOpen>
+            <div className="grid gap-2">
+              <InlineField label="Name" value={entry.displayName} onSave={(displayName) => patch({ displayName })} compact />
+              <div className="grid grid-cols-2 gap-2">
+                <InlineField label="Email" value={entry.email ?? ""} onSave={(email) => patch({ email })} compact />
+                <InlineField label="Phone" value={entry.phone ?? ""} onSave={(phone) => patch({ phone })} compact />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <LifecycleEditor value={entry.lifecycleStatus} onChange={(lifecycleStatus) => patch({ lifecycleStatus })} />
+                <CategoryEditor entry={entry} categories={categories} onSave={patch} />
+              </div>
+            </div>
+          </DisclosureSection>
 
-      {entry.entryType === "COMPANY" ? (
-        <CompanyPeopleManager company={entry} people={entry.people ?? []} onOpenEntry={onOpenEntry} onRefresh={onRefresh} />
-      ) : (
-        <PersonCompanyManager entry={entry} onOpenEntry={onOpenEntry} onRefresh={onRefresh} />
-      )}
+          <DisclosureSection title="Links" summary={entry.website || "No links"}>
+            <InlineField label="Website" value={entry.website ?? ""} onSave={(website) => patch({ website })} compact />
+          </DisclosureSection>
+
+          <DisclosureSection title="Address" summary={addressLines(entry).join(" · ") || `${entry.addresses?.length ?? 0} saved`}>
+            <BlackbookAddressManager entry={entry} onPatchEntry={patch} onRefresh={onRefresh} />
+          </DisclosureSection>
+
+          <DisclosureSection title="Notes" summary={entry.notes ? `${entry.notes.slice(0, 60)}${entry.notes.length > 60 ? "..." : ""}` : "No notes"}>
+            <NotesEditor value={entry.notes ?? ""} onSave={(notes) => patch({ notes })} placeholder={entry.entryType === "COMPANY" ? "Company context, preferences, billing quirks..." : "Relationship notes, preferences, context..."} />
+          </DisclosureSection>
+
+          {(entry.dietaryNotes || entry.dietaryFlags.length || entry.allergens.length) && (
+            <DisclosureSection title="Dietaries" summary={[...entry.dietaryFlags, ...entry.allergens, entry.dietaryNotes].filter(Boolean).join(" · ")}>
+              <p className="text-xs leading-5 text-amber-800">{[...entry.dietaryFlags, ...entry.allergens, entry.dietaryNotes].filter(Boolean).join(" · ")}</p>
+            </DisclosureSection>
+          )}
+
+          <DisclosureSection title="Add to job options" summary="Pick job, then role/sheet">
+            <BlackbookOptionAdder entry={entry} onRefresh={onRefresh} />
+          </DisclosureSection>
+
+          <DisclosureSection title={entry.entryType === "COMPANY" ? "People" : "Company"} summary={entry.entryType === "COMPANY" ? `${entry.people?.length ?? 0} people` : entry.companyEntry?.displayName ?? "No company"}>
+            {entry.entryType === "COMPANY" ? (
+              <CompanyPeopleManager company={entry} people={entry.people ?? []} onOpenEntry={onOpenEntry} onRefresh={onRefresh} />
+            ) : (
+              <PersonCompanyManager entry={entry} onOpenEntry={onOpenEntry} onRefresh={onRefresh} />
+            )}
+          </DisclosureSection>
+        </div>
       </div>
 
       <aside className="min-h-0 overflow-auto bg-[#fbfbfa] p-6">
@@ -388,9 +396,9 @@ function BlackbookDetail({
 function LifecycleEditor({ value, onChange }: { value: BlackbookLifecycleStatus; onChange: (value: BlackbookLifecycleStatus) => Promise<void> }) {
   const options: BlackbookLifecycleStatus[] = ["TARGET", "IN_TOUCH", "CLIENT", "PAST_CLIENT", "SUPPLIER", "PREFERRED_SUPPLIER", "DO_NOT_USE", "ARCHIVED"];
   return (
-    <div className="w-[280px] rounded-lg border border-gray-200 p-3">
+    <div>
       <label className="text-[11px] font-medium uppercase tracking-[0.06em] text-gray-400">Relationship</label>
-      <select value={value} onChange={(event) => { onChange(event.target.value as BlackbookLifecycleStatus).catch(console.error); }} className="mt-1 h-9 w-full rounded border border-gray-200 px-2 text-xs">
+      <select value={value} onChange={(event) => { onChange(event.target.value as BlackbookLifecycleStatus).catch(console.error); }} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-xs text-gray-800 outline-none focus:border-gray-500">
         {options.map((option) => <option key={option} value={option}>{option.toLowerCase().replace(/_/g, " ")}</option>)}
       </select>
     </div>
@@ -398,22 +406,36 @@ function LifecycleEditor({ value, onChange }: { value: BlackbookLifecycleStatus;
 }
 
 function SaveIndicator({ status }: { status: SaveStatus }) {
-  if (status === "idle") return <div className="h-5" />;
+  if (status === "idle") return <div className="h-4 w-12" />;
   const label = status === "saving" ? "Saving..." : status === "saved" ? "Saved" : "Save failed";
   const className = status === "saving"
     ? "text-gray-400"
     : status === "saved"
       ? "text-emerald-600"
       : "text-red-600";
-  return <div className={`h-5 text-right text-[11px] font-medium ${className}`}>{label}</div>;
+  return <div className={`h-4 shrink-0 text-right text-[10px] font-medium ${className}`}>{label}</div>;
 }
 
-function MetricCard({ label, value }: { label: string; value: number }) {
+function MetricPill({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded border border-gray-200 bg-[#fbfbfa] px-2 py-2">
-      <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">{label}</p>
-      <p className="mt-0.5 text-lg font-semibold tabular-nums text-gray-900">{value}</p>
+    <div className="rounded border border-gray-200 bg-[#fbfbfa] px-2 py-1">
+      <p className="text-[9px] font-medium uppercase tracking-[0.05em] text-gray-400">{label}</p>
+      <p className="text-xs font-semibold tabular-nums text-gray-900">{value}</p>
     </div>
+  );
+}
+
+function DisclosureSection({ title, summary, children, defaultOpen = false }: { title: string; summary?: string; children: ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="rounded-lg border border-gray-200 bg-white">
+      <button onClick={() => setOpen((value) => !value)} className="flex min-h-10 w-full items-center gap-2 px-3 text-left hover:bg-[#fbfbfa]">
+        <ChevronDown size={14} className={`shrink-0 text-gray-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500">{title}</span>
+        {summary && <span className="min-w-0 flex-1 truncate text-right text-[11px] text-gray-400">{summary}</span>}
+      </button>
+      {open && <div className="border-t border-gray-100 p-3">{children}</div>}
+    </section>
   );
 }
 
@@ -541,7 +563,267 @@ function addressTypeLabel(type: BlackbookAddress["type"]): string {
   return "Custom";
 }
 
-function InlineField({ label, value, onSave }: { label: string; value: string; onSave: (value: string) => Promise<void> }) {
+function requirementTypeForEntry(entry: BlackbookCrmResponse["entry"]): RequirementType {
+  if (entry.category === "CREW") return "CREW";
+  if (entry.category === "SERVICE") return "SERVICE";
+  if (entry.category === "LOCATION") return "LOCATION";
+  if (entry.category === "EQUIPMENT") return "EQUIPMENT";
+  if (entry.category === "TALENT") return "TALENT";
+  if (entry.category === "TRANSPORT") return "TRANSPORT";
+  if (entry.category === "POST") return "POST";
+  return "OTHER";
+}
+
+function BlackbookAddressManager({ entry, onPatchEntry, onRefresh }: {
+  entry: BlackbookCrmResponse["entry"];
+  onPatchEntry: (patch: Partial<BlackbookEntry>) => Promise<void>;
+  onRefresh: () => void;
+}) {
+  const [mode, setMode] = useState<"search" | "manual" | null>(null);
+  const [addressType, setAddressType] = useState<BlackbookAddress["type"]>("WORK");
+  const [isDefaultBilling, setIsDefaultBilling] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PlaceSearchResult[]>([]);
+  const [manual, setManual] = useState({
+    addressLine1: "",
+    addressLine2: "",
+    city: "",
+    region: "",
+    postcode: "",
+    country: "",
+  });
+
+  useEffect(() => {
+    if (query.trim().length < 3) {
+      setResults([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({ q: query.trim(), sessionToken: entry.id });
+      api.get<{ results: PlaceSearchResult[] }>(`/api/options/places/search?${params.toString()}`)
+        .then((data) => setResults(data.results))
+        .catch(console.error);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [entry.id, query]);
+
+  async function createFromPlace(result: PlaceSearchResult) {
+    const place = await api.post<NormalizedPlace>("/api/options/places/details", { placeId: result.placeId, sessionToken: entry.id });
+    await api.post<BlackbookAddress>(`/api/options/blackbook/${entry.id}/addresses`, {
+      type: addressType,
+      isDefaultBilling,
+      source: "GOOGLE_PLACES",
+      placeId: place.placeId,
+      placeName: place.placeName,
+      formattedAddress: place.formattedAddress,
+      addressLine1: place.addressLine1,
+      addressLine2: place.addressLine2,
+      city: place.city,
+      region: place.region,
+      postcode: place.postcode,
+      country: place.country,
+      latitude: place.latitude,
+      longitude: place.longitude,
+      website: place.website,
+      phone: place.phone,
+    });
+    if (!entry.addressLine1) {
+      await onPatchEntry({
+        addressLine1: place.addressLine1,
+        addressLine2: place.addressLine2,
+        city: place.city,
+        region: place.region,
+        postcode: place.postcode,
+        country: place.country,
+        latitude: place.latitude,
+        longitude: place.longitude,
+      });
+    } else {
+      onRefresh();
+    }
+    setQuery("");
+    setResults([]);
+    setMode(null);
+  }
+
+  async function saveManual() {
+    await api.post<BlackbookAddress>(`/api/options/blackbook/${entry.id}/addresses`, {
+      type: addressType,
+      isDefaultBilling,
+      source: "MANUAL",
+      ...manual,
+    });
+    if (!entry.addressLine1) await onPatchEntry(manual);
+    else onRefresh();
+    setManual({ addressLine1: "", addressLine2: "", city: "", region: "", postcode: "", country: "" });
+    setMode(null);
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        {entry.addresses?.length ? entry.addresses.map((address) => (
+          <div key={address.id} className="rounded-md bg-[#fbfbfa] px-2 py-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold text-gray-800">{address.label || address.placeName || addressTypeLabel(address.type)}</span>
+              <span className="text-[10px] text-gray-400">{address.isDefaultBilling ? "billing" : addressTypeLabel(address.type)}</span>
+            </div>
+            <div className="mt-0.5 text-[11px] leading-4 text-gray-500">
+              {addressLines(address).map((line) => <p key={line}>{line}</p>)}
+            </div>
+          </div>
+        )) : (
+          <p className="rounded-md bg-[#fbfbfa] px-2 py-2 text-[11px] text-gray-400">No saved addresses yet.</p>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <select value={addressType} onChange={(event) => setAddressType(event.target.value as BlackbookAddress["type"])} className="h-8 rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-700">
+          {(["WORK", "BILLING", "PERSONAL", "CUSTOM"] as BlackbookAddress["type"][]).map((type) => <option key={type} value={type}>{addressTypeLabel(type)}</option>)}
+        </select>
+        <label className="flex items-center gap-1 text-[11px] text-gray-500">
+          <input type="checkbox" checked={isDefaultBilling} onChange={(event) => setIsDefaultBilling(event.target.checked)} />
+          default billing
+        </label>
+      </div>
+
+      <div className="flex gap-2">
+        <button onClick={() => setMode(mode === "search" ? null : "search")} className="inline-flex h-8 items-center gap-1 rounded border border-gray-200 px-2 text-[11px] text-gray-600 hover:border-gray-400"><MapPin size={13} /> Find address</button>
+        <button onClick={() => setMode(mode === "manual" ? null : "manual")} className="inline-flex h-8 items-center gap-1 rounded border border-gray-200 px-2 text-[11px] text-gray-600 hover:border-gray-400"><Plus size={13} /> Manual</button>
+      </div>
+
+      {mode === "search" && (
+        <div className="rounded-md border border-gray-200 bg-white p-2">
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Claridge's, Big Sky Studios, Hilton Park Lane..." className="h-8 w-full rounded border border-gray-200 px-2 text-xs outline-none focus:border-gray-500" />
+          {results.length > 0 && (
+            <div className="mt-2 overflow-hidden rounded border border-gray-100">
+              {results.map((result) => (
+                <button key={result.placeId} onClick={() => { createFromPlace(result).catch(console.error); }} className="block w-full border-b border-gray-100 px-2 py-2 text-left last:border-b-0 hover:bg-gray-50">
+                  <span className="block text-xs font-medium text-gray-900">{result.mainText}</span>
+                  <span className="block truncate text-[11px] text-gray-400">{result.secondaryText || result.description}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {mode === "manual" && (
+        <div className="rounded-md border border-gray-200 bg-white p-2">
+          <div className="grid grid-cols-2 gap-2">
+            <input value={manual.addressLine1} onChange={(event) => setManual((prev) => ({ ...prev, addressLine1: event.target.value }))} placeholder="Address line 1" className="col-span-2 h-8 rounded border border-gray-200 px-2 text-xs" />
+            <input value={manual.addressLine2} onChange={(event) => setManual((prev) => ({ ...prev, addressLine2: event.target.value }))} placeholder="Address line 2" className="col-span-2 h-8 rounded border border-gray-200 px-2 text-xs" />
+            <input value={manual.city} onChange={(event) => setManual((prev) => ({ ...prev, city: event.target.value }))} placeholder="City" className="h-8 rounded border border-gray-200 px-2 text-xs" />
+            <input value={manual.postcode} onChange={(event) => setManual((prev) => ({ ...prev, postcode: event.target.value }))} placeholder="Postcode" className="h-8 rounded border border-gray-200 px-2 text-xs" />
+            <input value={manual.region} onChange={(event) => setManual((prev) => ({ ...prev, region: event.target.value }))} placeholder="Region" className="h-8 rounded border border-gray-200 px-2 text-xs" />
+            <select value={manual.country} onChange={(event) => setManual((prev) => ({ ...prev, country: event.target.value }))} className="h-8 rounded border border-gray-200 bg-white px-2 text-xs text-gray-700">
+              <option value="">Country...</option>
+              {COUNTRY_OPTIONS.map((country) => <option key={country.code} value={country.code}>{country.name}</option>)}
+            </select>
+          </div>
+          <div className="mt-2 flex justify-end">
+            <button onClick={() => { saveManual().catch(console.error); }} className="rounded bg-gray-900 px-3 py-1.5 text-[11px] font-medium text-white">Save address</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BlackbookOptionAdder({ entry, onRefresh }: { entry: BlackbookCrmResponse["entry"]; onRefresh: () => void }) {
+  const [productionQuery, setProductionQuery] = useState("");
+  const [productions, setProductions] = useState<ProductionSummary[]>([]);
+  const [productionId, setProductionId] = useState("");
+  const [matrix, setMatrix] = useState<MatrixSummary | null>(null);
+  const [groupId, setGroupId] = useState("");
+  const [newRole, setNewRole] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [groupType, setGroupType] = useState<RequirementType>(requirementTypeForEntry(entry));
+  const [status, setStatus] = useState<SaveStatus>("idle");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({ includeWrapped: "true" });
+      if (productionQuery.trim()) params.set("search", productionQuery.trim());
+      api.get<ProductionSummary[]>(`/api/productions?${params.toString()}`)
+        .then((items) => setProductions(items.slice(0, 8)))
+        .catch(console.error);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [productionQuery]);
+
+  useEffect(() => {
+    if (!productionId) {
+      setMatrix(null);
+      return;
+    }
+    api.get<MatrixSummary>(`/api/options/production/${productionId}/matrix`).then(setMatrix).catch(console.error);
+  }, [productionId]);
+
+  async function addToOptions() {
+    if (!productionId) return;
+    setStatus("saving");
+    try {
+      await api.post(`/api/options/blackbook/${entry.id}/add-to-options`, {
+        productionId,
+        groupId: groupId || undefined,
+        groupName: groupId ? undefined : newRole,
+        groupType,
+        quantity: Number(quantity) || 1,
+      });
+      setStatus("saved");
+      onRefresh();
+      window.setTimeout(() => setStatus("idle"), 1400);
+    } catch (error) {
+      console.error(error);
+      setStatus("error");
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <input value={productionQuery} onChange={(event) => setProductionQuery(event.target.value)} placeholder="Search jobs..." className="h-8 w-full rounded border border-gray-200 px-2 text-xs outline-none focus:border-gray-500" />
+      {productions.length > 0 && (
+        <div className="max-h-32 overflow-auto rounded border border-gray-100">
+          {productions.map((production) => (
+            <button key={production.id} onClick={() => { setProductionId(production.id); setProductionQuery(`${production.jobCode ?? ""} ${production.brand ?? production.clientName ?? production.title}`.trim()); }} className={`block w-full border-b border-gray-100 px-2 py-1.5 text-left text-[11px] last:border-b-0 hover:bg-gray-50 ${productionId === production.id ? "bg-gray-900 text-white" : "text-gray-700"}`}>
+              <span className="block truncate font-medium">{production.jobCode ?? "No code"} · {production.brand ?? production.clientName ?? production.title}</span>
+              <span className="block truncate opacity-70">{production.status.toLowerCase().replace(/_/g, " ")}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {matrix && (
+        <div className="rounded-md bg-[#fbfbfa] p-2">
+          <label className="block text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400">Add to current role</label>
+          <select value={groupId} onChange={(event) => setGroupId(event.target.value)} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-xs">
+            <option value="">Create new role...</option>
+            {matrix.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+          </select>
+          {!groupId && (
+            <div className="mt-2 grid grid-cols-[1fr_88px_54px] gap-2">
+              <input value={newRole} onChange={(event) => setNewRole(event.target.value)} placeholder="Role / sheet name" className="h-8 rounded border border-gray-200 px-2 text-xs" />
+              <select value={groupType} onChange={(event) => setGroupType(event.target.value as RequirementType)} className="h-8 rounded border border-gray-200 bg-white px-2 text-xs">
+                {(["CREW", "SERVICE", "LOCATION", "EQUIPMENT", "TALENT", "TRANSPORT", "POST", "OTHER"] as RequirementType[]).map((type) => <option key={type} value={type}>{type.toLowerCase()}</option>)}
+              </select>
+              <input value={quantity} onChange={(event) => setQuantity(event.target.value)} type="number" min="1" className="h-8 rounded border border-gray-200 px-2 text-xs" />
+            </div>
+          )}
+          <div className="mt-2 flex items-center justify-between">
+            <span className={`text-[10px] ${status === "error" ? "text-red-600" : status === "saved" ? "text-emerald-600" : "text-gray-400"}`}>
+              {status === "saving" ? "Adding..." : status === "saved" ? "Added" : status === "error" ? "Could not add" : "Creates a linked option candidate"}
+            </span>
+            <button onClick={() => { addToOptions().catch(console.error); }} disabled={!productionId || (!groupId && !newRole.trim())} className="inline-flex h-8 items-center gap-1 rounded bg-gray-900 px-3 text-[11px] font-medium text-white disabled:bg-gray-200 disabled:text-gray-400">
+              <Link2 size={13} /> Add
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InlineField({ label, value, onSave, compact = false }: { label: string; value: string; onSave: (value: string) => Promise<void>; compact?: boolean }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
 
@@ -560,7 +842,7 @@ function InlineField({ label, value, onSave }: { label: string; value: string; o
           if (event.key === "Enter") event.currentTarget.blur();
           if (event.key === "Escape") setDraft(value);
         }}
-        className="mt-1 h-9 w-full rounded border border-gray-200 px-2 text-xs normal-case tracking-normal text-gray-800 outline-none focus:border-gray-500"
+        className={`${compact ? "mt-0.5 h-8" : "mt-1 h-9"} w-full rounded border border-gray-200 px-2 text-xs normal-case tracking-normal text-gray-800 outline-none focus:border-gray-500`}
       />
     </label>
   );
@@ -824,14 +1106,14 @@ function CategoryEditor({ entry, categories, onSave }: { entry: BlackbookEntry; 
   }
 
   return (
-    <div className="w-[280px] rounded-lg border border-gray-200 p-3">
+    <div>
       <label className="text-[11px] font-medium uppercase tracking-[0.06em] text-gray-400">Category</label>
-      <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); onSave({ categoryConfigId: event.target.value || null, typeIds: [] }).catch(console.error); }} className="mt-1 h-9 w-full rounded border border-gray-200 px-2 text-xs">
+      <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); onSave({ categoryConfigId: event.target.value || null, typeIds: [] }).catch(console.error); }} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-xs text-gray-800 outline-none focus:border-gray-500">
         <option value="">Uncategorised</option>
         {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select>
       {category && (
-        <div className="mt-3 flex flex-wrap gap-1">
+        <div className="mt-2 flex flex-wrap gap-1">
           {category.types.map((type) => (
             <button key={type.id} onClick={() => toggleType(type.id)} className={`rounded-full border px-2 py-1 text-[10px] ${entry.typeIds.includes(type.id) ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}>{type.name}</button>
           ))}
