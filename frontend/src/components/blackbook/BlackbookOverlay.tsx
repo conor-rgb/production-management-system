@@ -9,6 +9,21 @@ type BlackbookCategory = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT
 type BlackbookLifecycleStatus = "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT" | "SUPPLIER" | "PREFERRED_SUPPLIER" | "DO_NOT_USE" | "ARCHIVED";
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
+interface BlackbookAddress {
+  id: string;
+  type: "WORK" | "BILLING" | "PERSONAL" | "CUSTOM";
+  label: string | null;
+  isDefaultBilling: boolean;
+  placeName: string | null;
+  formattedAddress: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  region: string | null;
+  postcode: string | null;
+  country: string | null;
+}
+
 interface BlackbookConfigType {
   id: string;
   name: string;
@@ -59,6 +74,7 @@ interface BlackbookCrmResponse {
     contact?: { id: string; firstName: string; lastName?: string | null; company?: { name: string } | null } | null;
     companyEntry?: { id: string; displayName: string; email: string | null; companyName: string | null } | null;
     people?: BlackbookEntry[];
+    addresses?: BlackbookAddress[];
     targetLists?: Array<{ id: string; status: string; list: { id: string; name: string } }>;
     categoryConfig?: BlackbookConfigCategory | null;
     optionCandidates: Array<{
@@ -91,10 +107,11 @@ interface BlackbookCrmResponse {
   };
 }
 
-export default function BlackbookOverlay({ initialEntryId, onClose }: { initialEntryId?: string | null; onClose: () => void }) {
+export default function BlackbookOverlay({ initialEntryId, onClose, compact = false }: { initialEntryId?: string | null; onClose: () => void; compact?: boolean }) {
   const [query, setQuery] = useState("");
   const [entries, setEntries] = useState<BlackbookEntry[]>([]);
   const [categories, setCategories] = useState<BlackbookConfigCategory[]>([]);
+  const [categoryFilterId, setCategoryFilterId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(initialEntryId ?? null);
   const [detail, setDetail] = useState<BlackbookCrmResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -105,11 +122,12 @@ export default function BlackbookOverlay({ initialEntryId, onClose }: { initialE
 
   useEffect(() => {
     const params = new URLSearchParams({ q: query, limit: "30" });
+    if (categoryFilterId) params.set("categoryConfigId", categoryFilterId);
     api.get<BlackbookEntry[]>(`/api/options/blackbook?${params.toString()}`).then((data) => {
       setEntries(data);
       if (!selectedId && data[0]) setSelectedId(data[0].id);
     }).catch(console.error);
-  }, [query, selectedId]);
+  }, [categoryFilterId, query, selectedId]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -134,10 +152,28 @@ export default function BlackbookOverlay({ initialEntryId, onClose }: { initialE
           to { opacity: 1; transform: translateX(0); }
         }
       `}</style>
-      <div className="ml-auto flex h-full w-full max-w-[1120px] overflow-hidden rounded-xl bg-white shadow-2xl" style={{ animation: "blackbookPanelSlideIn 220ms cubic-bezier(0.16, 1, 0.3, 1)" }}>
-        <aside className="flex w-[320px] shrink-0 flex-col border-r border-gray-200 bg-[#fbfbfa]">
+      <div className={`ml-auto flex h-full w-full overflow-hidden rounded-xl bg-white shadow-2xl ${compact ? "max-w-[1040px]" : "max-w-[1540px]"}`} style={{ animation: "blackbookPanelSlideIn 220ms cubic-bezier(0.16, 1, 0.3, 1)" }}>
+        {!compact && (
+          <aside className="flex w-[210px] shrink-0 flex-col border-r border-gray-200 bg-[#f5f5f3]">
+            <div className="flex h-12 items-center justify-between border-b border-gray-200 px-4">
+              <h2 className="text-sm font-semibold text-gray-900">Blackbook</h2>
+            </div>
+            <div className="flex-1 overflow-auto p-2">
+              <button onClick={() => setCategoryFilterId(null)} className={`mb-1 flex w-full items-center justify-between rounded px-3 py-2 text-left text-xs ${!categoryFilterId ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-500 hover:bg-white"}`}>
+                All records <span>{entries.length}</span>
+              </button>
+              {categories.map((category) => (
+                <button key={category.id} onClick={() => setCategoryFilterId(category.id)} className={`mb-1 flex w-full items-center gap-2 rounded px-3 py-2 text-left text-xs ${categoryFilterId === category.id ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-500 hover:bg-white"}`}>
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: category.color }} />
+                  <span className="truncate">{category.name}</span>
+                </button>
+              ))}
+            </div>
+          </aside>
+        )}
+        {!compact && <aside className="flex w-[320px] shrink-0 flex-col border-r border-gray-200 bg-[#fbfbfa]">
           <div className="flex h-12 items-center justify-between border-b border-gray-200 px-4">
-            <h2 className="text-sm font-semibold text-gray-900">Blackbook</h2>
+            <h2 className="text-sm font-semibold text-gray-900">Results</h2>
             <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded hover:bg-gray-100"><X size={16} /></button>
           </div>
           <div className="border-b border-gray-200 p-3">
@@ -157,8 +193,14 @@ export default function BlackbookOverlay({ initialEntryId, onClose }: { initialE
               </button>
             ))}
           </div>
-        </aside>
+        </aside>}
         <main className="min-w-0 flex-1 overflow-auto">
+          {compact && (
+            <div className="sticky top-0 z-20 flex h-12 items-center justify-between border-b border-gray-200 bg-white px-4">
+              <h2 className="truncate text-sm font-semibold text-gray-900">{selected?.displayName ?? "Blackbook profile"}</h2>
+              <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded hover:bg-gray-100"><X size={16} /></button>
+            </div>
+          )}
           {!selected ? (
             <div className="grid h-full place-items-center text-sm text-gray-400">No blackbook entry selected.</div>
           ) : loading || !detail ? (
@@ -212,7 +254,8 @@ function BlackbookDetail({
   const productionCount = data.productions.length;
 
   return (
-    <div className="p-6">
+    <div className="grid h-full min-h-0 grid-cols-[minmax(360px,440px)_minmax(420px,1fr)] divide-x divide-gray-200 bg-white">
+      <div className="min-h-0 overflow-auto p-6">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <div className="mb-2 flex items-center gap-2">
@@ -289,6 +332,25 @@ function BlackbookDetail({
         </section>
       )}
 
+      {(entry.addresses?.length ?? 0) > 0 && (
+        <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">Saved addresses</h3>
+          <div className="space-y-2">
+            {entry.addresses?.map((address) => (
+              <div key={address.id} className="rounded-lg border border-gray-100 bg-[#fbfbfa] p-3">
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-gray-800">{address.label || address.placeName || addressTypeLabel(address.type)}</p>
+                  {address.isDefaultBilling && <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-medium text-white">billing</span>}
+                </div>
+                <div className="text-xs leading-5 text-gray-500">
+                  {addressLines(address).map((line) => <p key={line}>{line}</p>)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {(entry.dietaryNotes || entry.dietaryFlags.length || entry.allergens.length) && (
         <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4">
           <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-amber-800">Dietaries</h3>
@@ -296,12 +358,25 @@ function BlackbookDetail({
         </section>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {entry.entryType === "COMPANY" ? (
-          <CompanyPeopleManager company={entry} people={entry.people ?? []} onOpenEntry={onOpenEntry} onRefresh={onRefresh} />
-        ) : (
-          <PersonCompanyManager entry={entry} onOpenEntry={onOpenEntry} onRefresh={onRefresh} />
-        )}
+      {entry.entryType === "COMPANY" ? (
+        <CompanyPeopleManager company={entry} people={entry.people ?? []} onOpenEntry={onOpenEntry} onRefresh={onRefresh} />
+      ) : (
+        <PersonCompanyManager entry={entry} onOpenEntry={onOpenEntry} onRefresh={onRefresh} />
+      )}
+      </div>
+
+      <aside className="min-h-0 overflow-auto bg-[#fbfbfa] p-6">
+        <div className="sticky top-0 z-10 -mx-6 -mt-6 mb-5 flex min-h-12 items-center justify-between border-b border-gray-200 bg-[#fbfbfa] px-6">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Activity timeline</h3>
+            <p className="text-[11px] text-gray-400">Emails, options, opportunities and productions linked to this record.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="rounded border border-gray-200 bg-white px-2 py-1.5 text-[11px] text-gray-500">New note</button>
+            <button className="rounded border border-gray-200 bg-white px-2 py-1.5 text-[11px] text-gray-500">Follow up</button>
+          </div>
+        </div>
+        <div className="space-y-5">
         <TimelineSection title="Projects" icon={<Briefcase size={15} />} empty="No linked projects yet.">
           {data.productions.map((item) => (
             <Card key={item.id} title={`${item.production.jobCode ?? ""} ${item.production.title}`.trim()} meta={[item.production.clientName, item.production.brand, item.production.status].filter(Boolean).join(" · ")} />
@@ -329,7 +404,8 @@ function BlackbookDetail({
             </a>
           ))}
         </TimelineSection>
-      </div>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -364,6 +440,19 @@ function MetricCard({ label, value }: { label: string; value: number }) {
       <p className="mt-1 text-xl font-semibold tabular-nums text-gray-900">{value}</p>
     </div>
   );
+}
+
+function addressLines(address: Pick<BlackbookAddress, "addressLine1" | "addressLine2" | "city" | "postcode" | "region" | "country">): string[] {
+  const cityLine = [address.city, address.postcode].filter(Boolean).join(", ");
+  const regionLine = [address.region, countryName(address.country)].filter(Boolean).join(", ");
+  return [address.addressLine1, address.addressLine2, cityLine, regionLine].filter((line): line is string => Boolean(line));
+}
+
+function addressTypeLabel(type: BlackbookAddress["type"]): string {
+  if (type === "WORK") return "Work";
+  if (type === "BILLING") return "Billing";
+  if (type === "PERSONAL") return "Personal";
+  return "Custom";
 }
 
 function InlineField({ label, value, onSave }: { label: string; value: string; onSave: (value: string) => Promise<void> }) {

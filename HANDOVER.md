@@ -1,6 +1,12 @@
 # HANDOVER - 2026-05-22 - Google Places Address Picker for Options / Blackbook
 
 ## Built This Session
+- Follow-up Blackbook overlay pass:
+  - Blackbook detail now uses a two-column layout: profile/details on the left and activity timeline on the right.
+  - Opening Blackbook from Options now uses compact mode, easing in from the right with only profile + timeline columns.
+  - Full Blackbook overlay now has a broader browser layout with a category rail, results column, profile column, and activity column.
+  - Saved reusable Blackbook addresses now show in the profile column.
+  - CRM endpoint now returns saved Blackbook addresses for the profile overlay.
 - Follow-up Blackbook create pass:
   - "Create from row" in the options Blackbook link dropdown now opens a structured create panel.
   - New records default to supplier lifecycle.

@@ -1029,6 +1029,7 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
       {openBlackbookEntryId && (
         <BlackbookOverlay
           initialEntryId={openBlackbookEntryId}
+          compact
           onClose={() => {
             setOpenBlackbookEntryId(null);
             void load();

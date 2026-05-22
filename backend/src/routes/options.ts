@@ -1155,6 +1155,7 @@ router.get("/blackbook/:entryId/crm", async (req: Request, res: Response): Promi
     include: {
       contact: { include: { company: true } },
       categoryConfig: { include: { types: { orderBy: { order: "asc" } } } },
+      addresses: { orderBy: [{ isDefaultBilling: "desc" }, { type: "asc" }, { createdAt: "asc" }] },
       companyEntry: { select: { id: true, displayName: true, email: true, companyName: true } },
       people: { orderBy: { displayName: "asc" }, include: { categoryConfig: true } },
       targetLists: { include: { list: true }, orderBy: { updatedAt: "desc" } },
