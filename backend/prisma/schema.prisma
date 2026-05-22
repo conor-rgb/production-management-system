@@ -628,6 +628,7 @@ model OptionCandidate {
   order            Int                         @default(0)
   dateStatuses     CandidateDateStatusRecord[]
   assignments      OptionSlotAssignment[]
+  photos           OptionCandidatePhoto[]
   createdAt        DateTime                    @default(now())
   updatedAt        DateTime                    @updatedAt
 
@@ -639,6 +640,25 @@ model OptionCandidate {
   @@index([groupId, order])
   @@index([blackbookEntryId])
   @@map("pms_option_candidates")
+}
+
+model OptionCandidatePhoto {
+  id             String   @id @default(uuid())
+  candidateId    String
+  filename       String
+  storedPath     String
+  sizeBytes      Int
+  width          Int?
+  height         Int?
+  order          Int      @default(0)
+  caption        String?
+  exportSelected Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  candidate OptionCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId, order])
+  @@map("pms_option_candidate_photos")
 }
 
 model CandidateDateStatusRecord {

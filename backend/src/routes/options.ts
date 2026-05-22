@@ -4,6 +4,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Router, Request, Response } from "express";
 import multer from "multer";
+import sharp from "sharp";
 import {
   BlackbookCategory,
   BlackbookEntryType,
@@ -26,6 +27,8 @@ import { renderOptionsPdf } from "../services/optionsPdf";
 
 const router = Router();
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const PDF_IMAGE_MAX_EDGE = 1800;
+const PDF_IMAGE_QUALITY = 82;
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -354,6 +357,10 @@ function photoUrl(photoId: string): string {
   return `/api/options/photos/${photoId}/serve`;
 }
 
+function candidatePhotoUrl(photoId: string): string {
+  return `/api/options/candidate-photos/${photoId}/serve`;
+}
+
 async function boardResponse(boardId: string) {
   const board = await prisma.optionsBoard.findUnique({
     where: { id: boardId },
@@ -458,7 +465,7 @@ async function matrixResponse(productionId: string) {
         },
         candidates: {
           orderBy: { order: "asc" },
-          include: { dateStatuses: true, assignments: true, blackbookEntry: true },
+          include: { dateStatuses: true, assignments: true, blackbookEntry: true, photos: { orderBy: { order: "asc" } } },
         },
       },
     }),
@@ -467,7 +474,13 @@ async function matrixResponse(productionId: string) {
   return {
     production,
     dates,
-    groups,
+    groups: groups.map((group) => ({
+      ...group,
+      candidates: group.candidates.map((candidate) => ({
+        ...candidate,
+        photos: candidate.photos.map((photo) => ({ ...photo, url: candidatePhotoUrl(photo.id) })),
+      })),
+    })),
   };
 }
 
@@ -490,6 +503,29 @@ function slotLabel(name: string, slotNumber: number, quantity: number): string {
 
 async function deletePhotosFromDisk(photos: Array<{ storedPath: string }>): Promise<void> {
   await Promise.all(photos.map((photo) => fs.unlink(photo.storedPath).catch(() => undefined)));
+}
+
+async function candidatePhotoDirectory(candidateId: string): Promise<string> {
+  const candidate = await prisma.optionCandidate.findUnique({
+    where: { id: candidateId },
+    include: { production: { select: { id: true } }, group: { select: { name: true } } },
+  });
+  if (!candidate) throw new Error("Candidate not found");
+  const productionRoot = await ensureProductionFolders(candidate.productionId);
+  const dir = path.join(productionRoot, "Options", cleanPathPart(candidate.group.name), candidate.id);
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+async function convertOptionImage(file: Express.Multer.File): Promise<{ buffer: Buffer; width?: number; height?: number }> {
+  const image = sharp(file.buffer, { failOn: "none" }).rotate().resize({
+    width: PDF_IMAGE_MAX_EDGE,
+    height: PDF_IMAGE_MAX_EDGE,
+    fit: "inside",
+    withoutEnlargement: true,
+  });
+  const output = await image.jpeg({ quality: PDF_IMAGE_QUALITY, mozjpeg: true }).toBuffer({ resolveWithObject: true });
+  return { buffer: output.data, width: output.info.width, height: output.info.height };
 }
 
 function handlePhotoUpload(req: Request, res: Response, next: (err?: unknown) => void): void {
@@ -1238,13 +1274,115 @@ router.post("/matrix/candidates/:candidateId/link-blackbook", async (req: Reques
 });
 
 router.delete("/matrix/candidates/:candidateId", async (req: Request, res: Response): Promise<void> => {
+  const candidate = await prisma.optionCandidate.findUnique({ where: { id: req.params.candidateId }, select: { id: true, productionId: true, photos: { select: { storedPath: true } } } });
+  if (!candidate) {
+    res.status(404).json({ error: "Candidate not found" });
+    return;
+  }
+  await deletePhotosFromDisk(candidate.photos);
+  await prisma.optionCandidate.delete({ where: { id: candidate.id } });
+  res.json(await matrixResponse(candidate.productionId));
+});
+
+router.post("/matrix/candidates/:candidateId/photos", handlePhotoUpload, async (req: Request, res: Response): Promise<void> => {
+  const file = req.file;
+  if (!file) {
+    res.status(400).json({ error: "photo is required" });
+    return;
+  }
+  if (!IMAGE_MIME_TYPES.has(file.mimetype)) {
+    res.status(400).json({ error: "Only JPG, PNG, and WEBP photos are supported" });
+    return;
+  }
+  const candidate = await prisma.optionCandidate.findUnique({
+    where: { id: req.params.candidateId },
+    include: { photos: true },
+  });
+  if (!candidate) {
+    res.status(404).json({ error: "Candidate not found" });
+    return;
+  }
+  if (candidate.photos.length >= 10) {
+    res.status(400).json({ error: "Maximum 10 photos per option" });
+    return;
+  }
+
+  const converted = await convertOptionImage(file);
+  const dir = await candidatePhotoDirectory(candidate.id);
+  const storedFilename = `${randomUUID()}.jpg`;
+  const storedPath = path.join(dir, storedFilename);
+  await fs.writeFile(storedPath, converted.buffer);
+  await prisma.optionCandidatePhoto.create({
+    data: {
+      candidateId: candidate.id,
+      filename: file.originalname.replace(/\.[^.]+$/, ".jpg"),
+      storedPath,
+      sizeBytes: converted.buffer.length,
+      width: converted.width,
+      height: converted.height,
+      order: candidate.photos.length,
+      exportSelected: true,
+    },
+  });
+  res.status(201).json(await matrixResponse(candidate.productionId));
+});
+
+router.patch("/matrix/candidates/:candidateId/photos/reorder", async (req: Request, res: Response): Promise<void> => {
+  const { orderedIds } = req.body as { orderedIds?: string[] };
   const candidate = await prisma.optionCandidate.findUnique({ where: { id: req.params.candidateId }, select: { id: true, productionId: true } });
   if (!candidate) {
     res.status(404).json({ error: "Candidate not found" });
     return;
   }
-  await prisma.optionCandidate.delete({ where: { id: candidate.id } });
+  if (!orderedIds?.length) {
+    res.status(400).json({ error: "orderedIds is required" });
+    return;
+  }
+  await prisma.$transaction(orderedIds.map((id, order) => prisma.optionCandidatePhoto.update({ where: { id }, data: { order } })));
   res.json(await matrixResponse(candidate.productionId));
+});
+
+router.patch("/candidate-photos/:photoId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { caption?: string | null; exportSelected?: boolean };
+  const photo = await prisma.optionCandidatePhoto.findUnique({ where: { id: req.params.photoId }, include: { candidate: true } });
+  if (!photo) {
+    res.status(404).json({ error: "Photo not found" });
+    return;
+  }
+  await prisma.optionCandidatePhoto.update({
+    where: { id: photo.id },
+    data: {
+      caption: body.caption === undefined ? undefined : optionalText(body.caption),
+      exportSelected: body.exportSelected,
+    },
+  });
+  res.json(await matrixResponse(photo.candidate.productionId));
+});
+
+router.delete("/candidate-photos/:photoId", async (req: Request, res: Response): Promise<void> => {
+  const photo = await prisma.optionCandidatePhoto.findUnique({ where: { id: req.params.photoId }, include: { candidate: true } });
+  if (!photo) {
+    res.status(404).json({ error: "Photo not found" });
+    return;
+  }
+  await fs.unlink(photo.storedPath).catch(() => undefined);
+  await prisma.optionCandidatePhoto.delete({ where: { id: photo.id } });
+  res.json(await matrixResponse(photo.candidate.productionId));
+});
+
+router.get("/candidate-photos/:photoId/serve", async (req: Request, res: Response): Promise<void> => {
+  const photo = await prisma.optionCandidatePhoto.findUnique({ where: { id: req.params.photoId } });
+  if (!photo) {
+    res.status(404).json({ error: "Photo not found" });
+    return;
+  }
+  if (!fsSync.existsSync(photo.storedPath)) {
+    res.status(404).json({ error: "Photo missing on disk" });
+    return;
+  }
+  res.setHeader("Content-Type", "image/jpeg");
+  res.setHeader("Content-Disposition", `inline; filename="${photo.filename.replace(/"/g, "'")}"`);
+  fsSync.createReadStream(photo.storedPath).pipe(res);
 });
 
 router.patch("/matrix/candidates/:candidateId/dates/:dateId", async (req: Request, res: Response): Promise<void> => {

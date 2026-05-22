@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ArrowLeft, BookOpen, Link2, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Image as ImageIcon, Link2, Plus, Trash2, Upload, X } from "lucide-react";
 import { api } from "../../lib/api";
 import BlackbookOverlay from "../blackbook/BlackbookOverlay";
 
@@ -49,6 +49,20 @@ interface CandidateDateStatus {
   notes: string | null;
 }
 
+interface OptionCandidatePhoto {
+  id: string;
+  candidateId: string;
+  filename: string;
+  sizeBytes: number;
+  width: number | null;
+  height: number | null;
+  order: number;
+  caption: string | null;
+  exportSelected: boolean;
+  createdAt: string;
+  url: string;
+}
+
 interface OptionRequirement {
   id: string;
   productionId: string;
@@ -84,6 +98,7 @@ interface OptionCandidate {
   order: number;
   dateStatuses: CandidateDateStatus[];
   assignments: OptionSlotAssignment[];
+  photos: OptionCandidatePhoto[];
   blackbookEntry: BlackbookEntry | null;
 }
 
@@ -619,6 +634,29 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
     setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/candidates/${candidateId}/dates/${dateId}`, { status }));
   }
 
+  async function uploadCandidatePhoto(candidateId: string, file: File) {
+    const formData = new FormData();
+    formData.append("photo", file);
+    const response = await fetch(`/api/options/matrix/candidates/${candidateId}/photos`, {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error ?? "Photo upload failed");
+    }
+    setMatrix(await response.json() as MatrixResponse);
+  }
+
+  async function updateCandidatePhoto(photoId: string, patch: Partial<OptionCandidatePhoto>) {
+    setMatrix(await api.patch<MatrixResponse>(`/api/options/candidate-photos/${photoId}`, patch));
+  }
+
+  async function deleteCandidatePhoto(photoId: string) {
+    setMatrix(await api.delete(`/api/options/candidate-photos/${photoId}`).then(() => api.get<MatrixResponse>(`/api/options/production/${productionId}/matrix`)));
+  }
+
   if (loading || !matrix) return <div className="grid h-full place-items-center text-sm text-gray-400">Loading options matrix...</div>;
 
   const selectedGroup = matrix.groups.find((group) => group.id === selectedGroupId) ?? null;
@@ -648,6 +686,9 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
           onLinkBlackbook={linkBlackbook}
           onOpenBlackbook={setOpenBlackbookEntryId}
           onUpdateCandidateDate={updateCandidateDate}
+          onUploadPhoto={uploadCandidatePhoto}
+          onUpdatePhoto={updateCandidatePhoto}
+          onDeletePhoto={deleteCandidatePhoto}
           onDeleteCandidate={deleteCandidate}
           onAddCandidate={() => addCandidate(selectedGroup.id)}
         />
@@ -780,27 +821,33 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   );
 }
 
-function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onDeleteCandidate, onAddCandidate }: {
+function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate }: {
   group: OptionGroup;
   dates: MatrixDate[];
   onUpdateCandidate: (candidateId: string, patch: Partial<OptionCandidate>) => Promise<void>;
   onLinkBlackbook: (candidateId: string, payload: { entryId?: string | null; createFromCandidate?: boolean }) => Promise<void>;
   onOpenBlackbook: (entryId: string) => void;
   onUpdateCandidateDate: (candidateId: string, dateId: string, status: HoldStatus | null) => Promise<void>;
+  onUploadPhoto: (candidateId: string, file: File) => Promise<void>;
+  onUpdatePhoto: (photoId: string, patch: Partial<OptionCandidatePhoto>) => Promise<void>;
+  onDeletePhoto: (photoId: string) => Promise<void>;
   onDeleteCandidate: (candidateId: string) => Promise<void>;
   onAddCandidate: () => Promise<void>;
 }) {
-  const gridColumns = `300px 180px 95px 120px ${dates.map(() => "126px").join(" ")} 44px`;
+  const [photoCandidate, setPhotoCandidate] = useState<OptionCandidate | null>(null);
+  const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
+  const gridColumns = `72px 300px 180px 95px 120px ${dates.map(() => "126px").join(" ")} 44px`;
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <div className="min-w-max">
         <div className="sticky top-0 z-20 grid min-h-9 items-center gap-x-3 border-b border-gray-200 bg-[#f8f8f6] px-3 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
-          <div>Option</div><div>Project note</div><div className="text-right">Project rate</div><div>State</div>
+          <div>Image</div><div>Option</div><div>Project note</div><div className="text-right">Project rate</div><div>State</div>
           {dates.map((date) => <div key={date.id} className="text-center">{dateLabel(date)}</div>)}
           <div />
         </div>
         {group.candidates.map((candidate) => (
           <div key={candidate.id} className={`grid min-h-[64px] items-center gap-x-3 border-b border-gray-100 px-3 py-2 text-xs hover:bg-[#f8f8f6] ${candidate.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
+            <PhotoThumb candidate={candidate} onOpen={() => setPhotoCandidate(candidate)} />
             <div className="flex min-w-0 items-center gap-2">
               <div className="min-w-0 flex-1">
                 <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="font-semibold text-gray-900" placeholder="Candidate" />
@@ -834,6 +881,100 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
         <button onClick={onAddCandidate} className="m-3 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-500 hover:border-gray-500 hover:text-gray-900">
           <Plus size={14} className="mr-1 inline" /> Add candidate
         </button>
+      </div>
+      {activePhotoCandidate && (
+        <PhotoManager
+          candidate={activePhotoCandidate}
+          onClose={() => setPhotoCandidate(null)}
+          onUpload={onUploadPhoto}
+          onUpdate={onUpdatePhoto}
+          onDelete={onDeletePhoto}
+        />
+      )}
+    </div>
+  );
+}
+
+function PhotoThumb({ candidate, onOpen }: { candidate: OptionCandidate; onOpen: () => void }) {
+  const cover = candidate.photos[0];
+  return (
+    <button onClick={onOpen} className="relative grid h-12 w-12 place-items-center overflow-hidden rounded-md border border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-400">
+      {cover ? <img src={cover.url} alt="" className="h-full w-full object-cover" /> : <ImageIcon size={17} />}
+      {candidate.photos.length > 0 && <span className="absolute bottom-0 right-0 rounded-tl bg-black/65 px-1 text-[9px] text-white">{candidate.photos.length}</span>}
+    </button>
+  );
+}
+
+function PhotoManager({ candidate, onClose, onUpload, onUpdate, onDelete }: {
+  candidate: OptionCandidate;
+  onClose: () => void;
+  onUpload: (candidateId: string, file: File) => Promise<void>;
+  onUpdate: (photoId: string, patch: Partial<OptionCandidatePhoto>) => Promise<void>;
+  onDelete: (photoId: string) => Promise<void>;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const selectedCount = candidate.photos.filter((photo) => photo.exportSelected).length;
+
+  async function handleFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setUploading(true);
+    try {
+      for (const file of Array.from(files)) {
+        await onUpload(candidate.id, file);
+      }
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[940] grid place-items-center bg-black/25 p-4">
+      <div className="w-full max-w-[720px] rounded-xl bg-white shadow-2xl">
+        <div className="flex min-h-14 items-center gap-3 border-b border-gray-100 px-4">
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-sm font-semibold text-gray-900">Images — {candidate.name}</h3>
+            <p className="text-[11px] text-gray-400">{selectedCount} selected for future PDF export · uploads are converted for clear digital decks</p>
+          </div>
+          <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded hover:bg-gray-100"><X size={16} /></button>
+        </div>
+        <div className="p-4">
+          <div className="grid grid-cols-3 gap-3">
+            {candidate.photos.map((photo, index) => (
+              <div key={photo.id} className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                <div className="relative aspect-[4/3] bg-gray-100">
+                  <img src={photo.url} alt={photo.caption ?? photo.filename} className="h-full w-full object-cover" />
+                  {index === 0 && <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-0.5 text-[10px] font-medium text-white">Cover</span>}
+                </div>
+                <div className="space-y-2 p-2">
+                  <label className="flex min-h-7 items-center gap-2 text-[11px] text-gray-600">
+                    <input type="checkbox" checked={photo.exportSelected} onChange={(event) => onUpdate(photo.id, { exportSelected: event.target.checked }).catch(console.error)} />
+                    Export to PDF
+                  </label>
+                  <input
+                    key={`${photo.id}-${photo.caption ?? ""}`}
+                    defaultValue={photo.caption ?? ""}
+                    onBlur={(event) => onUpdate(photo.id, { caption: event.target.value }).catch(console.error)}
+                    placeholder="Caption..."
+                    className="h-8 w-full rounded border border-gray-200 px-2 text-[11px] outline-none focus:border-gray-500"
+                  />
+                  <div className="flex items-center justify-between text-[10px] text-gray-400">
+                    <span>{photo.width && photo.height ? `${photo.width}×${photo.height}` : "Optimised JPG"}</span>
+                    <button onClick={() => onDelete(photo.id).catch(console.error)} className="text-red-500 hover:underline">Delete</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {candidate.photos.length < 10 && (
+              <button onClick={() => inputRef.current?.click()} disabled={uploading} className="grid aspect-[4/3] place-items-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-center text-xs text-gray-500 hover:border-gray-500 hover:text-gray-900 disabled:opacity-50">
+                <span><Upload size={20} className="mx-auto mb-2" />{uploading ? "Uploading..." : "Upload images"}</span>
+              </button>
+            )}
+          </div>
+          {candidate.photos.length === 0 && <p className="mt-4 text-center text-xs text-gray-400">Add images here now; the selected ones will be available when we build the PDF exporter.</p>}
+          <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(event) => handleFiles(event.target.files).catch(console.error)} />
+        </div>
       </div>
     </div>
   );
