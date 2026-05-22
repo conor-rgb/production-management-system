@@ -24,11 +24,12 @@ import {
 import prisma from "../prisma";
 import { ensureProductionFolders, fileExtension, autoFileDocument } from "../services/fileStorage";
 import { renderOptionsPdf } from "../services/optionsPdf";
+import { optionsDeckFilename, renderOptionsDeckPdf } from "../services/optionsDeckPdf";
 
 const router = Router();
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const PDF_IMAGE_MAX_EDGE = 1800;
-const PDF_IMAGE_QUALITY = 82;
+const PDF_IMAGE_MAX_EDGE = 2400;
+const PDF_IMAGE_QUALITY = 84;
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -407,6 +408,26 @@ async function getBoardWithPdfData(boardId: string) {
           options: {
             orderBy: { order: "asc" },
             include: { photos: { orderBy: { order: "asc" } } },
+          },
+        },
+      },
+    },
+  });
+}
+
+async function getOptionGroupWithDeckData(groupId: string) {
+  return prisma.optionGroup.findUnique({
+    where: { id: groupId },
+    include: {
+      production: true,
+      candidates: {
+        orderBy: { order: "asc" },
+        include: {
+          blackbookEntry: true,
+          photos: { orderBy: { order: "asc" } },
+          dateStatuses: {
+            include: { date: true },
+            orderBy: { date: { date: "asc" } },
           },
         },
       },
@@ -1383,6 +1404,24 @@ router.get("/candidate-photos/:photoId/serve", async (req: Request, res: Respons
   res.setHeader("Content-Type", "image/jpeg");
   res.setHeader("Content-Disposition", `inline; filename="${photo.filename.replace(/"/g, "'")}"`);
   fsSync.createReadStream(photo.storedPath).pipe(res);
+});
+
+router.post("/matrix/groups/:groupId/export-pdf", async (req: Request, res: Response): Promise<void> => {
+  const group = await getOptionGroupWithDeckData(req.params.groupId);
+  if (!group) {
+    res.status(404).json({ error: "Option group not found" });
+    return;
+  }
+
+  const pdfBuffer = await renderOptionsDeckPdf(group);
+  const filename = optionsDeckFilename(group);
+  await autoFileDocument(group.productionId, "Estimates", pdfBuffer, filename, "application/pdf", {
+    notes: `Options deck export: ${group.name}`,
+  });
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(pdfBuffer);
 });
 
 router.patch("/matrix/candidates/:candidateId/dates/:dateId", async (req: Request, res: Response): Promise<void> => {

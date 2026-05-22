@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ArrowLeft, BookOpen, Image as ImageIcon, Link2, Plus, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Download, Image as ImageIcon, Link2, Plus, Trash2, Upload, X } from "lucide-react";
 import { api } from "../../lib/api";
 import BlackbookOverlay from "../blackbook/BlackbookOverlay";
 
@@ -576,6 +576,7 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
   const [showRoleForm, setShowRoleForm] = useState(false);
   const [showDateForm, setShowDateForm] = useState(false);
   const [openBlackbookEntryId, setOpenBlackbookEntryId] = useState<string | null>(null);
+  const [exportingGroupId, setExportingGroupId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -657,6 +658,34 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
     setMatrix(await api.delete(`/api/options/candidate-photos/${photoId}`).then(() => api.get<MatrixResponse>(`/api/options/production/${productionId}/matrix`)));
   }
 
+  async function exportGroupPdf(groupId: string) {
+    setExportingGroupId(groupId);
+    try {
+      const response = await fetch(`/api/options/matrix/groups/${groupId}/export-pdf`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({} as { error?: string }));
+        throw new Error(body.error ?? "PDF export failed");
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename = match?.[1] ?? "Options.pdf";
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportingGroupId(null);
+    }
+  }
+
   if (loading || !matrix) return <div className="grid h-full place-items-center text-sm text-gray-400">Loading options matrix...</div>;
 
   const selectedGroup = matrix.groups.find((group) => group.id === selectedGroupId) ?? null;
@@ -674,6 +703,15 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
         <div className="flex shrink-0 items-center gap-2">
           {!selectedGroup && <button onClick={() => setShowDateForm(true)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">+ Date</button>}
           {!selectedGroup && <button onClick={() => setShowRoleForm(true)} className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white">+ Role / service</button>}
+          {selectedGroup && (
+            <button
+              onClick={() => exportGroupPdf(selectedGroup.id).catch((err: Error) => window.alert(err.message))}
+              disabled={exportingGroupId === selectedGroup.id}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60"
+            >
+              <Download size={13} /> {exportingGroupId === selectedGroup.id ? "Generating..." : "Export PDF"}
+            </button>
+          )}
           {selectedGroup && <button onClick={() => addCandidate(selectedGroup.id)} className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white">+ Candidate</button>}
         </div>
       </div>
