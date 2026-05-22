@@ -14,6 +14,8 @@ type ProductionDateStatus = "PROPOSED" | "OPTIONED" | "CONFIRMED" | "RELEASED" |
 type BlackbookEntryType = "PERSON" | "COMPANY" | "LOCATION" | "TALENT" | "SERVICE";
 type BlackbookCategory = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" | "TRANSPORT" | "POST" | "OTHER";
 
+const IMAGE_DROP_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
 interface MatrixDate {
   id: string;
   dateType: ProductionDateType;
@@ -884,32 +886,20 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
           <div />
         </div>
         {group.candidates.map((candidate) => (
-          <div key={candidate.id} className={`grid min-h-[64px] items-center gap-x-3 border-b border-gray-100 px-3 py-2 text-xs hover:bg-[#f8f8f6] ${candidate.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
-            <PhotoThumb candidate={candidate} onOpen={() => setPhotoCandidate(candidate)} />
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="min-w-0 flex-1">
-                <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="font-semibold text-gray-900" placeholder="Candidate" />
-              </div>
-              <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
-            </div>
-            <EditableText value={candidate.subtitle ?? ""} onSave={(subtitle) => onUpdateCandidate(candidate.id, { subtitle })} className="text-gray-500" placeholder="Subtitle" />
-            <EditableText value={candidate.rate?.toString() ?? ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className="text-right tabular-nums text-gray-700" placeholder="0" />
-            <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />
-            {dates.map((date) => {
-              const status = statusFor(candidate, date.id)?.status ?? null;
-              return (
-                <PillDropdown
-                  key={date.id}
-                  value={status}
-                  options={HOLD_STATUSES}
-                  onChange={(nextStatus) => onUpdateCandidateDate(candidate.id, date.id, nextStatus)}
-                  classNameForValue={holdClass}
-                  placeholder="blank"
-                />
-              );
-            })}
-            <button onClick={() => onDeleteCandidate(candidate.id)} className="grid h-8 w-8 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
-          </div>
+          <CandidateRow
+            key={candidate.id}
+            candidate={candidate}
+            group={group}
+            dates={dates}
+            gridColumns={gridColumns}
+            onOpenPhotos={() => setPhotoCandidate(candidate)}
+            onUpdateCandidate={onUpdateCandidate}
+            onLinkBlackbook={onLinkBlackbook}
+            onOpenBlackbook={onOpenBlackbook}
+            onUpdateCandidateDate={onUpdateCandidateDate}
+            onUploadPhoto={onUploadPhoto}
+            onDeleteCandidate={onDeleteCandidate}
+          />
         ))}
         {group.candidates.length === 0 && (
           <div className="grid h-28 place-items-center text-center text-sm text-gray-500">
@@ -929,6 +919,99 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
           onDelete={onDeletePhoto}
         />
       )}
+    </div>
+  );
+}
+
+function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onDeleteCandidate }: {
+  candidate: OptionCandidate;
+  group: OptionGroup;
+  dates: MatrixDate[];
+  gridColumns: string;
+  onOpenPhotos: () => void;
+  onUpdateCandidate: (candidateId: string, patch: Partial<OptionCandidate>) => Promise<void>;
+  onLinkBlackbook: (candidateId: string, payload: { entryId?: string | null; createFromCandidate?: boolean }) => Promise<void>;
+  onOpenBlackbook: (entryId: string) => void;
+  onUpdateCandidateDate: (candidateId: string, dateId: string, status: HoldStatus | null) => Promise<void>;
+  onUploadPhoto: (candidateId: string, file: File) => Promise<void>;
+  onDeleteCandidate: (candidateId: string) => Promise<void>;
+}) {
+  const [dragActive, setDragActive] = useState(false);
+  const [dropUploading, setDropUploading] = useState(false);
+
+  function imageFiles(items: FileList): File[] {
+    return Array.from(items).filter((file) => IMAGE_DROP_TYPES.has(file.type));
+  }
+
+  async function uploadDropped(files: File[]) {
+    if (files.length === 0) return;
+    setDropUploading(true);
+    try {
+      for (const file of files) {
+        await onUploadPhoto(candidate.id, file);
+      }
+    } finally {
+      setDropUploading(false);
+      setDragActive(false);
+    }
+  }
+
+  return (
+    <div
+      onDragEnter={(event) => {
+        if (event.dataTransfer.types.includes("Files")) {
+          event.preventDefault();
+          setDragActive(true);
+        }
+      }}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes("Files")) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+          setDragActive(true);
+        }
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragActive(false);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        void uploadDropped(imageFiles(event.dataTransfer.files)).catch((err: Error) => window.alert(err.message));
+      }}
+      className={`relative grid min-h-[64px] items-center gap-x-3 border-b px-3 py-2 text-xs transition ${
+        dragActive ? "border-gray-400 bg-blue-50 ring-1 ring-inset ring-blue-300" : "border-gray-100 hover:bg-[#f8f8f6]"
+      } ${candidate.activeState === "RELEASED" ? "opacity-45" : ""}`}
+      style={{ gridTemplateColumns: gridColumns }}
+    >
+      {dragActive && (
+        <div className="pointer-events-none absolute inset-1 z-10 grid place-items-center rounded-md border border-dashed border-blue-300 bg-blue-50/80 text-[11px] font-medium text-blue-700">
+          Drop image{dropUploading ? " - uploading..." : "s here to add to this option"}
+        </div>
+      )}
+      <PhotoThumb candidate={candidate} onOpen={onOpenPhotos} />
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="font-semibold text-gray-900" placeholder="Candidate" />
+        </div>
+        <BlackbookLinkControl group={group} candidate={candidate} onLink={(payload) => onLinkBlackbook(candidate.id, payload)} onOpenBlackbook={onOpenBlackbook} />
+      </div>
+      <EditableText value={candidate.subtitle ?? ""} onSave={(subtitle) => onUpdateCandidate(candidate.id, { subtitle })} className="text-gray-500" placeholder="Subtitle" />
+      <EditableText value={candidate.rate?.toString() ?? ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className="text-right tabular-nums text-gray-700" placeholder="0" />
+      <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />
+      {dates.map((date) => {
+        const status = statusFor(candidate, date.id)?.status ?? null;
+        return (
+          <PillDropdown
+            key={date.id}
+            value={status}
+            options={HOLD_STATUSES}
+            onChange={(nextStatus) => onUpdateCandidateDate(candidate.id, date.id, nextStatus)}
+            classNameForValue={holdClass}
+            placeholder="blank"
+          />
+        );
+      })}
+      <button onClick={() => onDeleteCandidate(candidate.id)} className="grid h-8 w-8 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
     </div>
   );
 }
