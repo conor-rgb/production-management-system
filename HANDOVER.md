@@ -1,74 +1,93 @@
-# HANDOVER — 2026-05-22 — Blackbook CRM Integration Pass
+# HANDOVER - 2026-05-22 - Unified Blackbook CRM Pass
 
-## Built this session
-- Expanded the Blackbook foundation into the start of the CRM layer.
-- Added configurable Blackbook categories and sub-types:
-  - categories can be edited in Settings
-  - each category has a broad type, color, core matrix fields, and many sub-types
-  - Blackbook entries can multi-select type IDs
-- Added seeded default Blackbook category/type structure on first Settings load:
-  - Crew: photographer, fashion photographer, still life photographer, ecom photographer, assistants, DOP, producer, PM, runner, etc.
-  - Locations: studio, location house, hotel, restaurant, event space, gallery, outdoor, warehouse, office
-  - Florists: floral design, installation, table flowers, set dressing, plants
-  - Catering: breakfast, lunch, craft, coffee, private chef, event catering
-  - Art Department: set designer, prop stylist, set build, scenic painter, prop house
-  - Styling & HMU: stylist, styling assistant, hair, makeup, manicurist, tailor
-  - Talent: model, actor, real person, child talent, hand model, featured extra
-  - Transport: driver, runner driver, van, car service, courier, truck
-  - AV & Technical: AV supplier, sound, lighting, projection, streaming, power
-  - Post Production: retoucher, editor, colourist, VFX, sound mix, grade
-- Added a Blackbook overlay from the Contacts page.
-  - It opens as a right-side Daylite-style overlay.
-  - Left side is searchable Blackbook list.
-  - Detail pane shows category/type tags, dietaries, linked projects, opportunities, option history, and email messages.
-- Added singular email-message matching for Blackbook entries by email address.
-  - Overlay lists individual messages to/from/cc/bcc that address.
-  - Message links go to `/email?thread=THREAD_ID&message=MESSAGE_ID`; the email page still needs the specific expanded-message behavior.
-- Email People panel backend now includes matching Blackbook entry data for each participant.
-- Added endpoint to create a Blackbook entry from an email thread participant.
+## Built This Session
+- Turned the Contacts area into a Blackbook-first CRM workspace.
+- Added relationship lifecycle tracking so every person/company/supplier can be classified as:
+  - Target
+  - In touch
+  - Client
+  - Past client
+  - Supplier
+  - Preferred supplier
+  - Do not use
+  - Archived
+- Added target lists for outreach and prospecting.
+  - Lists can contain Blackbook entries.
+  - Each list entry has an outreach status, notes, and next follow-up date.
+- Added company/person linking at the Blackbook data model level.
+  - People can belong to a company Blackbook entry.
+  - Company records can aggregate email activity from their attached people.
+- Expanded the Blackbook overlay so a record now behaves more like the Daylite-style CRM view:
+  - lifecycle selector
+  - company context
+  - target-list membership
+  - linked people on company records
+  - options history
+  - projects/opportunities
+  - individual email activity by address
+- Extended email-to-Blackbook creation so entries created from thread participants can carry a lifecycle status.
 
 ## Schema
-- Added fields to `BlackbookEntry`:
-  - `categoryConfigId`
-  - `typeIds String[]`
-  - `contactId`
+- Added enums:
+  - `BlackbookLifecycleStatus`
+  - `BlackbookOutreachStatus`
 - Added models:
-  - `BlackbookConfigCategory`
-  - `BlackbookConfigType`
-- Added relations:
-  - `Contact.blackbookEntries`
-  - `BlackbookEntry.contact`
-  - `BlackbookEntry.categoryConfig`
-  - `BlackbookConfigCategory.types`
-  - `BlackbookConfigCategory.entries`
+  - `BlackbookTargetList`
+  - `BlackbookTargetListEntry`
+- Added to `BlackbookEntry`:
+  - `lifecycleStatus`
+  - `companyEntryId`
+  - self-relation for company -> people
+  - target-list relation
 - Migration deployed:
-  - `backend/prisma/migrations/20260522162000_blackbook_crm_config/migration.sql`
+  - `backend/prisma/migrations/20260522174000_blackbook_unified_crm/migration.sql`
 - Prisma client regenerated.
 
 ## Backend
-- Extended `/api/settings`:
-  - `GET /api/settings/blackbook/categories`
-  - `POST /api/settings/blackbook/categories`
-  - `PATCH /api/settings/blackbook/categories/:id`
-  - `POST /api/settings/blackbook/categories/:id/types`
-  - `PATCH /api/settings/blackbook/types/:id`
-  - `DELETE /api/settings/blackbook/types/:id`
-- Extended `/api/options`:
-  - `GET /api/options/blackbook/:entryId/crm`
-  - blackbook create/update now accepts category config, type IDs, and contact link fields.
-- Extended `/api/email`:
-  - People panel response includes `blackbookEntry` matches.
-  - `POST /api/email/threads/:threadId/people/create-blackbook` creates Blackbook entries from message participants.
+- Extended `/api/options/blackbook` with filters for:
+  - search
+  - category
+  - entry type
+  - lifecycle status
+  - category config
+  - company
+  - target list
+- Added target list endpoints:
+  - `GET /api/options/blackbook/lists`
+  - `POST /api/options/blackbook/lists`
+  - `POST /api/options/blackbook/lists/:listId/entries`
+  - `PATCH /api/options/blackbook/list-entries/:itemId`
+- Updated `/api/options/blackbook/:entryId/crm`:
+  - includes company entry
+  - includes people for company records
+  - includes target-list memberships
+  - company records aggregate email messages from all attached people with email addresses
+- Updated `/api/email/threads/:threadId/people/create-blackbook`:
+  - accepts `lifecycleStatus`
+  - defaults to `IN_TOUCH`
 
 ## Frontend
-- Added `frontend/src/components/blackbook/BlackbookOverlay.tsx`.
-- Contacts page now has a `Blackbook` button that opens the overlay.
-- Settings page now has a `Blackbook categories` section:
-  - add categories
-  - edit category name, broad type, color
-  - edit comma-separated core option matrix fields
-  - add/edit/delete sub-types
-- The Options candidate sheet from the previous pass still links candidates to Blackbook entries and can edit candidate-relevant details.
+- Rebuilt `Contacts` into a unified Blackbook CRM page.
+- Sidebar views:
+  - All Blackbook
+  - Target lists
+  - In touch
+  - Clients
+  - Supplier contacts
+  - Companies
+  - individual target lists
+- Main table shows relationship, category/type, contact details, company, and last updated date.
+- Add-record flow adapts to the current view:
+  - Target view creates target entries
+  - In touch creates in-touch entries
+  - Clients creates client entries
+  - Companies creates company entries
+- Blackbook overlay updates:
+  - lifecycle status is editable
+  - company context is shown
+  - company records show linked people
+  - target-list membership is visible
+  - activity feed still links email messages to `/email?thread=...&message=...`
 
 ## Verification
 - Prisma migration deployed successfully.
@@ -77,24 +96,29 @@
 - Frontend build passed.
 - Frontend copied to `/var/www/agent`.
 - PM2 process `0` reloaded.
-- Health check passed after reload.
+- Health check passed after reload:
+  - `{"status":"ok","time":"2026-05-22T14:01:12.101Z"}`
 
-## Known gaps / technical debt
-- The Blackbook overlay is a first operational CRM view, not final design polish.
-- Email URL supports `message=` links from the overlay, but the Email page does not yet auto-expand that specific message and minimise the rest.
-- The email People panel backend exposes Blackbook matches, but the frontend People panel does not yet show the Blackbook action/buttons.
-- Existing Contacts are not bulk-migrated into Blackbook yet.
-- Existing Blackbook entries are not auto-classified into the new configurable categories.
-- Settings category/type edits save immediately; this is fast but a bit blunt for long text edits.
-- No standalone Blackbook sidebar nav item yet; current entry point is Contacts -> Blackbook.
-- No lightweight PDF/template designer yet. That should wait until media/candidate data is attached properly.
+## Known Gaps / Technical Debt
+- Company/person linking exists in schema/API and displays in the overlay, but there is not yet a polished attach/detach UI for assigning people to companies.
+- Target lists exist and can be filtered in the CRM page, but the UI still needs list creation and per-entry outreach status editing controls.
+- Supplier contacts are currently a broad Blackbook view; the next pass should expose category/type filters directly so Crew, Location, Florist, Caterer, AV, Transport, etc. can be segmented cleanly.
+- Existing Contacts have not been bulk migrated into Blackbook yet.
+- The email overlay links to `?message=...`, but Email still needs the exact target-message expansion/minimise behaviour.
+- Company comms aggregation is based on known email addresses. It will improve once company/person linking is filled out.
+- No Airtable-style template designer or client PDF options designer yet.
 
-## Exact next step
-1. Wire Email thread `?message=` behavior: open that thread, expand the target message, and collapse the rest.
-2. Add Blackbook buttons to the Email People panel: create/update Blackbook from From/To/CC people.
-3. Add bulk migration tools:
-   - contacts -> blackbook entries
-   - options candidates -> blackbook entries
-   - auto-category by existing role/group/type names
-4. Add media/photos to Blackbook entries and/or OptionCandidate so future decks can choose layouts based on available media.
-5. Then plan the smart PDF/deck generator and lightweight template designer.
+## Exact Next Steps
+1. Add company/person management UI in the Blackbook overlay:
+   - attach a person to a company
+   - detach a person
+   - create a person under a company
+2. Add target list UI:
+   - create target list
+   - add/remove entries
+   - edit outreach status
+   - next follow-up date
+3. Add category/type filters to the CRM list so supplier groups work as a proper blackbook.
+4. Bulk migrate existing Contacts into Blackbook and auto-link by email.
+5. Wire Email `?message=` behavior so a clicked activity opens the full thread with that message expanded.
+6. Then continue into the Blackbook-backed outreach workflow and PDF/template planning.

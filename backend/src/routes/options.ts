@@ -7,6 +7,8 @@ import multer from "multer";
 import {
   BlackbookCategory,
   BlackbookEntryType,
+  BlackbookLifecycleStatus,
+  BlackbookOutreachStatus,
   CandidateDateHoldStatus,
   OptionAvailability,
   OptionCandidateState,
@@ -51,6 +53,8 @@ type BlackbookFieldBody = {
   category?: BlackbookCategory;
   categoryConfigId?: string | null;
   typeIds?: string[];
+  lifecycleStatus?: BlackbookLifecycleStatus;
+  companyEntryId?: string | null;
   contactId?: string | null;
   displayName?: string;
   firstName?: string | null;
@@ -145,6 +149,8 @@ function blackbookDataFromBody(body: BlackbookFieldBody): Prisma.BlackbookEntryU
   if (body.category !== undefined) data.category = body.category;
   if (body.categoryConfigId !== undefined) data.categoryConfig = body.categoryConfigId ? { connect: { id: body.categoryConfigId } } : { disconnect: true };
   if (body.typeIds !== undefined) data.typeIds = body.typeIds;
+  if (body.lifecycleStatus !== undefined) data.lifecycleStatus = body.lifecycleStatus;
+  if (body.companyEntryId !== undefined) data.companyEntry = body.companyEntryId ? { connect: { id: body.companyEntryId } } : { disconnect: true };
   if (body.contactId !== undefined) data.contact = body.contactId ? { connect: { id: body.contactId } } : { disconnect: true };
   if (body.displayName !== undefined) data.displayName = body.displayName.trim();
   if (body.firstName !== undefined) data.firstName = optionalText(body.firstName);
@@ -421,16 +427,24 @@ router.get("/production/:productionId/matrix", async (req: Request, res: Respons
 });
 
 router.get("/blackbook", async (req: Request, res: Response): Promise<void> => {
-  const { q = "", category, entryType, limit = "12" } = req.query as {
+  const { q = "", category, entryType, lifecycleStatus, categoryConfigId, companyEntryId, listId, limit = "12" } = req.query as {
     q?: string;
     category?: BlackbookCategory;
     entryType?: BlackbookEntryType;
+    lifecycleStatus?: BlackbookLifecycleStatus;
+    categoryConfigId?: string;
+    companyEntryId?: string;
+    listId?: string;
     limit?: string;
   };
   const search = q.trim();
   const where: Prisma.BlackbookEntryWhereInput = {};
   if (category) where.category = category;
   if (entryType) where.entryType = entryType;
+  if (lifecycleStatus) where.lifecycleStatus = lifecycleStatus;
+  if (categoryConfigId) where.categoryConfigId = categoryConfigId;
+  if (companyEntryId) where.companyEntryId = companyEntryId;
+  if (listId) where.targetLists = { some: { listId } };
   if (search) {
     where.OR = [
       { displayName: { contains: search, mode: "insensitive" } },
@@ -445,8 +459,70 @@ router.get("/blackbook", async (req: Request, res: Response): Promise<void> => {
     where,
     orderBy: [{ displayName: "asc" }],
     take: Math.min(50, Math.max(1, Number(limit) || 12)),
+    include: { categoryConfig: true, companyEntry: { select: { id: true, displayName: true } }, targetLists: { include: { list: true } } },
   });
   res.json(entries);
+});
+
+router.get("/blackbook/lists", async (_req: Request, res: Response): Promise<void> => {
+  const lists = await prisma.blackbookTargetList.findMany({
+    where: { isArchived: false },
+    orderBy: { updatedAt: "desc" },
+    include: { entries: { include: { entry: true }, orderBy: { updatedAt: "desc" } } },
+  });
+  res.json(lists);
+});
+
+router.post("/blackbook/lists", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { name?: string; description?: string | null };
+  if (!body.name?.trim()) {
+    res.status(400).json({ error: "name is required" });
+    return;
+  }
+  const list = await prisma.blackbookTargetList.create({
+    data: { name: body.name.trim(), description: optionalText(body.description) },
+    include: { entries: { include: { entry: true } } },
+  });
+  res.status(201).json(list);
+});
+
+router.post("/blackbook/lists/:listId/entries", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { entryId?: string; status?: BlackbookOutreachStatus; notes?: string | null; nextFollowUpAt?: string | null };
+  if (!body.entryId) {
+    res.status(400).json({ error: "entryId is required" });
+    return;
+  }
+  const item = await prisma.blackbookTargetListEntry.upsert({
+    where: { listId_entryId: { listId: req.params.listId, entryId: body.entryId } },
+    update: {
+      status: body.status,
+      notes: optionalText(body.notes),
+      nextFollowUpAt: body.nextFollowUpAt ? new Date(body.nextFollowUpAt) : undefined,
+    },
+    create: {
+      listId: req.params.listId,
+      entryId: body.entryId,
+      status: body.status ?? "NOT_CONTACTED",
+      notes: optionalText(body.notes),
+      nextFollowUpAt: body.nextFollowUpAt ? new Date(body.nextFollowUpAt) : undefined,
+    },
+    include: { entry: true, list: true },
+  });
+  res.json(item);
+});
+
+router.patch("/blackbook/list-entries/:itemId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { status?: BlackbookOutreachStatus; notes?: string | null; nextFollowUpAt?: string | null };
+  const item = await prisma.blackbookTargetListEntry.update({
+    where: { id: req.params.itemId },
+    data: {
+      status: body.status,
+      notes: body.notes === undefined ? undefined : optionalText(body.notes),
+      nextFollowUpAt: body.nextFollowUpAt === undefined ? undefined : body.nextFollowUpAt ? new Date(body.nextFollowUpAt) : null,
+    },
+    include: { entry: true, list: true },
+  });
+  res.json(item);
 });
 
 router.post("/blackbook", async (req: Request, res: Response): Promise<void> => {
@@ -463,6 +539,8 @@ router.post("/blackbook", async (req: Request, res: Response): Promise<void> => 
       category: body.category ?? "OTHER",
       categoryConfigId: body.categoryConfigId,
       typeIds: body.typeIds ?? [],
+      lifecycleStatus: body.lifecycleStatus ?? "IN_TOUCH",
+      companyEntryId: body.companyEntryId,
       contactId: body.contactId,
       firstName: optionalText(body.firstName),
       lastName: optionalText(body.lastName),
@@ -522,6 +600,9 @@ router.get("/blackbook/:entryId/crm", async (req: Request, res: Response): Promi
     include: {
       contact: { include: { company: true } },
       categoryConfig: { include: { types: { orderBy: { order: "asc" } } } },
+      companyEntry: { select: { id: true, displayName: true, email: true, companyName: true } },
+      people: { orderBy: { displayName: "asc" }, include: { categoryConfig: true } },
+      targetLists: { include: { list: true }, orderBy: { updatedAt: "desc" } },
       optionCandidates: {
         include: {
           production: { select: { id: true, title: true, jobCode: true, clientName: true, brand: true, status: true } },
@@ -537,14 +618,18 @@ router.get("/blackbook/:entryId/crm", async (req: Request, res: Response): Promi
     res.status(404).json({ error: "Blackbook entry not found" });
     return;
   }
-  const emailMatches = entry.email
+  const relatedEmails = [
+    entry.email?.toLowerCase(),
+    ...entry.people.map((person) => person.email?.toLowerCase()),
+  ].filter((email): email is string => Boolean(email));
+  const emailMatches = relatedEmails.length
     ? await prisma.emailMessage.findMany({
         where: {
           OR: [
-            { fromAddress: { equals: entry.email, mode: "insensitive" } },
-            { toAddresses: { has: entry.email.toLowerCase() } },
-            { ccAddresses: { has: entry.email.toLowerCase() } },
-            { bccAddresses: { has: entry.email.toLowerCase() } },
+            { fromAddress: { in: relatedEmails, mode: "insensitive" } },
+            { toAddresses: { hasSome: relatedEmails } },
+            { ccAddresses: { hasSome: relatedEmails } },
+            { bccAddresses: { hasSome: relatedEmails } },
           ],
         },
         orderBy: { sentAt: "desc" },

@@ -5,6 +5,7 @@ import { api } from "../../lib/api";
 
 type BlackbookEntryType = "PERSON" | "COMPANY" | "LOCATION" | "TALENT" | "SERVICE";
 type BlackbookCategory = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" | "TRANSPORT" | "POST" | "OTHER";
+type BlackbookLifecycleStatus = "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT" | "SUPPLIER" | "PREFERRED_SUPPLIER" | "DO_NOT_USE" | "ARCHIVED";
 
 interface BlackbookConfigType {
   id: string;
@@ -24,9 +25,11 @@ interface BlackbookConfigCategory {
 interface BlackbookEntry {
   id: string;
   entryType: BlackbookEntryType;
+  lifecycleStatus: BlackbookLifecycleStatus;
   category: BlackbookCategory;
   categoryConfigId: string | null;
   typeIds: string[];
+  companyEntryId?: string | null;
   displayName: string;
   companyName: string | null;
   email: string | null;
@@ -42,6 +45,9 @@ interface BlackbookEntry {
 interface BlackbookCrmResponse {
   entry: BlackbookEntry & {
     contact?: { id: string; firstName: string; lastName?: string | null; company?: { name: string } | null } | null;
+    companyEntry?: { id: string; displayName: string; email: string | null; companyName: string | null } | null;
+    people?: BlackbookEntry[];
+    targetLists?: Array<{ id: string; status: string; list: { id: string; name: string } }>;
     categoryConfig?: BlackbookConfigCategory | null;
     optionCandidates: Array<{
       id: string;
@@ -156,10 +162,14 @@ function BlackbookDetail({ data, categories, onRefresh }: { data: BlackbookCrmRe
             <span className="text-[11px] uppercase tracking-[0.08em] text-gray-400">{category?.name ?? entry.category.toLowerCase()}</span>
           </div>
           <h1 className="text-2xl font-semibold text-gray-900">{entry.displayName}</h1>
-          <p className="mt-1 text-sm text-gray-500">{[entry.companyName, entry.email, entry.phone].filter(Boolean).join(" · ")}</p>
+          <p className="mt-1 text-sm text-gray-500">{[entry.companyEntry?.displayName ?? entry.companyName, entry.email, entry.phone].filter(Boolean).join(" · ")}</p>
           {typeNames.length > 0 && <p className="mt-2 text-xs text-gray-500">{typeNames.join(" · ")}</p>}
+          {(entry.targetLists?.length ?? 0) > 0 && <p className="mt-2 text-xs text-violet-600">{entry.targetLists?.map((item) => `${item.list.name}: ${item.status.toLowerCase().replace(/_/g, " ")}`).join(" · ")}</p>}
         </div>
-        <CategoryEditor entry={entry} categories={categories} onSave={patch} />
+        <div className="space-y-3">
+          <LifecycleEditor value={entry.lifecycleStatus} onChange={(lifecycleStatus) => patch({ lifecycleStatus })} />
+          <CategoryEditor entry={entry} categories={categories} onSave={patch} />
+        </div>
       </div>
 
       {(entry.dietaryNotes || entry.dietaryFlags.length || entry.allergens.length) && (
@@ -170,6 +180,13 @@ function BlackbookDetail({ data, categories, onRefresh }: { data: BlackbookCrmRe
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
+        {(entry.people?.length ?? 0) > 0 && (
+          <TimelineSection title="People" icon={<UsersIcon />} empty="No people attached.">
+            {entry.people?.map((person) => (
+              <Card key={person.id} title={person.displayName} meta={[person.email, person.phone].filter(Boolean).join(" · ")} />
+            ))}
+          </TimelineSection>
+        )}
         <TimelineSection title="Projects" icon={<Briefcase size={15} />} empty="No linked projects yet.">
           {data.productions.map((item) => (
             <Card key={item.id} title={`${item.production.jobCode ?? ""} ${item.production.title}`.trim()} meta={[item.production.clientName, item.production.brand, item.production.status].filter(Boolean).join(" · ")} />
@@ -198,6 +215,22 @@ function BlackbookDetail({ data, categories, onRefresh }: { data: BlackbookCrmRe
           ))}
         </TimelineSection>
       </div>
+    </div>
+  );
+}
+
+function UsersIcon() {
+  return <span className="text-sm">👥</span>;
+}
+
+function LifecycleEditor({ value, onChange }: { value: BlackbookLifecycleStatus; onChange: (value: BlackbookLifecycleStatus) => Promise<void> }) {
+  const options: BlackbookLifecycleStatus[] = ["TARGET", "IN_TOUCH", "CLIENT", "PAST_CLIENT", "SUPPLIER", "PREFERRED_SUPPLIER", "DO_NOT_USE", "ARCHIVED"];
+  return (
+    <div className="w-[280px] rounded-lg border border-gray-200 p-3">
+      <label className="text-[11px] font-medium uppercase tracking-[0.06em] text-gray-400">Relationship</label>
+      <select value={value} onChange={(event) => void onChange(event.target.value as BlackbookLifecycleStatus)} className="mt-1 h-9 w-full rounded border border-gray-200 px-2 text-xs">
+        {options.map((option) => <option key={option} value={option}>{option.toLowerCase().replace(/_/g, " ")}</option>)}
+      </select>
     </div>
   );
 }

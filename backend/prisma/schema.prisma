@@ -45,6 +45,31 @@ enum BlackbookCategory {
   @@map("pms_blackbook_category")
 }
 
+enum BlackbookLifecycleStatus {
+  TARGET
+  IN_TOUCH
+  CLIENT
+  PAST_CLIENT
+  SUPPLIER
+  PREFERRED_SUPPLIER
+  DO_NOT_USE
+  ARCHIVED
+
+  @@map("pms_blackbook_lifecycle_status")
+}
+
+enum BlackbookOutreachStatus {
+  NOT_CONTACTED
+  CONTACTED
+  REPLIED
+  FOLLOW_UP
+  NOT_INTERESTED
+  CONVERTED
+  ARCHIVED
+
+  @@map("pms_blackbook_outreach_status")
+}
+
 // PmsJobType avoids conflict with legacy "JobType" enum in shared DB
 enum PmsJobType {
   STILLS
@@ -295,12 +320,44 @@ model BlackbookConfigType {
   @@map("pms_blackbook_config_types")
 }
 
+model BlackbookTargetList {
+  id          String                     @id @default(uuid())
+  name        String
+  description String?
+  isArchived  Boolean                    @default(false)
+  entries     BlackbookTargetListEntry[]
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+
+  @@map("pms_blackbook_target_lists")
+}
+
+model BlackbookTargetListEntry {
+  id             String                  @id @default(uuid())
+  listId         String
+  entryId        String
+  status         BlackbookOutreachStatus @default(NOT_CONTACTED)
+  notes          String?
+  nextFollowUpAt DateTime?               @db.Date
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  list  BlackbookTargetList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  entry BlackbookEntry      @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, entryId])
+  @@index([entryId])
+  @@map("pms_blackbook_target_list_entries")
+}
+
 model BlackbookEntry {
-  id               String             @id @default(uuid())
-  entryType        BlackbookEntryType @default(PERSON)
-  category         BlackbookCategory  @default(OTHER)
+  id               String                   @id @default(uuid())
+  entryType        BlackbookEntryType       @default(PERSON)
+  category         BlackbookCategory        @default(OTHER)
   categoryConfigId String?
-  typeIds          String[]           @default([])
+  typeIds          String[]                 @default([])
+  lifecycleStatus  BlackbookLifecycleStatus @default(IN_TOUCH)
+  companyEntryId   String?
   displayName      String
   firstName        String?
   lastName         String?
@@ -309,7 +366,7 @@ model BlackbookEntry {
   email            String?
   phone            String?
   website          String?
-  tags             String[]           @default([])
+  tags             String[]                 @default([])
   notes            String?
 
   // Commercial defaults
@@ -363,14 +420,19 @@ model BlackbookEntry {
 
   optionCandidates OptionCandidate[]
   contactId        String?
-  contact          Contact?                 @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  categoryConfig   BlackbookConfigCategory? @relation(fields: [categoryConfigId], references: [id], onDelete: SetNull)
+  contact          Contact?                   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  categoryConfig   BlackbookConfigCategory?   @relation(fields: [categoryConfigId], references: [id], onDelete: SetNull)
+  companyEntry     BlackbookEntry?            @relation("BlackbookCompanyPeople", fields: [companyEntryId], references: [id], onDelete: SetNull)
+  people           BlackbookEntry[]           @relation("BlackbookCompanyPeople")
+  targetLists      BlackbookTargetListEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([entryType, category])
   @@index([categoryConfigId])
+  @@index([lifecycleStatus])
+  @@index([companyEntryId])
   @@index([contactId])
   @@index([displayName])
   @@index([email])

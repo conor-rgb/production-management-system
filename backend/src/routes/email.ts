@@ -1010,6 +1010,7 @@ router.post("/threads/:threadId/people/create-blackbook", async (req: Request, r
     entryType?: "PERSON" | "COMPANY" | "LOCATION" | "TALENT" | "SERVICE";
     category?: "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" | "TRANSPORT" | "POST" | "OTHER";
     contactId?: string | null;
+    lifecycleStatus?: "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT" | "SUPPLIER" | "PREFERRED_SUPPLIER" | "DO_NOT_USE" | "ARCHIVED";
   };
   if (!body.email || !body.displayName) {
     res.status(400).json({ error: "email and displayName required" });
@@ -1027,6 +1028,7 @@ router.post("/threads/:threadId/people/create-blackbook", async (req: Request, r
       companyName: body.companyName?.trim() || null,
       entryType: body.entryType ?? "PERSON",
       category: body.category ?? "OTHER",
+      lifecycleStatus: body.lifecycleStatus ?? "IN_TOUCH",
       contactId: body.contactId ?? null,
     },
   });

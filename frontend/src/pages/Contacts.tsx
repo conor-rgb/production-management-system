@@ -1,252 +1,236 @@
-import { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
-import type { Contact, Company } from "../lib/types";
-import { tagColour } from "../lib/types";
-import ContactModal from "../components/contacts/ContactModal";
-import CompanyModal from "../components/contacts/CompanyModal";
-import ContactDetail from "../components/contacts/ContactDetail";
 import BlackbookOverlay from "../components/blackbook/BlackbookOverlay";
-import { Search, Plus, ChevronDown, ChevronRight, Building2 } from "lucide-react";
+import { Building2, ListPlus, Plus, Search, Users } from "lucide-react";
 
-type Tab = "CLIENT" | "SUPPLIER";
+type BlackbookLifecycleStatus = "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT" | "SUPPLIER" | "PREFERRED_SUPPLIER" | "DO_NOT_USE" | "ARCHIVED";
+type BlackbookEntryType = "PERSON" | "COMPANY" | "LOCATION" | "TALENT" | "SERVICE";
+type ViewKey = "ALL" | "TARGETS" | "IN_TOUCH" | "CLIENTS" | "SUPPLIERS" | "COMPANIES";
 
-interface CompanyWithContacts extends Company {
-  contacts: Contact[];
+interface BlackbookConfigCategory {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface BlackbookTargetList {
+  id: string;
+  name: string;
+  description: string | null;
+  entries: Array<{ id: string; status: string; entry: BlackbookEntry }>;
+}
+
+interface BlackbookEntry {
+  id: string;
+  entryType: BlackbookEntryType;
+  lifecycleStatus: BlackbookLifecycleStatus;
+  categoryConfigId: string | null;
+  typeIds: string[];
+  displayName: string;
+  companyName: string | null;
+  email: string | null;
+  phone: string | null;
+  city: string | null;
+  country: string | null;
+  dietaryNotes: string | null;
+  dietaryFlags: string[];
+  allergens: string[];
+  companyEntry?: { id: string; displayName: string } | null;
+  categoryConfig?: BlackbookConfigCategory | null;
+  targetLists?: Array<{ id: string; status: string; list: { id: string; name: string } }>;
+}
+
+const VIEWS: Array<{ key: ViewKey; label: string; description: string }> = [
+  { key: "ALL", label: "All", description: "Every Blackbook record" },
+  { key: "TARGETS", label: "Targets", description: "Outreach prospects" },
+  { key: "IN_TOUCH", label: "In touch", description: "Conversation, no job yet" },
+  { key: "CLIENTS", label: "Clients", description: "Worked with or commissioning" },
+  { key: "SUPPLIERS", label: "Suppliers", description: "Crew, services, locations" },
+  { key: "COMPANIES", label: "Companies", description: "Company-level comms" },
+];
+
+const STATUS_LABELS: Record<BlackbookLifecycleStatus, string> = {
+  TARGET: "Target",
+  IN_TOUCH: "In touch",
+  CLIENT: "Client",
+  PAST_CLIENT: "Past client",
+  SUPPLIER: "Supplier",
+  PREFERRED_SUPPLIER: "Preferred supplier",
+  DO_NOT_USE: "Do not use",
+  ARCHIVED: "Archived",
+};
+
+function statusClass(status: BlackbookLifecycleStatus): string {
+  if (status === "TARGET") return "border-violet-200 bg-violet-50 text-violet-700";
+  if (status === "IN_TOUCH") return "border-sky-200 bg-sky-50 text-sky-700";
+  if (status === "CLIENT") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "PAST_CLIENT") return "border-gray-200 bg-gray-50 text-gray-600";
+  if (status === "SUPPLIER") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (status === "PREFERRED_SUPPLIER") return "border-lime-200 bg-lime-50 text-lime-700";
+  if (status === "DO_NOT_USE") return "border-red-200 bg-red-50 text-red-600";
+  return "border-gray-200 bg-gray-50 text-gray-400";
 }
 
 export default function Contacts() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tab: Tab = (searchParams.get("tab") as Tab) ?? "CLIENT";
-  const [search, setSearch] = useState(searchParams.get("q") ?? "");
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [companies, setCompanies] = useState<CompanyWithContacts[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [editContact, setEditContact] = useState<Contact | null | "new">(null);
-  const [editCompany, setEditCompany] = useState<Company | null | "new">(null);
-  const [showBlackbook, setShowBlackbook] = useState(false);
+  const [view, setView] = useState<ViewKey>("ALL");
+  const [query, setQuery] = useState("");
+  const [entries, setEntries] = useState<BlackbookEntry[]>([]);
+  const [categories, setCategories] = useState<BlackbookConfigCategory[]>([]);
+  const [lists, setLists] = useState<BlackbookTargetList[]>([]);
+  const [selectedListId, setSelectedListId] = useState<string | null>(null);
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [newListName, setNewListName] = useState("");
+  const [newEntryName, setNewEntryName] = useState("");
 
-  const load = useCallback(async () => {
+  const loadSettings = useCallback(async () => {
+    const [categoryData, listData] = await Promise.all([
+      api.get<BlackbookConfigCategory[]>("/api/settings/blackbook/categories"),
+      api.get<BlackbookTargetList[]>("/api/options/blackbook/lists"),
+    ]);
+    setCategories(categoryData);
+    setLists(listData);
+  }, []);
+
+  const loadEntries = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ type: tab });
-      if (search) params.set("search", search);
-      const [c, cos] = await Promise.all([
-        api.get<Contact[]>(`/api/contacts?${params}`),
-        api.get<CompanyWithContacts[]>(`/api/companies?search=${encodeURIComponent(search)}`),
-      ]);
-      setContacts(c);
-      // Only show companies that have contacts of the right type
-      const contactIds = new Set(c.map((x) => x.companyId).filter(Boolean));
-      setCompanies(cos.filter((co) => contactIds.has(co.id)));
+      const params = new URLSearchParams({ q: query, limit: "50" });
+      if (selectedListId) params.set("listId", selectedListId);
+      if (view === "TARGETS") params.set("lifecycleStatus", "TARGET");
+      if (view === "IN_TOUCH") params.set("lifecycleStatus", "IN_TOUCH");
+      if (view === "CLIENTS") params.set("lifecycleStatus", "CLIENT");
+      if (view === "SUPPLIERS") params.set("category", "SERVICE");
+      if (view === "COMPANIES") params.set("entryType", "COMPANY");
+      setEntries(await api.get<BlackbookEntry[]>(`/api/options/blackbook?${params.toString()}`));
     } finally {
       setLoading(false);
     }
-  }, [tab, search]);
+  }, [query, selectedListId, view]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadSettings().catch(console.error); }, [loadSettings]);
+  useEffect(() => { loadEntries().catch(console.error); }, [loadEntries]);
 
-  function setTab(t: Tab) {
-    setSearchParams({ tab: t, ...(search ? { q: search } : {}) });
+  const counts = useMemo(() => ({
+    all: entries.length,
+    targets: entries.filter((entry) => entry.lifecycleStatus === "TARGET").length,
+    clients: entries.filter((entry) => entry.lifecycleStatus === "CLIENT").length,
+    suppliers: entries.filter((entry) => entry.lifecycleStatus === "SUPPLIER" || entry.lifecycleStatus === "PREFERRED_SUPPLIER").length,
+  }), [entries]);
+
+  async function addList() {
+    if (!newListName.trim()) return;
+    await api.post("/api/options/blackbook/lists", { name: newListName.trim() });
+    setNewListName("");
+    await loadSettings();
   }
 
-  function toggleExpanded(id: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
+  async function addEntry() {
+    if (!newEntryName.trim()) return;
+    const lifecycleStatus: BlackbookLifecycleStatus = view === "TARGETS" ? "TARGET" : view === "CLIENTS" ? "CLIENT" : view === "SUPPLIERS" ? "SUPPLIER" : "IN_TOUCH";
+    const entryType: BlackbookEntryType = view === "COMPANIES" ? "COMPANY" : "PERSON";
+    const created = await api.post<BlackbookEntry>("/api/options/blackbook", {
+      displayName: newEntryName.trim(),
+      lifecycleStatus,
+      entryType,
+      category: view === "SUPPLIERS" ? "SERVICE" : "OTHER",
     });
+    if (selectedListId) await api.post(`/api/options/blackbook/lists/${selectedListId}/entries`, { entryId: created.id });
+    setNewEntryName("");
+    setSelectedEntryId(created.id);
+    await loadEntries();
   }
-
-  // Group contacts: first by company, then unaffiliated
-  const contactsByCompany: Record<string, Contact[]> = {};
-  const unaffiliated: Contact[] = [];
-  for (const c of contacts) {
-    if (c.companyId) {
-      if (!contactsByCompany[c.companyId]) contactsByCompany[c.companyId] = [];
-      contactsByCompany[c.companyId].push(c);
-    } else {
-      unaffiliated.push(c);
-    }
-  }
-
-  const shownCompanies = companies.filter((co) => contactsByCompany[co.id]?.length);
 
   return (
-    <div className="flex h-full">
-      {/* List panel */}
-      <div className="flex flex-col flex-1 min-w-0">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 pt-5 pb-3 border-b border-gray-200 bg-white">
-          <div className="flex gap-1">
-            {(["CLIENT", "SUPPLIER"] as Tab[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  tab === t
-                    ? "bg-gray-900 text-white"
-                    : "text-gray-600 hover:bg-gray-100"
-                }`}
-              >
-                {t === "CLIENT" ? "Clients" : "Suppliers"}
-              </button>
-            ))}
+    <div className="flex h-full min-h-0 bg-white">
+      <aside className="flex w-[280px] shrink-0 flex-col border-r border-gray-200 bg-[#fbfbfa]">
+        <div className="border-b border-gray-200 p-4">
+          <h1 className="text-lg font-semibold text-gray-900">Blackbook CRM</h1>
+          <p className="mt-1 text-xs text-gray-500">Targets, clients, suppliers, companies, and activity in one place.</p>
+        </div>
+        <div className="border-b border-gray-200 p-3">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search people, companies, email..." className="h-9 w-full rounded-lg border border-gray-200 bg-white pl-8 pr-3 text-xs outline-none focus:border-gray-500" />
+          </div>
+        </div>
+        <nav className="space-y-1 border-b border-gray-200 p-2">
+          {VIEWS.map((item) => (
+            <button key={item.key} onClick={() => { setView(item.key); setSelectedListId(null); }} className={`w-full rounded-lg px-3 py-2 text-left ${view === item.key && !selectedListId ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-white"}`}>
+              <div className="text-sm font-medium">{item.label}</div>
+              <div className={`text-[11px] ${view === item.key && !selectedListId ? "text-white/60" : "text-gray-400"}`}>{item.description}</div>
+            </button>
+          ))}
+        </nav>
+        <div className="min-h-0 flex-1 overflow-auto p-2">
+          <div className="mb-2 flex items-center gap-2 px-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400"><ListPlus size={13} /> Target lists</div>
+          {lists.map((list) => (
+            <button key={list.id} onClick={() => setSelectedListId(list.id)} className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-sm ${selectedListId === list.id ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-600 hover:bg-white"}`}>
+              {list.name}
+              <span className="ml-2 text-[11px] text-gray-400">{list.entries.length}</span>
+            </button>
+          ))}
+          <div className="mt-3 flex gap-1 px-1">
+            <input value={newListName} onChange={(event) => setNewListName(event.target.value)} placeholder="New list" className="h-8 min-w-0 flex-1 rounded border border-gray-200 px-2 text-xs outline-none" />
+            <button onClick={addList} className="grid h-8 w-8 place-items-center rounded bg-gray-900 text-white"><Plus size={14} /></button>
+          </div>
+        </div>
+      </aside>
+
+      <main className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-16 items-center justify-between border-b border-gray-200 px-5">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">{selectedListId ? lists.find((list) => list.id === selectedListId)?.name : VIEWS.find((item) => item.key === view)?.label}</h2>
+            <p className="text-xs text-gray-400">{counts.all} shown · {counts.targets} targets · {counts.clients} clients · {counts.suppliers} suppliers</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowBlackbook(true)}
-              className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-            >
-              Blackbook
-            </button>
-            <button
-              onClick={() => setEditCompany("new")}
-              className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 px-2 py-1.5 rounded-lg hover:bg-gray-100"
-            >
-              <Building2 size={15} /> Company
-            </button>
-            <button
-              onClick={() => setEditContact("new")}
-              className="flex items-center gap-1 text-sm bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700"
-            >
-              <Plus size={15} /> Contact
-            </button>
+            <input value={newEntryName} onChange={(event) => setNewEntryName(event.target.value)} placeholder={view === "COMPANIES" ? "New company" : "New person / supplier"} className="h-9 w-52 rounded-lg border border-gray-200 px-3 text-xs outline-none focus:border-gray-500" />
+            <button onClick={addEntry} className="inline-flex h-9 items-center gap-2 rounded-lg bg-gray-900 px-3 text-xs font-medium text-white"><Plus size={14} /> Add</button>
           </div>
         </div>
-
-        {/* Search */}
-        <div className="px-4 py-2 bg-white border-b border-gray-200">
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search name, company, email, tag…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-400"
-            />
-          </div>
-        </div>
-
-        {/* List */}
-        <div className="flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-auto">
           {loading ? (
-            <div className="p-8 text-center text-gray-400 text-sm">Loading…</div>
-          ) : contacts.length === 0 ? (
-            <div className="p-8 text-center text-gray-400 text-sm">
-              No {tab === "CLIENT" ? "clients" : "suppliers"} yet.{" "}
-              <button onClick={() => setEditContact("new")} className="text-indigo-600 hover:underline">
-                Add one
-              </button>
+            <div className="grid h-full place-items-center text-sm text-gray-400">Loading Blackbook...</div>
+          ) : entries.length === 0 ? (
+            <div className="grid h-full place-items-center p-8 text-center">
+              <div>
+                <Users className="mx-auto mb-3 text-gray-300" size={32} />
+                <p className="text-sm font-medium text-gray-900">No records here yet</p>
+                <p className="mt-1 text-sm text-gray-400">Add one above or create Blackbook entries from email participants.</p>
+              </div>
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {/* Companies with their people */}
-              {shownCompanies.map((co) => {
-                const people = contactsByCompany[co.id] ?? [];
-                const open = expanded.has(co.id);
-                return (
-                  <div key={co.id}>
-                    <button
-                      onClick={() => toggleExpanded(co.id)}
-                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
-                        <Building2 size={15} className="text-gray-500" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900 text-sm truncate">{co.name}</p>
-                        <p className="text-xs text-gray-400">{people.length} {people.length === 1 ? "person" : "people"}</p>
-                      </div>
-                      {open ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
-                    </button>
-                    {open && (
-                      <div className="ml-11">
-                        {people.map((c) => (
-                          <ContactRow key={c.id} contact={c} onClick={() => setSelectedContact(c)} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Unaffiliated contacts */}
-              {unaffiliated.map((c) => (
-                <ContactRow key={c.id} contact={c} onClick={() => setSelectedContact(c)} />
+              {entries.map((entry) => (
+                <BlackbookRow key={entry.id} entry={entry} categories={categories} onOpen={() => setSelectedEntryId(entry.id)} />
               ))}
             </div>
           )}
         </div>
-      </div>
-
-      {/* Detail panel (desktop) */}
-      {selectedContact && (
-        <div className="hidden md:flex flex-col w-96 border-l border-gray-200 bg-white overflow-auto">
-          <ContactDetail
-            contactId={selectedContact.id}
-            onEdit={(c) => setEditContact(c)}
-            onClose={() => setSelectedContact(null)}
-            onRefresh={load}
-          />
-        </div>
-      )}
-
-      {/* Modals */}
-      {editContact && (
-        <ContactModal
-          contact={editContact === "new" ? null : editContact}
-          defaultType={tab}
-          onClose={() => setEditContact(null)}
-          onSaved={() => { setEditContact(null); load(); }}
-        />
-      )}
-      {editCompany && (
-        <CompanyModal
-          company={editCompany === "new" ? null : editCompany}
-          onClose={() => setEditCompany(null)}
-          onSaved={() => { setEditCompany(null); load(); }}
-        />
-      )}
-
-      {/* Mobile detail sheet */}
-      {selectedContact && (
-        <div className="md:hidden fixed inset-0 bg-white z-40 overflow-auto">
-          <ContactDetail
-            contactId={selectedContact.id}
-            onEdit={(c) => setEditContact(c)}
-            onClose={() => setSelectedContact(null)}
-            onRefresh={load}
-          />
-        </div>
-      )}
-      {showBlackbook && <BlackbookOverlay onClose={() => setShowBlackbook(false)} />}
+      </main>
+      {selectedEntryId && <BlackbookOverlay initialEntryId={selectedEntryId} onClose={() => { setSelectedEntryId(null); loadEntries().catch(console.error); }} />}
     </div>
   );
 }
 
-function ContactRow({ contact, onClick }: { contact: Contact; onClick: () => void }) {
-  const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+function BlackbookRow({ entry, categories, onOpen }: { entry: BlackbookEntry; categories: BlackbookConfigCategory[]; onOpen: () => void }) {
+  const category = categories.find((item) => item.id === entry.categoryConfigId);
+  const dietary = [...entry.dietaryFlags, ...entry.allergens, entry.dietaryNotes].filter(Boolean).join(" · ");
   return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-b border-gray-50 last:border-0"
-    >
-      <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0 text-indigo-600 text-xs font-semibold">
-        {contact.firstName[0]}{contact.lastName?.[0] ?? ""}
+    <button onClick={onOpen} className="grid w-full grid-cols-[36px_1fr_150px_150px] items-center gap-3 px-5 py-3 text-left hover:bg-[#f8f8f6]">
+      <div className="grid h-9 w-9 place-items-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
+        {entry.entryType === "COMPANY" ? <Building2 size={15} /> : entry.displayName.slice(0, 2).toUpperCase()}
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
-        <p className="text-xs text-gray-400 truncate">{contact.email ?? contact.jobTitle ?? ""}</p>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: category?.color ?? "#d1d5db" }} />
+          <p className="truncate text-sm font-semibold text-gray-900">{entry.displayName}</p>
+          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusClass(entry.lifecycleStatus)}`}>{STATUS_LABELS[entry.lifecycleStatus]}</span>
+        </div>
+        <p className="mt-0.5 truncate text-xs text-gray-400">{[entry.companyEntry?.displayName ?? entry.companyName, entry.email, entry.phone].filter(Boolean).join(" · ")}</p>
       </div>
-      <div className="flex gap-1 flex-wrap justify-end max-w-28">
-        {contact.tags.slice(0, 2).map((tag) => (
-          <span key={tag} className={`text-xs px-1.5 py-0.5 rounded-full ${tagColour(tag)}`}>{tag}</span>
-        ))}
-      </div>
+      <div className="truncate text-xs text-gray-500">{category?.name ?? entry.entryType.toLowerCase()}</div>
+      <div className="truncate text-xs text-amber-700">{dietary}</div>
     </button>
   );
 }
