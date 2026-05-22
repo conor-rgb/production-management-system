@@ -1,48 +1,73 @@
-# HANDOVER - 2026-05-22 - Options Candidate Drag Reorder
+# HANDOVER - 2026-05-22 - Structured Addresses for Options and Blackbook
 
 ## Built This Session
-- Replaced candidate row up/down reorder arrows with a click-hold drag handle.
-- The compact right-side action area now shows:
-  - drag handle,
-  - delete.
-- Dragging a row handle over another row and dropping persists the new order.
-- Drag target rows highlight while hovering.
-- Dragged rows fade slightly while moving.
-- Existing row-level image drag/drop still works; file drops still upload images to the option row.
-
-## Frontend
-- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
-- Added candidate reorder drag state:
-  - `dragCandidateId`,
-  - `dropCandidateId`.
-- `CandidateRow` now handles:
-  - row reorder drag-over/drop for text drag payloads,
-  - image upload drag/drop for file payloads.
-- Reorder drag starts only from the `⋮⋮` handle.
-- Dropping persists via the existing candidate reorder endpoint.
-- After a drag reorder, the sheet returns to manual order.
+- Added structured address fields to option candidates so location board rows can carry billing-ready address data.
+- Added a compact Address dropdown cell to the options sheet, matching the existing Links dropdown pattern.
+- Added structured address editing to Blackbook records for locations, companies, and location-category entries.
+- Added a shared country dropdown list that stores two-letter country codes for future accounting/API mapping.
+- Updated options candidate create/update/link flows so linked Blackbook address data can populate option rows.
 
 ## Backend
-- No backend changes this session.
-- Existing endpoint used:
-  - `PATCH /api/options/matrix/groups/:groupId/candidates/reorder`
+- Updated `backend/prisma/schema.prisma`.
+- Added migration:
+  - `backend/prisma/migrations/20260522192000_option_candidate_structured_address/migration.sql`
+- New fields on `pms_option_candidates`:
+  - `addressLine1`
+  - `addressLine2`
+  - `city`
+  - `region`
+  - `postcode`
+  - `country`
+  - `locationType`
+- Updated `backend/src/routes/options.ts`:
+  - candidate create accepts address fields,
+  - candidate patch accepts address fields,
+  - candidate creation can copy address fields from linked Blackbook entries,
+  - Blackbook-to-candidate patch now includes address fields.
+
+## Frontend
+- Added `frontend/src/lib/countries.ts`.
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+  - Options sheets now include an Address column.
+  - Clicking Address opens a dropdown with:
+    - Address 1,
+    - Address 2,
+    - City,
+    - Region,
+    - Postcode,
+    - Country,
+    - Location type.
+  - Country is selected from a dropdown and stored as a two-letter code.
+- Updated `frontend/src/components/blackbook/BlackbookOverlay.tsx`.
+  - Blackbook overlay now has a Structured address section for relevant record types.
+  - Structured address fields autosave on blur.
+  - Country uses the same shared dropdown.
 
 ## Deployment / Verification
+- Prisma migration deployed.
+- Prisma client generated.
+- Backend build passed.
 - Frontend build passed.
 - Frontend copied to `/var/www/agent`.
-- No PM2 reload required.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
 
-## Current Options Sheet State
-- Header sorting remains local/non-destructive.
-- Manual order is saved when rows are drag-reordered.
-- Drag-to-upload images over candidate rows still works.
+## Current State
+- Options and Blackbook now share the same address shape at the UI level.
+- Blackbook already remains the intended source of truth for contact/location metadata.
+- Options candidate rows can hold an address snapshot for deck-specific context.
+- Linking an option to a Blackbook entry copies the current Blackbook address fields onto the option candidate.
 
 ## Known Gaps / Technical Debt
-- Drag reorder uses browser native HTML5 drag/drop, so mobile touch reorder is not polished yet.
-- There is no insertion line indicator, only row highlight.
-- If dragging while a sorted header view is active, the visible sorted order becomes the new manual order after drop. This is intentional for now but could be made stricter later.
+- The country list is curated, not exhaustive.
+- Old Blackbook country values may still be full country names; the dropdown stores codes going forward.
+- Address syncing is currently one-way when linking from Blackbook to an option candidate. There is no automatic two-way sync from an edited option candidate address back into Blackbook yet.
+- Address fields are not rendered in PDF exports yet.
+- FreeAgent contact mapping still needs the final Phase 8 integration decision, but the current fields map cleanly to address line, city, region, postcode, and country fields.
 
 ## Exact Next Steps
-1. Test dragging candidate rows in the GANNI x Disney options sheet.
-2. If the target feedback is not clear enough, add a thin insertion line above/below the hovered row.
-3. Add touch-friendly reorder later if mobile options editing becomes important.
+1. Decide whether option-address edits should update the linked Blackbook record automatically or stay as board-specific overrides.
+2. Add address rendering rules to the options PDF/template designer once the export layout is finalized.
+3. Expand the country list or replace it with a full ISO country dataset before FreeAgent integration.
+4. Add a small address validation pass when FreeAgent billing/PO integration starts.

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { ArrowLeft, BookOpen, Download, Image as ImageIcon, Link2, Plus, Trash2, Upload, X } from "lucide-react";
 import { api } from "../../lib/api";
+import { COUNTRY_OPTIONS, countryName } from "../../lib/countries";
 import BlackbookOverlay from "../blackbook/BlackbookOverlay";
 
 type RequirementType = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" | "TRANSPORT" | "POST" | "OTHER";
@@ -99,6 +100,13 @@ interface OptionCandidate {
   pdfUrl: string | null;
   pdfFilename: string | null;
   pdfSizeBytes: number | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  region: string | null;
+  postcode: string | null;
+  country: string | null;
+  locationType: string | null;
   rate: number | null;
   rateUnit: string | null;
   currency: string;
@@ -335,6 +343,10 @@ function candidateSummary(group: OptionGroup, dateId: string): string {
 
 function linkCount(candidate: OptionCandidate): number {
   return [candidate.bookUrl, candidate.socialUrl, candidate.modelsComUrl, candidate.pdfUrl].filter(Boolean).length;
+}
+
+function addressSummary(candidate: OptionCandidate): string {
+  return [candidate.addressLine1, candidate.city, candidate.postcode, countryName(candidate.country)].filter(Boolean).join(", ");
 }
 
 function compareText(a: string | null | undefined, b: string | null | undefined): number {
@@ -959,7 +971,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   const [dragCandidateId, setDragCandidateId] = useState<string | null>(null);
   const [dropCandidateId, setDropCandidateId] = useState<string | null>(null);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
-  const gridColumns = `64px 250px 210px 92px 82px 92px ${dates.map(() => "96px").join(" ")} 36px`;
+  const gridColumns = `64px 230px 190px 92px 104px 82px 92px ${dates.map(() => "96px").join(" ")} 36px`;
   const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
 
   function setSort(nextKey: CandidateSortKey) {
@@ -1007,6 +1019,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
           <SortHeader sort="name">Option</SortHeader>
           <SortHeader sort="notes">Deck notes</SortHeader>
           <SortHeader sort="links">Links</SortHeader>
+          <div>Address</div>
           <SortHeader sort="rate" align="right">Rate</SortHeader>
           <SortHeader sort="state">State</SortHeader>
           {dates.map((date) => <SortHeader key={date.id} sort={`date:${date.id}`} align="center">{dateLabel(date)}</SortHeader>)}
@@ -1156,6 +1169,7 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
       </div>
       <EditableText value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} className="text-gray-500" placeholder="Notes for deck" />
       <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />
+      <CandidateAddressCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />
       <EditableText value={candidate.rate?.toString() ?? ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className="pr-1 text-right tabular-nums text-gray-700" placeholder="0" />
       <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />
       {dates.map((date) => {
@@ -1284,6 +1298,74 @@ function LinkInput({ label: inputLabel, value, onSave }: { label: string; value:
     <label className="mb-2 grid grid-cols-[72px_1fr] items-center gap-2 text-[11px] text-gray-500">
       <span>{inputLabel}</span>
       <EditableText value={value} onSave={onSave} className="rounded border border-gray-200 px-2 py-1 text-gray-800" placeholder="https://..." />
+    </label>
+  );
+}
+
+function CandidateAddressCell({ candidate, onUpdate }: {
+  candidate: OptionCandidate;
+  onUpdate: (patch: Partial<OptionCandidate>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const summary = addressSummary(candidate);
+
+  useEffect(() => {
+    function close(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((current) => !current)}
+        title={summary || "Add address"}
+        className={`inline-flex min-h-7 max-w-[100px] items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
+          summary ? "border-gray-300 bg-white text-gray-700" : "border-gray-200 bg-white text-gray-400"
+        }`}
+      >
+        <span className="truncate">{summary || "address"}</span>
+        <span className="text-[9px] opacity-60">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-[340px] rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Structured address</div>
+          <AddressInput label="Address 1" value={candidate.addressLine1 ?? ""} onSave={(addressLine1) => onUpdate({ addressLine1 })} />
+          <AddressInput label="Address 2" value={candidate.addressLine2 ?? ""} onSave={(addressLine2) => onUpdate({ addressLine2 })} />
+          <div className="grid grid-cols-2 gap-2">
+            <AddressInput label="City" value={candidate.city ?? ""} onSave={(city) => onUpdate({ city })} />
+            <AddressInput label="Region" value={candidate.region ?? ""} onSave={(region) => onUpdate({ region })} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <AddressInput label="Postcode" value={candidate.postcode ?? ""} onSave={(postcode) => onUpdate({ postcode })} />
+            <label className="mb-2 block text-[11px] text-gray-500">
+              <span className="mb-1 block">Country</span>
+              <select
+                value={candidate.country ?? ""}
+                onChange={(event) => onUpdate({ country: event.target.value || null }).catch(console.error)}
+                className="h-8 w-full rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-800 outline-none focus:border-gray-500"
+              >
+                <option value="">Select country...</option>
+                {COUNTRY_OPTIONS.map((country) => <option key={country.code} value={country.code}>{country.name}</option>)}
+              </select>
+            </label>
+          </div>
+          <AddressInput label="Location type" value={candidate.locationType ?? ""} onSave={(locationType) => onUpdate({ locationType })} />
+          <p className="mt-1 text-[10px] text-gray-400">Country is stored as a two-letter code for future accounting/API use.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddressInput({ label: inputLabel, value, onSave }: { label: string; value: string; onSave: (value: string) => Promise<void> }) {
+  return (
+    <label className="mb-2 block text-[11px] text-gray-500">
+      <span className="mb-1 block">{inputLabel}</span>
+      <EditableText value={value} onSave={onSave} className="rounded border border-gray-200 px-2 py-1 text-gray-800" placeholder="" />
     </label>
   );
 }

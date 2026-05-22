@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { X, Search, Mail, Briefcase, CalendarDays, Tag, Users, UserPlus, Building2 } from "lucide-react";
 import { api } from "../../lib/api";
+import { COUNTRY_OPTIONS, countryName } from "../../lib/countries";
 
 type BlackbookEntryType = "PERSON" | "COMPANY" | "LOCATION" | "TALENT" | "SERVICE";
 type BlackbookCategory = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" | "TRANSPORT" | "POST" | "OTHER";
@@ -40,8 +41,13 @@ interface BlackbookEntry {
   email: string | null;
   phone: string | null;
   website: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
   city: string | null;
+  region: string | null;
+  postcode: string | null;
   country: string | null;
+  locationType: string | null;
   notes: string | null;
   dietaryNotes: string | null;
   dietaryFlags: string[];
@@ -242,6 +248,35 @@ function BlackbookDetail({
         <NotesEditor value={entry.notes ?? ""} onSave={(notes) => patch({ notes })} placeholder={entry.entryType === "COMPANY" ? "Add company-level context, client preferences, relationship notes, billing quirks..." : "Add relationship notes, preferences, context..."} />
       </section>
 
+      {(entry.entryType === "LOCATION" || entry.entryType === "COMPANY" || entry.category === "LOCATION") && (
+        <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">Structured address</h3>
+            <span className="text-[11px] text-gray-400">{[entry.addressLine1, entry.city, entry.postcode, countryName(entry.country)].filter(Boolean).join(", ") || "No address yet"}</span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <InlineField label="Address 1" value={entry.addressLine1 ?? ""} onSave={(addressLine1) => patch({ addressLine1 })} />
+            <InlineField label="Address 2" value={entry.addressLine2 ?? ""} onSave={(addressLine2) => patch({ addressLine2 })} />
+            <InlineField label="City" value={entry.city ?? ""} onSave={(city) => patch({ city })} />
+            <InlineField label="Region" value={entry.region ?? ""} onSave={(region) => patch({ region })} />
+            <InlineField label="Postcode" value={entry.postcode ?? ""} onSave={(postcode) => patch({ postcode })} />
+            <label className="block text-[11px] font-medium uppercase tracking-[0.06em] text-gray-400">
+              Country
+              <select
+                value={entry.country ?? ""}
+                onChange={(event) => patch({ country: event.target.value || null }).catch(console.error)}
+                className="mt-1 h-9 w-full rounded border border-gray-200 bg-white px-2 text-xs normal-case tracking-normal text-gray-800 outline-none focus:border-gray-500"
+              >
+                <option value="">Select country...</option>
+                {COUNTRY_OPTIONS.map((country) => <option key={country.code} value={country.code}>{country.name}</option>)}
+              </select>
+            </label>
+            <InlineField label="Location type" value={entry.locationType ?? ""} onSave={(locationType) => patch({ locationType })} />
+          </div>
+          <p className="mt-3 text-[10px] text-gray-400">Country is stored as a two-letter code for future accounting/API use.</p>
+        </section>
+      )}
+
       {(entry.dietaryNotes || entry.dietaryFlags.length || entry.allergens.length) && (
         <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4">
           <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-amber-800">Dietaries</h3>
@@ -316,6 +351,31 @@ function MetricCard({ label, value }: { label: string; value: number }) {
       <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">{label}</p>
       <p className="mt-1 text-xl font-semibold tabular-nums text-gray-900">{value}</p>
     </div>
+  );
+}
+
+function InlineField({ label, value, onSave }: { label: string; value: string; onSave: (value: string) => Promise<void> }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+
+  async function save() {
+    if (draft !== value) await onSave(draft);
+  }
+
+  return (
+    <label className="block text-[11px] font-medium uppercase tracking-[0.06em] text-gray-400">
+      {label}
+      <input
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => { save().catch(console.error); }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") setDraft(value);
+        }}
+        className="mt-1 h-9 w-full rounded border border-gray-200 px-2 text-xs normal-case tracking-normal text-gray-800 outline-none focus:border-gray-500"
+      />
+    </label>
   );
 }
 

@@ -51,6 +51,13 @@ type OptionFieldBody = {
   socialUrl?: string | null;
   modelsComUrl?: string | null;
   pdfUrl?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postcode?: string | null;
+  country?: string | null;
+  locationType?: string | null;
   rate?: number | string | null;
   rateUnit?: string | null;
   currency?: string;
@@ -332,6 +339,13 @@ function candidatePatchFromBlackbook(entry: {
   modelsComUrl: string | null;
   polasUrl: string | null;
   selfTapeUrl: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  region: string | null;
+  postcode: string | null;
+  country: string | null;
+  locationType: string | null;
   defaultRate: number | null;
   rateUnit: string | null;
   currency: string;
@@ -347,6 +361,13 @@ function candidatePatchFromBlackbook(entry: {
     socialUrl: entry.socialUrl,
     modelsComUrl: entry.modelsComUrl,
     pdfUrl: entry.polasUrl ?? entry.selfTapeUrl,
+    addressLine1: entry.addressLine1,
+    addressLine2: entry.addressLine2,
+    city: entry.city,
+    region: entry.region,
+    postcode: entry.postcode,
+    country: entry.country,
+    locationType: entry.locationType,
     rate: entry.defaultRate,
     rateUnit: entry.rateUnit,
     currency: entry.currency,
@@ -1253,6 +1274,13 @@ router.post("/matrix/groups/:groupId/candidates", async (req: Request, res: Resp
       socialUrl: body.socialUrl ?? linkedEntry?.socialUrl,
       modelsComUrl: body.modelsComUrl ?? linkedEntry?.modelsComUrl,
       pdfUrl: body.pdfUrl ?? linkedEntry?.polasUrl ?? linkedEntry?.selfTapeUrl,
+      addressLine1: body.addressLine1 ?? linkedEntry?.addressLine1,
+      addressLine2: body.addressLine2 ?? linkedEntry?.addressLine2,
+      city: body.city ?? linkedEntry?.city,
+      region: body.region ?? linkedEntry?.region,
+      postcode: body.postcode ?? linkedEntry?.postcode,
+      country: body.country ?? linkedEntry?.country,
+      locationType: body.locationType ?? linkedEntry?.locationType,
       rate: asNumber(body.rate) ?? linkedEntry?.defaultRate,
       rateUnit: body.rateUnit ?? linkedEntry?.rateUnit,
       currency: body.currency ?? linkedEntry?.currency ?? "GBP",
@@ -1281,6 +1309,13 @@ router.patch("/matrix/candidates/:candidateId", async (req: Request, res: Respon
   if (body.socialUrl !== undefined) data.socialUrl = optionalText(body.socialUrl);
   if (body.modelsComUrl !== undefined) data.modelsComUrl = optionalText(body.modelsComUrl);
   if (body.pdfUrl !== undefined) data.pdfUrl = optionalText(body.pdfUrl);
+  if (body.addressLine1 !== undefined) data.addressLine1 = optionalText(body.addressLine1);
+  if (body.addressLine2 !== undefined) data.addressLine2 = optionalText(body.addressLine2);
+  if (body.city !== undefined) data.city = optionalText(body.city);
+  if (body.region !== undefined) data.region = optionalText(body.region);
+  if (body.postcode !== undefined) data.postcode = optionalText(body.postcode);
+  if (body.country !== undefined) data.country = optionalText(body.country);
+  if (body.locationType !== undefined) data.locationType = optionalText(body.locationType);
   if (body.rate !== undefined) data.rate = asNumber(body.rate);
   if (body.rateUnit !== undefined) data.rateUnit = body.rateUnit;
   if (body.currency !== undefined) data.currency = body.currency;

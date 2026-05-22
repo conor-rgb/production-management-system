@@ -627,6 +627,13 @@ model OptionCandidate {
   pdfStoredPath    String?
   pdfSizeBytes     Int?
   pdfPublicToken   String?                     @unique
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  region           String?
+  postcode         String?
+  country          String?
+  locationType     String?
   rate             Float?
   rateUnit         String?
   currency         String                      @default("GBP")
