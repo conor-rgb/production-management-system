@@ -1,59 +1,63 @@
-# HANDOVER - 2026-05-22 - Structured Addresses for Options and Blackbook
-
-## Latest UI Pass
-- Refined the options sheet Address cell.
-- Populated addresses now render as compact plain multi-line text:
-  - line 1,
-  - line 2 when present,
-  - city and postcode,
-  - region and country when present.
-- Removed the boxed/pill treatment from populated address cells so the address reads like a normal sheet value.
-- Empty address cells still show a small "address" add affordance.
-- Replaced the collapsed inline edit controls inside the address dropdown with fixed-height text inputs.
-- Frontend rebuild passed, copied to `/var/www/agent`, and `pm2 reload 0` completed.
+# HANDOVER - 2026-05-22 - Google Places Address Picker for Options / Blackbook
 
 ## Built This Session
-- Added structured address fields to option candidates so location board rows can carry billing-ready address data.
-- Added a compact Address dropdown cell to the options sheet, matching the existing Links dropdown pattern.
-- Added structured address editing to Blackbook records for locations, companies, and location-category entries.
-- Added a shared country dropdown list that stores two-letter country codes for future accounting/API mapping.
-- Updated options candidate create/update/link flows so linked Blackbook address data can populate option rows.
+- Added reusable Blackbook addresses with address types:
+  - Work,
+  - Billing,
+  - Personal,
+  - Custom.
+- Added Google Places backend integration for place/address autocomplete.
+- Added backend-only Places endpoints so the Google API key is never exposed to the browser.
+- Reworked the Options Address dropdown into a real picker:
+  - saved addresses,
+  - Google place search,
+  - address type selector,
+  - default billing checkbox,
+  - manual entry fallback.
+- Option candidates can now select a saved Blackbook address for the deck.
+- Selected address fields are copied onto the option candidate as a deck snapshot for display/export stability.
 
 ## Backend
 - Updated `backend/prisma/schema.prisma`.
 - Added migration:
-  - `backend/prisma/migrations/20260522192000_option_candidate_structured_address/migration.sql`
-- New fields on `pms_option_candidates`:
-  - `addressLine1`
-  - `addressLine2`
-  - `city`
-  - `region`
-  - `postcode`
-  - `country`
-  - `locationType`
-- Updated `backend/src/routes/options.ts`:
-  - candidate create accepts address fields,
-  - candidate patch accepts address fields,
-  - candidate creation can copy address fields from linked Blackbook entries,
-  - Blackbook-to-candidate patch now includes address fields.
+  - `backend/prisma/migrations/20260522203000_blackbook_addresses_google_places/migration.sql`
+- New enums:
+  - `BlackbookAddressType`: `WORK`, `BILLING`, `PERSONAL`, `CUSTOM`
+  - `BlackbookAddressSource`: `MANUAL`, `GOOGLE_PLACES`
+- New model:
+  - `BlackbookAddress`
+- Added `selectedAddressId` relation to `OptionCandidate`.
+- Added service:
+  - `backend/src/services/googlePlacesService.ts`
+- Supported env vars:
+  - `GOOGLE_PLACES_API_KEY`
+  - fallback: `GOOGLE_MAPS_API_KEY`
+
+## API
+- Added under existing `/api/options` route:
+  - `GET /api/options/places/search?q=...&sessionToken=...`
+  - `POST /api/options/places/details`
+  - `GET /api/options/blackbook/:entryId/addresses`
+  - `POST /api/options/blackbook/:entryId/addresses`
+  - `PATCH /api/options/blackbook/addresses/:addressId`
+  - `DELETE /api/options/blackbook/addresses/:addressId`
+  - `PATCH /api/options/matrix/candidates/:candidateId/address`
+- Existing candidate patch also accepts `selectedAddressId`.
+- Existing Blackbook link flow now picks the default billing address or first saved address if one exists.
 
 ## Frontend
-- Added `frontend/src/lib/countries.ts`.
 - Updated `frontend/src/components/options/OptionsBoardView.tsx`.
-  - Options sheets now include an Address column.
-  - Clicking Address opens a dropdown with:
-    - Address 1,
-    - Address 2,
-    - City,
-    - Region,
-    - Postcode,
-    - Country,
-    - Location type.
-  - Country is selected from a dropdown and stored as a two-letter code.
-- Updated `frontend/src/components/blackbook/BlackbookOverlay.tsx`.
-  - Blackbook overlay now has a Structured address section for relevant record types.
-  - Structured address fields autosave on blur.
-  - Country uses the same shared dropdown.
+- Address cell behaviour:
+  - populated addresses render as compact multi-line plain text,
+  - clicking opens the picker dropdown,
+  - saved Blackbook addresses can be selected,
+  - Places search creates a saved Blackbook address and selects it,
+  - manual entry can create a saved Blackbook address when linked, or update the option snapshot if unlinked.
+- Address display format:
+  - line 1,
+  - line 2 when present,
+  - city, postcode,
+  - region, country.
 
 ## Deployment / Verification
 - Prisma migration deployed.
@@ -66,20 +70,23 @@
   - `GET /api/health` returned `{"status":"ok"}`.
 
 ## Current State
-- Options and Blackbook now share the same address shape at the UI level.
-- Blackbook already remains the intended source of truth for contact/location metadata.
-- Options candidate rows can hold an address snapshot for deck-specific context.
-- Linking an option to a Blackbook entry copies the current Blackbook address fields onto the option candidate.
+- Google Places is ready for production use from the backend.
+- Options can create reusable Blackbook addresses from Places results.
+- Country from Places is stored as a short country code when Google provides it.
+- Manual address entry remains available for private homes, load-ins, unofficial entrances, and non-standard production details.
 
 ## Known Gaps / Technical Debt
-- The country list is curated, not exhaustive.
-- Old Blackbook country values may still be full country names; the dropdown stores codes going forward.
-- Address syncing is currently one-way when linking from Blackbook to an option candidate. There is no automatic two-way sync from an edited option candidate address back into Blackbook yet.
-- Address fields are not rendered in PDF exports yet.
-- FreeAgent contact mapping still needs the final Phase 8 integration decision, but the current fields map cleanly to address line, city, region, postcode, and country fields.
+- The Blackbook overlay still shows the original single structured address section; it does not yet manage multiple saved addresses visually.
+- Option PDF/export templates do not yet render selected addresses.
+- Places search is region-biased to common production countries in the backend service; expand/remove `includedRegionCodes` if global search needs to be broader.
+- No hard monthly quota guard is implemented in-app; rely on Google Cloud budgets/API restrictions for now.
+- Address edits on a selected saved address are not yet exposed from the option dropdown; create/select/manual are covered.
 
 ## Exact Next Steps
-1. Decide whether option-address edits should update the linked Blackbook record automatically or stay as board-specific overrides.
-2. Add address rendering rules to the options PDF/template designer once the export layout is finalized.
-3. Expand the country list or replace it with a full ISO country dataset before FreeAgent integration.
-4. Add a small address validation pass when FreeAgent billing/PO integration starts.
+1. Test with real searches:
+   - `Claridge's`
+   - `Hilton Park Lane`
+   - `Big Sky Studios London`
+2. Add multi-address management to the Blackbook overlay so addresses can be edited centrally.
+3. Decide how selected addresses should appear in options PDF/deck templates.
+4. Consider adding API usage logging/counts if Places usage grows beyond internal use.

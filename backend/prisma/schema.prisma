@@ -70,6 +70,22 @@ enum BlackbookOutreachStatus {
   @@map("pms_blackbook_outreach_status")
 }
 
+enum BlackbookAddressType {
+  WORK
+  BILLING
+  PERSONAL
+  CUSTOM
+
+  @@map("pms_blackbook_address_type")
+}
+
+enum BlackbookAddressSource {
+  MANUAL
+  GOOGLE_PLACES
+
+  @@map("pms_blackbook_address_source")
+}
+
 // PmsJobType avoids conflict with legacy "JobType" enum in shared DB
 enum PmsJobType {
   STILLS
@@ -418,6 +434,7 @@ model BlackbookEntry {
   hips         String?
   shoe         String?
 
+  addresses        BlackbookAddress[]
   optionCandidates OptionCandidate[]
   contactId        String?
   contact          Contact?                   @relation(fields: [contactId], references: [id], onDelete: SetNull)
@@ -437,6 +454,36 @@ model BlackbookEntry {
   @@index([displayName])
   @@index([email])
   @@map("pms_blackbook_entries")
+}
+
+model BlackbookAddress {
+  id               String                 @id @default(uuid())
+  entryId          String
+  type             BlackbookAddressType   @default(WORK)
+  label            String?
+  isDefaultBilling Boolean                @default(false)
+  source           BlackbookAddressSource @default(MANUAL)
+  placeId          String?
+  placeName        String?
+  formattedAddress String?
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  region           String?
+  postcode         String?
+  country          String?
+  latitude         Float?
+  longitude        Float?
+  website          String?
+  phone            String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  entry            BlackbookEntry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  optionCandidates OptionCandidate[]
+
+  @@index([entryId])
+  @@map("pms_blackbook_addresses")
 }
 
 // ─── Opportunities ────────────────────────────────────────────────────────────
@@ -609,51 +656,54 @@ model RequirementDateNeed {
 }
 
 model OptionCandidate {
-  id               String                      @id @default(uuid())
-  productionId     String
-  groupId          String
-  blackbookEntryId String?
-  name             String
-  subtitle         String?
-  website          String?
-  contactName      String?
-  contactEmail     String?
-  contactPhone     String?
-  bookUrl          String?
-  socialUrl        String?
-  modelsComUrl     String?
-  pdfUrl           String?
-  pdfFilename      String?
-  pdfStoredPath    String?
-  pdfSizeBytes     Int?
-  pdfPublicToken   String?                     @unique
-  addressLine1     String?
-  addressLine2     String?
-  city             String?
-  region           String?
-  postcode         String?
-  country          String?
-  locationType     String?
-  rate             Float?
-  rateUnit         String?
-  currency         String                      @default("GBP")
-  activeState      OptionCandidateState        @default(ACTIVE)
-  internalNotes    String?
-  clientNotes      String?
-  order            Int                         @default(0)
-  dateStatuses     CandidateDateStatusRecord[]
-  assignments      OptionSlotAssignment[]
-  photos           OptionCandidatePhoto[]
-  createdAt        DateTime                    @default(now())
-  updatedAt        DateTime                    @updatedAt
+  id                String                      @id @default(uuid())
+  productionId      String
+  groupId           String
+  blackbookEntryId  String?
+  selectedAddressId String?
+  name              String
+  subtitle          String?
+  website           String?
+  contactName       String?
+  contactEmail      String?
+  contactPhone      String?
+  bookUrl           String?
+  socialUrl         String?
+  modelsComUrl      String?
+  pdfUrl            String?
+  pdfFilename       String?
+  pdfStoredPath     String?
+  pdfSizeBytes      Int?
+  pdfPublicToken    String?                     @unique
+  addressLine1      String?
+  addressLine2      String?
+  city              String?
+  region            String?
+  postcode          String?
+  country           String?
+  locationType      String?
+  rate              Float?
+  rateUnit          String?
+  currency          String                      @default("GBP")
+  activeState       OptionCandidateState        @default(ACTIVE)
+  internalNotes     String?
+  clientNotes       String?
+  order             Int                         @default(0)
+  dateStatuses      CandidateDateStatusRecord[]
+  assignments       OptionSlotAssignment[]
+  photos            OptionCandidatePhoto[]
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
 
-  production     Production      @relation(fields: [productionId], references: [id], onDelete: Cascade)
-  group          OptionGroup     @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  blackbookEntry BlackbookEntry? @relation(fields: [blackbookEntryId], references: [id], onDelete: SetNull)
+  production      Production        @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  group           OptionGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  blackbookEntry  BlackbookEntry?   @relation(fields: [blackbookEntryId], references: [id], onDelete: SetNull)
+  selectedAddress BlackbookAddress? @relation(fields: [selectedAddressId], references: [id], onDelete: SetNull)
 
   @@index([productionId])
   @@index([groupId, order])
   @@index([blackbookEntryId])
+  @@index([selectedAddressId])
   @@map("pms_option_candidates")
 }
 

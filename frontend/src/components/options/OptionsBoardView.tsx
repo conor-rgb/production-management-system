@@ -11,6 +11,54 @@ type CandidateState = "ACTIVE" | "PARKED" | "RELEASED";
 type HoldStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFIRMED" | "RELEASED" | "UNAVAILABLE" | "NA";
 type CandidateSortKey = "manual" | "name" | "notes" | "links" | "rate" | "state" | `date:${string}`;
 type SortDirection = "asc" | "desc";
+type BlackbookAddressType = "WORK" | "BILLING" | "PERSONAL" | "CUSTOM";
+
+interface BlackbookAddress {
+  id: string;
+  entryId: string;
+  type: BlackbookAddressType;
+  label: string | null;
+  isDefaultBilling: boolean;
+  source: "MANUAL" | "GOOGLE_PLACES";
+  placeId: string | null;
+  placeName: string | null;
+  formattedAddress: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  region: string | null;
+  postcode: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  website: string | null;
+  phone: string | null;
+}
+
+interface PlaceSearchResult {
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+  description: string;
+  types: string[];
+}
+
+interface NormalizedPlace {
+  placeId: string;
+  placeName: string | null;
+  formattedAddress: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  region: string | null;
+  postcode: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  website: string | null;
+  phone: string | null;
+  types: string[];
+}
 type PipelineState = "NOT_REQUIRED" | "NEEDED" | "REQUESTED" | "SECOND_OPTION" | "FIRST_OPTION" | "CONFIRMED" | "UNAVAILABLE" | "RELEASED";
 type ProductionDateType = "PPM" | "RECCE" | "FITTING" | "MEETING" | "SHOOT_DAY" | "POST_DELIVERY" | "OTHER";
 type ProductionDateStatus = "PROPOSED" | "OPTIONED" | "CONFIRMED" | "RELEASED" | "CANCELLED";
@@ -88,6 +136,7 @@ interface OptionCandidate {
   productionId: string;
   groupId: string;
   blackbookEntryId: string | null;
+  selectedAddressId: string | null;
   name: string;
   subtitle: string | null;
   website: string | null;
@@ -118,6 +167,7 @@ interface OptionCandidate {
   assignments: OptionSlotAssignment[];
   photos: OptionCandidatePhoto[];
   blackbookEntry: BlackbookEntry | null;
+  selectedAddress: BlackbookAddress | null;
 }
 
 interface BlackbookEntry {
@@ -147,6 +197,7 @@ interface BlackbookEntry {
   postcode: string | null;
   country: string | null;
   locationType: string | null;
+  addresses?: BlackbookAddress[];
   daylight: boolean | null;
   blackout: boolean | null;
   areaSqm: number | null;
@@ -345,14 +396,23 @@ function linkCount(candidate: OptionCandidate): number {
   return [candidate.bookUrl, candidate.socialUrl, candidate.modelsComUrl, candidate.pdfUrl].filter(Boolean).length;
 }
 
-function addressSummary(candidate: OptionCandidate): string {
-  return [candidate.addressLine1, candidate.city, candidate.postcode, countryName(candidate.country)].filter(Boolean).join(", ");
+type AddressLike = Pick<OptionCandidate, "addressLine1" | "addressLine2" | "city" | "region" | "postcode" | "country">;
+
+function addressSummary(address: AddressLike): string {
+  return [address.addressLine1, address.city, address.postcode, countryName(address.country)].filter(Boolean).join(", ");
 }
 
-function addressDisplayLines(candidate: OptionCandidate): string[] {
-  const cityLine = [candidate.city, candidate.postcode].filter(Boolean).join(", ");
-  const regionLine = [candidate.region, countryName(candidate.country)].filter(Boolean).join(", ");
-  return [candidate.addressLine1, candidate.addressLine2, cityLine, regionLine].filter((line): line is string => Boolean(line));
+function addressDisplayLines(address: AddressLike): string[] {
+  const cityLine = [address.city, address.postcode].filter(Boolean).join(", ");
+  const regionLine = [address.region, countryName(address.country)].filter(Boolean).join(", ");
+  return [address.addressLine1, address.addressLine2, cityLine, regionLine].filter((line): line is string => Boolean(line));
+}
+
+function addressTypeLabel(type: BlackbookAddressType): string {
+  if (type === "WORK") return "Work";
+  if (type === "BILLING") return "Billing";
+  if (type === "PERSONAL") return "Personal";
+  return "Custom";
 }
 
 function compareText(a: string | null | undefined, b: string | null | undefined): number {
@@ -1313,9 +1373,26 @@ function CandidateAddressCell({ candidate, onUpdate }: {
   onUpdate: (patch: Partial<OptionCandidate>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PlaceSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [addressType, setAddressType] = useState<BlackbookAddressType>("WORK");
+  const [defaultBilling, setDefaultBilling] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualDraft, setManualDraft] = useState({
+    addressLine1: candidate.addressLine1 ?? "",
+    addressLine2: candidate.addressLine2 ?? "",
+    city: candidate.city ?? "",
+    region: candidate.region ?? "",
+    postcode: candidate.postcode ?? "",
+    country: candidate.country ?? "",
+  });
   const ref = useRef<HTMLDivElement | null>(null);
-  const summary = addressSummary(candidate);
-  const lines = addressDisplayLines(candidate);
+  const sessionToken = useRef(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
+  const savedAddresses = candidate.blackbookEntry?.addresses ?? [];
+  const displayAddress = candidate.selectedAddress ?? candidate;
+  const summary = addressSummary(displayAddress);
+  const lines = addressDisplayLines(displayAddress);
 
   useEffect(() => {
     function close(event: MouseEvent) {
@@ -1324,6 +1401,85 @@ function CandidateAddressCell({ candidate, onUpdate }: {
     if (open) document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
+
+  useEffect(() => {
+    if (!open || query.trim().length < 3) {
+      setResults([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setSearching(true);
+      api.get<{ results: PlaceSearchResult[] }>(`/api/options/places/search?q=${encodeURIComponent(query)}&sessionToken=${encodeURIComponent(sessionToken.current)}`)
+        .then((data) => setResults(data.results))
+        .catch(console.error)
+        .finally(() => setSearching(false));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [open, query]);
+
+  useEffect(() => {
+    if (open) {
+      setManualDraft({
+        addressLine1: candidate.addressLine1 ?? "",
+        addressLine2: candidate.addressLine2 ?? "",
+        city: candidate.city ?? "",
+        region: candidate.region ?? "",
+        postcode: candidate.postcode ?? "",
+        country: candidate.country ?? "",
+      });
+    }
+  }, [candidate.addressLine1, candidate.addressLine2, candidate.city, candidate.country, candidate.postcode, candidate.region, open]);
+
+  async function selectSavedAddress(addressId: string) {
+    await onUpdate({ selectedAddressId: addressId });
+    setOpen(false);
+  }
+
+  async function createAddressFromPlace(result: PlaceSearchResult) {
+    if (!candidate.blackbookEntryId) return;
+    const place = await api.post<NormalizedPlace>("/api/options/places/details", {
+      placeId: result.placeId,
+      sessionToken: sessionToken.current,
+    });
+    const address = await api.post<BlackbookAddress>(`/api/options/blackbook/${candidate.blackbookEntryId}/addresses`, {
+      type: addressType,
+      isDefaultBilling: defaultBilling,
+      source: "GOOGLE_PLACES",
+      placeId: place.placeId,
+      placeName: place.placeName,
+      formattedAddress: place.formattedAddress,
+      addressLine1: place.addressLine1,
+      addressLine2: place.addressLine2,
+      city: place.city,
+      region: place.region,
+      postcode: place.postcode,
+      country: place.country,
+      latitude: place.latitude,
+      longitude: place.longitude,
+      website: place.website,
+      phone: place.phone,
+    });
+    await onUpdate({ selectedAddressId: address.id });
+    sessionToken.current = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    setQuery("");
+    setResults([]);
+    setOpen(false);
+  }
+
+  async function saveManualAddress() {
+    if (candidate.blackbookEntryId) {
+      const address = await api.post<BlackbookAddress>(`/api/options/blackbook/${candidate.blackbookEntryId}/addresses`, {
+        ...manualDraft,
+        type: addressType,
+        isDefaultBilling: defaultBilling,
+        source: "MANUAL",
+      });
+      await onUpdate({ selectedAddressId: address.id });
+    } else {
+      await onUpdate(manualDraft);
+    }
+    setOpen(false);
+  }
 
   return (
     <div ref={ref} className="relative">
@@ -1345,30 +1501,81 @@ function CandidateAddressCell({ candidate, onUpdate }: {
         )}
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-[340px] rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Structured address</div>
-          <AddressInput label="Address 1" value={candidate.addressLine1 ?? ""} onSave={(addressLine1) => onUpdate({ addressLine1 })} />
-          <AddressInput label="Address 2" value={candidate.addressLine2 ?? ""} onSave={(addressLine2) => onUpdate({ addressLine2 })} />
-          <div className="grid grid-cols-2 gap-2">
-            <AddressInput label="City" value={candidate.city ?? ""} onSave={(city) => onUpdate({ city })} />
-            <AddressInput label="Region" value={candidate.region ?? ""} onSave={(region) => onUpdate({ region })} />
+        <div className="absolute left-0 top-full z-50 mt-1 w-[380px] rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Address for deck</div>
+            <select value={addressType} onChange={(event) => setAddressType(event.target.value as BlackbookAddressType)} className="h-7 rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-700">
+              {(["WORK", "BILLING", "PERSONAL", "CUSTOM"] as BlackbookAddressType[]).map((type) => <option key={type} value={type}>{addressTypeLabel(type)}</option>)}
+            </select>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <AddressInput label="Postcode" value={candidate.postcode ?? ""} onSave={(postcode) => onUpdate({ postcode })} />
-            <label className="mb-2 block text-[11px] text-gray-500">
-              <span className="mb-1 block">Country</span>
-              <select
-                value={candidate.country ?? ""}
-                onChange={(event) => onUpdate({ country: event.target.value || null }).catch(console.error)}
-                className="h-8 w-full rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-800 outline-none focus:border-gray-500"
-              >
-                <option value="">Select country...</option>
-                {COUNTRY_OPTIONS.map((country) => <option key={country.code} value={country.code}>{country.name}</option>)}
-              </select>
-            </label>
-          </div>
-          <AddressInput label="Location type" value={candidate.locationType ?? ""} onSave={(locationType) => onUpdate({ locationType })} />
-          <p className="mt-1 text-[10px] text-gray-400">Country is stored as a two-letter code for future accounting/API use.</p>
+          <label className="mb-3 flex items-center gap-2 text-[11px] text-gray-500">
+            <input type="checkbox" checked={defaultBilling} onChange={(event) => setDefaultBilling(event.target.checked)} className="h-3 w-3" />
+            Set as default billing address
+          </label>
+
+          {savedAddresses.length > 0 && (
+            <div className="mb-3">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Saved addresses</div>
+              <div className="space-y-1">
+                {savedAddresses.map((address) => (
+                  <button
+                    key={address.id}
+                    onClick={() => { void selectSavedAddress(address.id).catch(console.error); }}
+                    className={`w-full rounded px-2 py-1.5 text-left text-[11px] ${candidate.selectedAddressId === address.id ? "bg-gray-900 text-white" : "bg-gray-50 text-gray-700 hover:bg-gray-100"}`}
+                  >
+                    <span className="mb-0.5 block font-semibold">{address.label || address.placeName || addressTypeLabel(address.type)}{address.isDefaultBilling ? " · default billing" : ""}</span>
+                    {addressDisplayLines(address).map((line) => <span key={line} className="block truncate opacity-75">{line}</span>)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Search place or address</div>
+          {!candidate.blackbookEntryId && <div className="mb-2 rounded bg-amber-50 px-2 py-1.5 text-[11px] text-amber-700">Link or create a Blackbook entry first to save Places results.</div>}
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            disabled={!candidate.blackbookEntryId}
+            placeholder="Claridge's, Big Sky Studios London..."
+            className="mb-2 h-8 w-full rounded border border-gray-200 px-2 text-[11px] text-gray-800 outline-none focus:border-gray-500 disabled:bg-gray-50 disabled:text-gray-400"
+          />
+          {searching && <div className="mb-2 text-[11px] text-gray-400">Searching...</div>}
+          {results.length > 0 && (
+            <div className="mb-3 max-h-44 overflow-auto rounded border border-gray-100">
+              {results.map((result) => (
+                <button key={result.placeId} onClick={() => { void createAddressFromPlace(result).catch(console.error); }} className="block w-full border-b border-gray-100 px-2 py-2 text-left text-[11px] last:border-b-0 hover:bg-gray-50">
+                  <span className="block font-semibold text-gray-800">{result.mainText}</span>
+                  <span className="block truncate text-gray-500">{result.secondaryText}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <button onClick={() => setManualOpen((current) => !current)} className="text-[11px] font-medium text-gray-600 underline decoration-gray-300 underline-offset-2">
+            {manualOpen ? "Hide manual entry" : "Enter manually"}
+          </button>
+          {manualOpen && (
+            <div className="mt-3 rounded border border-gray-100 bg-gray-50 p-2">
+              <AddressInput label="Address 1" value={manualDraft.addressLine1} onSave={async (addressLine1) => setManualDraft((draft) => ({ ...draft, addressLine1 }))} />
+              <AddressInput label="Address 2" value={manualDraft.addressLine2} onSave={async (addressLine2) => setManualDraft((draft) => ({ ...draft, addressLine2 }))} />
+              <div className="grid grid-cols-2 gap-2">
+                <AddressInput label="City" value={manualDraft.city} onSave={async (city) => setManualDraft((draft) => ({ ...draft, city }))} />
+                <AddressInput label="Region" value={manualDraft.region} onSave={async (region) => setManualDraft((draft) => ({ ...draft, region }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <AddressInput label="Postcode" value={manualDraft.postcode} onSave={async (postcode) => setManualDraft((draft) => ({ ...draft, postcode }))} />
+                <label className="mb-2 block text-[11px] text-gray-500">
+                  <span className="mb-1 block">Country</span>
+                  <select value={manualDraft.country} onChange={(event) => setManualDraft((draft) => ({ ...draft, country: event.target.value }))} className="h-8 w-full rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-800 outline-none focus:border-gray-500">
+                    <option value="">Select country...</option>
+                    {COUNTRY_OPTIONS.map((country) => <option key={country.code} value={country.code}>{country.name}</option>)}
+                  </select>
+                </label>
+              </div>
+              <button onClick={() => { void saveManualAddress().catch(console.error); }} className="mt-1 rounded bg-gray-900 px-3 py-1.5 text-[11px] font-medium text-white">Save address</button>
+            </div>
+          )}
         </div>
       )}
     </div>

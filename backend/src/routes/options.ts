@@ -7,6 +7,8 @@ import multer from "multer";
 import sharp from "sharp";
 import {
   BlackbookCategory,
+  BlackbookAddressSource,
+  BlackbookAddressType,
   BlackbookEntryType,
   BlackbookLifecycleStatus,
   BlackbookOutreachStatus,
@@ -25,6 +27,7 @@ import prisma from "../prisma";
 import { ensureProductionFolders, fileExtension, autoFileDocument } from "../services/fileStorage";
 import { renderOptionsPdf } from "../services/optionsPdf";
 import { optionsDeckFilename, renderOptionsDeckPdf } from "../services/optionsDeckPdf";
+import { getPlaceDetails, searchPlaces } from "../services/googlePlacesService";
 
 const router = Router();
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -67,6 +70,27 @@ type OptionFieldBody = {
   clientNotes?: string | null;
   order?: number;
   blackbookEntryId?: string | null;
+  selectedAddressId?: string | null;
+};
+
+type AddressFieldBody = {
+  type?: BlackbookAddressType;
+  label?: string | null;
+  isDefaultBilling?: boolean;
+  source?: BlackbookAddressSource;
+  placeId?: string | null;
+  placeName?: string | null;
+  formattedAddress?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postcode?: string | null;
+  country?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  website?: string | null;
+  phone?: string | null;
 };
 
 type BlackbookFieldBody = {
@@ -249,6 +273,79 @@ function optionalText(value: string | null | undefined): string | null | undefin
   return trimmed || null;
 }
 
+function addressDataFromBody(body: AddressFieldBody): Omit<Prisma.BlackbookAddressUncheckedCreateInput, "entryId"> {
+  return {
+    type: body.type ?? "WORK",
+    label: optionalText(body.label),
+    isDefaultBilling: body.isDefaultBilling ?? false,
+    source: body.source ?? "MANUAL",
+    placeId: optionalText(body.placeId),
+    placeName: optionalText(body.placeName),
+    formattedAddress: optionalText(body.formattedAddress),
+    addressLine1: optionalText(body.addressLine1),
+    addressLine2: optionalText(body.addressLine2),
+    city: optionalText(body.city),
+    region: optionalText(body.region),
+    postcode: optionalText(body.postcode),
+    country: optionalText(body.country),
+    latitude: asNumber(body.latitude),
+    longitude: asNumber(body.longitude),
+    website: optionalText(body.website),
+    phone: optionalText(body.phone),
+  };
+}
+
+function addressPatchFromBody(body: AddressFieldBody): Prisma.BlackbookAddressUpdateInput {
+  const data: Prisma.BlackbookAddressUpdateInput = {};
+  if (body.type !== undefined) data.type = body.type;
+  if (body.label !== undefined) data.label = optionalText(body.label);
+  if (body.isDefaultBilling !== undefined) data.isDefaultBilling = body.isDefaultBilling;
+  if (body.source !== undefined) data.source = body.source;
+  if (body.placeId !== undefined) data.placeId = optionalText(body.placeId);
+  if (body.placeName !== undefined) data.placeName = optionalText(body.placeName);
+  if (body.formattedAddress !== undefined) data.formattedAddress = optionalText(body.formattedAddress);
+  if (body.addressLine1 !== undefined) data.addressLine1 = optionalText(body.addressLine1);
+  if (body.addressLine2 !== undefined) data.addressLine2 = optionalText(body.addressLine2);
+  if (body.city !== undefined) data.city = optionalText(body.city);
+  if (body.region !== undefined) data.region = optionalText(body.region);
+  if (body.postcode !== undefined) data.postcode = optionalText(body.postcode);
+  if (body.country !== undefined) data.country = optionalText(body.country);
+  if (body.latitude !== undefined) data.latitude = asNumber(body.latitude);
+  if (body.longitude !== undefined) data.longitude = asNumber(body.longitude);
+  if (body.website !== undefined) data.website = optionalText(body.website);
+  if (body.phone !== undefined) data.phone = optionalText(body.phone);
+  return data;
+}
+
+async function clearOtherDefaultBilling(entryId: string, exceptId?: string): Promise<void> {
+  await prisma.blackbookAddress.updateMany({
+    where: { entryId, id: exceptId ? { not: exceptId } : undefined, isDefaultBilling: true },
+    data: { isDefaultBilling: false },
+  });
+}
+
+function candidateAddressPatch(address: {
+  id: string;
+  placeName: string | null;
+  formattedAddress: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  region: string | null;
+  postcode: string | null;
+  country: string | null;
+}): Prisma.OptionCandidateUpdateInput {
+  return {
+    selectedAddress: { connect: { id: address.id } },
+    addressLine1: address.addressLine1 ?? address.formattedAddress ?? address.placeName,
+    addressLine2: address.addressLine2,
+    city: address.city,
+    region: address.region,
+    postcode: address.postcode,
+    country: address.country,
+  };
+}
+
 function categoryFromRequirementType(type: OptionRequirementType): BlackbookCategory {
   if (type === "CREW") return "CREW";
   if (type === "SERVICE") return "SERVICE";
@@ -346,10 +443,23 @@ function candidatePatchFromBlackbook(entry: {
   postcode: string | null;
   country: string | null;
   locationType: string | null;
+  addresses?: Array<{
+    id: string;
+    placeName: string | null;
+    formattedAddress: string | null;
+    addressLine1: string | null;
+    addressLine2: string | null;
+    city: string | null;
+    region: string | null;
+    postcode: string | null;
+    country: string | null;
+    isDefaultBilling: boolean;
+  }>;
   defaultRate: number | null;
   rateUnit: string | null;
   currency: string;
 }): Prisma.OptionCandidateUpdateInput {
+  const selectedAddress = entry.addresses?.find((address) => address.isDefaultBilling) ?? entry.addresses?.[0] ?? null;
   return {
     blackbookEntry: { connect: { id: entry.id } },
     name: entry.displayName,
@@ -361,12 +471,14 @@ function candidatePatchFromBlackbook(entry: {
     socialUrl: entry.socialUrl,
     modelsComUrl: entry.modelsComUrl,
     pdfUrl: entry.polasUrl ?? entry.selfTapeUrl,
-    addressLine1: entry.addressLine1,
-    addressLine2: entry.addressLine2,
-    city: entry.city,
-    region: entry.region,
-    postcode: entry.postcode,
-    country: entry.country,
+    ...(selectedAddress ? candidateAddressPatch(selectedAddress) : {
+      addressLine1: entry.addressLine1,
+      addressLine2: entry.addressLine2,
+      city: entry.city,
+      region: entry.region,
+      postcode: entry.postcode,
+      country: entry.country,
+    }),
     locationType: entry.locationType,
     rate: entry.defaultRate,
     rateUnit: entry.rateUnit,
@@ -533,7 +645,17 @@ async function matrixResponse(productionId: string) {
         },
         candidates: {
           orderBy: { order: "asc" },
-          include: { dateStatuses: true, assignments: true, blackbookEntry: true, photos: { orderBy: { order: "asc" } } },
+          include: {
+            dateStatuses: true,
+            assignments: true,
+            selectedAddress: true,
+            blackbookEntry: {
+              include: {
+                addresses: { orderBy: [{ isDefaultBilling: "desc" }, { type: "asc" }, { createdAt: "asc" }] },
+              },
+            },
+            photos: { orderBy: { order: "asc" } },
+          },
         },
       },
     }),
@@ -683,9 +805,85 @@ router.get("/blackbook", async (req: Request, res: Response): Promise<void> => {
     where,
     orderBy: [{ displayName: "asc" }],
     take: Math.min(50, Math.max(1, Number(limit) || 12)),
-    include: { categoryConfig: true, companyEntry: { select: { id: true, displayName: true } }, targetLists: { include: { list: true } } },
+    include: {
+      addresses: { orderBy: [{ isDefaultBilling: "desc" }, { type: "asc" }, { createdAt: "asc" }] },
+      categoryConfig: true,
+      companyEntry: { select: { id: true, displayName: true } },
+      targetLists: { include: { list: true } },
+    },
   });
   res.json(entries);
+});
+
+router.get("/places/search", async (req: Request, res: Response): Promise<void> => {
+  const { q = "", sessionToken } = req.query as { q?: string; sessionToken?: string };
+  try {
+    const results = await searchPlaces(q, sessionToken);
+    res.json({ results });
+  } catch (error) {
+    console.error("[PLACES] Search failed", error);
+    res.status(502).json({ error: "Place search failed" });
+  }
+});
+
+router.post("/places/details", async (req: Request, res: Response): Promise<void> => {
+  const { placeId, sessionToken } = req.body as { placeId?: string; sessionToken?: string };
+  if (!placeId) {
+    res.status(400).json({ error: "placeId is required" });
+    return;
+  }
+  try {
+    const place = await getPlaceDetails(placeId, sessionToken);
+    res.json(place);
+  } catch (error) {
+    console.error("[PLACES] Details failed", error);
+    res.status(502).json({ error: "Place details failed" });
+  }
+});
+
+router.get("/blackbook/:entryId/addresses", async (req: Request, res: Response): Promise<void> => {
+  const addresses = await prisma.blackbookAddress.findMany({
+    where: { entryId: req.params.entryId },
+    orderBy: [{ isDefaultBilling: "desc" }, { type: "asc" }, { createdAt: "asc" }],
+  });
+  res.json(addresses);
+});
+
+router.post("/blackbook/:entryId/addresses", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as AddressFieldBody;
+  const entry = await prisma.blackbookEntry.findUnique({ where: { id: req.params.entryId } });
+  if (!entry) {
+    res.status(404).json({ error: "Blackbook entry not found" });
+    return;
+  }
+  if (body.isDefaultBilling) await clearOtherDefaultBilling(entry.id);
+  const address = await prisma.blackbookAddress.create({
+    data: {
+      entryId: entry.id,
+      ...addressDataFromBody(body),
+    },
+  });
+  res.status(201).json(address);
+});
+
+router.patch("/blackbook/addresses/:addressId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as AddressFieldBody;
+  const existing = await prisma.blackbookAddress.findUnique({ where: { id: req.params.addressId } });
+  if (!existing) {
+    res.status(404).json({ error: "Address not found" });
+    return;
+  }
+  if (body.isDefaultBilling) await clearOtherDefaultBilling(existing.entryId, existing.id);
+  const address = await prisma.blackbookAddress.update({
+    where: { id: existing.id },
+    data: addressPatchFromBody(body),
+  });
+  res.json(address);
+});
+
+router.delete("/blackbook/addresses/:addressId", async (req: Request, res: Response): Promise<void> => {
+  await prisma.blackbookAddress.delete({ where: { id: req.params.addressId } });
+  res.json({ deleted: true });
 });
 
 router.get("/blackbook/lists", async (_req: Request, res: Response): Promise<void> => {
@@ -1299,6 +1497,14 @@ router.patch("/matrix/candidates/:candidateId", async (req: Request, res: Respon
   if (body.blackbookEntryId !== undefined) {
     data.blackbookEntry = body.blackbookEntryId ? { connect: { id: body.blackbookEntryId } } : { disconnect: true };
   }
+  if (body.selectedAddressId !== undefined) {
+    if (body.selectedAddressId) {
+      const address = await prisma.blackbookAddress.findUnique({ where: { id: body.selectedAddressId } });
+      if (address) Object.assign(data, candidateAddressPatch(address));
+    } else {
+      data.selectedAddress = { disconnect: true };
+    }
+  }
   if (body.name !== undefined) data.name = body.name;
   if (body.subtitle !== undefined) data.subtitle = body.subtitle;
   if (body.website !== undefined) data.website = body.website;
@@ -1369,7 +1575,12 @@ router.post("/matrix/candidates/:candidateId/link-blackbook", async (req: Reques
     return;
   }
 
-  let entry = entryId ? await prisma.blackbookEntry.findUnique({ where: { id: entryId } }) : null;
+  let entry = entryId
+    ? await prisma.blackbookEntry.findUnique({
+        where: { id: entryId },
+        include: { addresses: { orderBy: [{ isDefaultBilling: "desc" }, { type: "asc" }, { createdAt: "asc" }] } },
+      })
+    : null;
   if (!entry && createFromCandidate) {
     entry = await prisma.blackbookEntry.create({
       data: {
@@ -1385,6 +1596,7 @@ router.post("/matrix/candidates/:candidateId/link-blackbook", async (req: Reques
         currency: candidate.currency,
         notes: candidate.internalNotes,
       },
+      include: { addresses: true },
     });
   }
   if (!entry) {
@@ -1395,6 +1607,34 @@ router.post("/matrix/candidates/:candidateId/link-blackbook", async (req: Reques
   const updated = await prisma.optionCandidate.update({
     where: { id: candidate.id },
     data: candidatePatchFromBlackbook(entry),
+  });
+  res.json(await matrixResponse(updated.productionId));
+});
+
+router.patch("/matrix/candidates/:candidateId/address", async (req: Request, res: Response): Promise<void> => {
+  const { addressId } = req.body as { addressId?: string | null };
+  const candidate = await prisma.optionCandidate.findUnique({ where: { id: req.params.candidateId } });
+  if (!candidate) {
+    res.status(404).json({ error: "Candidate not found" });
+    return;
+  }
+  if (!addressId) {
+    const updated = await prisma.optionCandidate.update({
+      where: { id: candidate.id },
+      data: { selectedAddress: { disconnect: true } },
+    });
+    res.json(await matrixResponse(updated.productionId));
+    return;
+  }
+
+  const address = await prisma.blackbookAddress.findUnique({ where: { id: addressId } });
+  if (!address) {
+    res.status(404).json({ error: "Address not found" });
+    return;
+  }
+  const updated = await prisma.optionCandidate.update({
+    where: { id: candidate.id },
+    data: candidateAddressPatch(address),
   });
   res.json(await matrixResponse(updated.productionId));
 });
