@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { X, Search, Mail, Briefcase, CalendarDays, Tag } from "lucide-react";
+import { X, Search, Mail, Briefcase, CalendarDays, Tag, Users, UserPlus, Building2 } from "lucide-react";
 import { api } from "../../lib/api";
 
 type BlackbookEntryType = "PERSON" | "COMPANY" | "LOCATION" | "TALENT" | "SERVICE";
@@ -31,7 +31,10 @@ interface BlackbookEntry {
   typeIds: string[];
   companyEntryId?: string | null;
   displayName: string;
+  firstName?: string | null;
+  lastName?: string | null;
   companyName: string | null;
+  jobTitle?: string | null;
   email: string | null;
   phone: string | null;
   website: string | null;
@@ -135,7 +138,12 @@ export default function BlackbookOverlay({ initialEntryId, onClose }: { initialE
           ) : loading || !detail ? (
             <div className="grid h-full place-items-center text-sm text-gray-400">Loading blackbook record...</div>
           ) : (
-            <BlackbookDetail data={detail} categories={categories} onRefresh={() => selectedId && api.get<BlackbookCrmResponse>(`/api/options/blackbook/${selectedId}/crm`).then(setDetail).catch(console.error)} />
+            <BlackbookDetail
+              data={detail}
+              categories={categories}
+              onOpenEntry={setSelectedId}
+              onRefresh={() => selectedId && api.get<BlackbookCrmResponse>(`/api/options/blackbook/${selectedId}/crm`).then(setDetail).catch(console.error)}
+            />
           )}
         </main>
       </div>
@@ -143,7 +151,17 @@ export default function BlackbookOverlay({ initialEntryId, onClose }: { initialE
   );
 }
 
-function BlackbookDetail({ data, categories, onRefresh }: { data: BlackbookCrmResponse; categories: BlackbookConfigCategory[]; onRefresh: () => void }) {
+function BlackbookDetail({
+  data,
+  categories,
+  onOpenEntry,
+  onRefresh,
+}: {
+  data: BlackbookCrmResponse;
+  categories: BlackbookConfigCategory[];
+  onOpenEntry: (entryId: string) => void;
+  onRefresh: () => void;
+}) {
   const { entry } = data;
   const category = categories.find((item) => item.id === entry.categoryConfigId);
   const typeNames = category?.types.filter((type) => entry.typeIds.includes(type.id)).map((type) => type.name) ?? [];
@@ -180,12 +198,10 @@ function BlackbookDetail({ data, categories, onRefresh }: { data: BlackbookCrmRe
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {(entry.people?.length ?? 0) > 0 && (
-          <TimelineSection title="People" icon={<UsersIcon />} empty="No people attached.">
-            {entry.people?.map((person) => (
-              <Card key={person.id} title={person.displayName} meta={[person.email, person.phone].filter(Boolean).join(" · ")} />
-            ))}
-          </TimelineSection>
+        {entry.entryType === "COMPANY" ? (
+          <CompanyPeopleManager company={entry} people={entry.people ?? []} onOpenEntry={onOpenEntry} onRefresh={onRefresh} />
+        ) : (
+          <PersonCompanyManager entry={entry} onOpenEntry={onOpenEntry} onRefresh={onRefresh} />
         )}
         <TimelineSection title="Projects" icon={<Briefcase size={15} />} empty="No linked projects yet.">
           {data.productions.map((item) => (
@@ -219,10 +235,6 @@ function BlackbookDetail({ data, categories, onRefresh }: { data: BlackbookCrmRe
   );
 }
 
-function UsersIcon() {
-  return <span className="text-sm">👥</span>;
-}
-
 function LifecycleEditor({ value, onChange }: { value: BlackbookLifecycleStatus; onChange: (value: BlackbookLifecycleStatus) => Promise<void> }) {
   const options: BlackbookLifecycleStatus[] = ["TARGET", "IN_TOUCH", "CLIENT", "PAST_CLIENT", "SUPPLIER", "PREFERRED_SUPPLIER", "DO_NOT_USE", "ARCHIVED"];
   return (
@@ -232,6 +244,215 @@ function LifecycleEditor({ value, onChange }: { value: BlackbookLifecycleStatus;
         {options.map((option) => <option key={option} value={option}>{option.toLowerCase().replace(/_/g, " ")}</option>)}
       </select>
     </div>
+  );
+}
+
+function PersonCompanyManager({ entry, onOpenEntry, onRefresh }: { entry: BlackbookCrmResponse["entry"]; onOpenEntry: (entryId: string) => void; onRefresh: () => void }) {
+  const [query, setQuery] = useState("");
+  const [companies, setCompanies] = useState<BlackbookEntry[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [companyName, setCompanyName] = useState(entry.companyName ?? "");
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setCompanies([]);
+      return;
+    }
+    const params = new URLSearchParams({ q: query, entryType: "COMPANY", limit: "8" });
+    api.get<BlackbookEntry[]>(`/api/options/blackbook?${params.toString()}`).then(setCompanies).catch(console.error);
+  }, [query]);
+
+  async function attach(companyId: string) {
+    await api.patch(`/api/options/blackbook/${entry.id}`, { companyEntryId: companyId });
+    setQuery("");
+    onRefresh();
+  }
+
+  async function detach() {
+    await api.patch(`/api/options/blackbook/${entry.id}`, { companyEntryId: null });
+    onRefresh();
+  }
+
+  async function createCompany() {
+    const name = companyName.trim();
+    if (!name) return;
+    const created = await api.post<BlackbookEntry>("/api/options/blackbook", {
+      displayName: name,
+      entryType: "COMPANY",
+      lifecycleStatus: entry.lifecycleStatus,
+      category: entry.category,
+    });
+    await attach(created.id);
+    setCreating(false);
+  }
+
+  return (
+    <section>
+      <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-gray-500"><Building2 size={15} /> Company</h3>
+      <div className="rounded-lg border border-gray-200 bg-white p-3">
+        {entry.companyEntry ? (
+          <div className="flex items-center justify-between gap-3">
+            <button onClick={() => onOpenEntry(entry.companyEntry!.id)} className="min-w-0 text-left">
+              <p className="truncate text-sm font-medium text-gray-900">{entry.companyEntry.displayName}</p>
+              <p className="mt-1 text-xs text-gray-500">Company record</p>
+            </button>
+            <button onClick={detach} className="shrink-0 rounded border border-gray-200 px-2 py-1 text-[11px] text-gray-500 hover:border-red-200 hover:text-red-600">Detach</button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-500">No company attached yet.</p>
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-[0.06em] text-gray-400">Find company</label>
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search companies..." className="mt-1 h-9 w-full rounded border border-gray-200 px-3 text-xs outline-none focus:border-gray-500" />
+              {companies.length > 0 && (
+                <div className="mt-2 overflow-hidden rounded border border-gray-200">
+                  {companies.map((company) => (
+                    <button key={company.id} onClick={() => attach(company.id)} className="block w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50">
+                      <p className="text-xs font-medium text-gray-900">{company.displayName}</p>
+                      <p className="text-[11px] text-gray-400">{[company.email, company.city].filter(Boolean).join(" · ") || "Company"}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {creating ? (
+              <div className="rounded-lg bg-gray-50 p-3">
+                <label className="text-[11px] font-medium uppercase tracking-[0.06em] text-gray-400">New company</label>
+                <input value={companyName} onChange={(event) => setCompanyName(event.target.value)} className="mt-1 h-9 w-full rounded border border-gray-200 px-3 text-xs outline-none focus:border-gray-500" />
+                <div className="mt-2 flex justify-end gap-2">
+                  <button onClick={() => setCreating(false)} className="rounded px-2 py-1 text-[11px] text-gray-500 hover:bg-white">Cancel</button>
+                  <button onClick={createCompany} className="rounded bg-gray-900 px-2 py-1 text-[11px] font-medium text-white">Create and attach</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setCreating(true)} className="rounded border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:border-gray-400">+ Create company from this record</button>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function CompanyPeopleManager({
+  company,
+  people,
+  onOpenEntry,
+  onRefresh,
+}: {
+  company: BlackbookCrmResponse["entry"];
+  people: BlackbookEntry[];
+  onOpenEntry: (entryId: string) => void;
+  onRefresh: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [matches, setMatches] = useState<BlackbookEntry[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [newPerson, setNewPerson] = useState({ firstName: "", lastName: "", email: "", phone: "", jobTitle: "" });
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setMatches([]);
+      return;
+    }
+    const params = new URLSearchParams({ q: query, entryType: "PERSON", limit: "8" });
+    api.get<BlackbookEntry[]>(`/api/options/blackbook?${params.toString()}`)
+      .then((data) => setMatches(data.filter((person) => person.id !== company.id && person.companyEntryId !== company.id)))
+      .catch(console.error);
+  }, [company.id, query]);
+
+  async function attach(personId: string) {
+    await api.patch(`/api/options/blackbook/${personId}`, { companyEntryId: company.id });
+    setQuery("");
+    setMatches([]);
+    onRefresh();
+  }
+
+  async function detach(personId: string) {
+    await api.patch(`/api/options/blackbook/${personId}`, { companyEntryId: null });
+    onRefresh();
+  }
+
+  async function createPerson() {
+    const firstName = newPerson.firstName.trim();
+    const lastName = newPerson.lastName.trim();
+    const displayName = [firstName, lastName].filter(Boolean).join(" ").trim();
+    if (!displayName) return;
+    await api.post<BlackbookEntry>("/api/options/blackbook", {
+      displayName,
+      firstName: firstName || null,
+      lastName: lastName || null,
+      email: newPerson.email.trim() || null,
+      phone: newPerson.phone.trim() || null,
+      jobTitle: newPerson.jobTitle.trim() || null,
+      companyEntryId: company.id,
+      companyName: company.displayName,
+      entryType: "PERSON",
+      category: company.category,
+      categoryConfigId: company.categoryConfigId,
+      typeIds: company.typeIds,
+      lifecycleStatus: company.lifecycleStatus,
+    });
+    setCreating(false);
+    setNewPerson({ firstName: "", lastName: "", email: "", phone: "", jobTitle: "" });
+    onRefresh();
+  }
+
+  return (
+    <section>
+      <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-gray-500"><Users size={15} /> People</h3>
+      <div className="rounded-lg border border-gray-200 bg-white p-3">
+        <div className="space-y-2">
+          {people.length > 0 ? people.map((person) => (
+            <div key={person.id} className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 p-2">
+              <button onClick={() => onOpenEntry(person.id)} className="min-w-0 text-left">
+                <p className="truncate text-sm font-medium text-gray-900">{person.displayName}</p>
+                <p className="mt-0.5 truncate text-xs text-gray-500">{[person.jobTitle, person.email, person.phone].filter(Boolean).join(" · ")}</p>
+              </button>
+              <button onClick={() => detach(person.id)} className="shrink-0 rounded border border-gray-200 px-2 py-1 text-[11px] text-gray-500 hover:border-red-200 hover:text-red-600">Detach</button>
+            </div>
+          )) : (
+            <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-400">No people attached yet.</p>
+          )}
+        </div>
+
+        <div className="mt-4 border-t border-gray-100 pt-3">
+          <div className="flex items-center gap-2">
+            <UserPlus size={14} className="text-gray-400" />
+            <label className="text-[11px] font-medium uppercase tracking-[0.06em] text-gray-400">Attach person</label>
+          </div>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search people..." className="mt-2 h-9 w-full rounded border border-gray-200 px-3 text-xs outline-none focus:border-gray-500" />
+          {matches.length > 0 && (
+            <div className="mt-2 overflow-hidden rounded border border-gray-200">
+              {matches.map((person) => (
+                <button key={person.id} onClick={() => attach(person.id)} className="block w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50">
+                  <p className="text-xs font-medium text-gray-900">{person.displayName}</p>
+                  <p className="text-[11px] text-gray-400">{[person.companyEntryId ? "Attached elsewhere" : null, person.email, person.phone].filter(Boolean).join(" · ") || "Person"}</p>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {creating ? (
+            <div className="mt-3 rounded-lg bg-gray-50 p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <input value={newPerson.firstName} onChange={(event) => setNewPerson((prev) => ({ ...prev, firstName: event.target.value }))} placeholder="First name" className="h-9 rounded border border-gray-200 px-3 text-xs outline-none focus:border-gray-500" />
+                <input value={newPerson.lastName} onChange={(event) => setNewPerson((prev) => ({ ...prev, lastName: event.target.value }))} placeholder="Last name" className="h-9 rounded border border-gray-200 px-3 text-xs outline-none focus:border-gray-500" />
+                <input value={newPerson.email} onChange={(event) => setNewPerson((prev) => ({ ...prev, email: event.target.value }))} placeholder="Email" className="h-9 rounded border border-gray-200 px-3 text-xs outline-none focus:border-gray-500" />
+                <input value={newPerson.phone} onChange={(event) => setNewPerson((prev) => ({ ...prev, phone: event.target.value }))} placeholder="Phone" className="h-9 rounded border border-gray-200 px-3 text-xs outline-none focus:border-gray-500" />
+                <input value={newPerson.jobTitle} onChange={(event) => setNewPerson((prev) => ({ ...prev, jobTitle: event.target.value }))} placeholder="Role / title" className="col-span-2 h-9 rounded border border-gray-200 px-3 text-xs outline-none focus:border-gray-500" />
+              </div>
+              <div className="mt-2 flex justify-end gap-2">
+                <button onClick={() => setCreating(false)} className="rounded px-2 py-1 text-[11px] text-gray-500 hover:bg-white">Cancel</button>
+                <button onClick={createPerson} className="rounded bg-gray-900 px-2 py-1 text-[11px] font-medium text-white">Create person</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setCreating(true)} className="mt-3 rounded border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:border-gray-400">+ Create person under {company.displayName}</button>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
