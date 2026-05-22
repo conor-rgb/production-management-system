@@ -137,10 +137,30 @@ function candidateById(group: OptionGroup, candidateId: string | null | undefine
   return group.candidates.find((candidate) => candidate.id === candidateId);
 }
 
+function confirmedCandidatesForDate(group: OptionGroup, dateId: string): OptionCandidate[] {
+  return group.candidates
+    .filter((candidate) => candidate.activeState === "ACTIVE" && statusFor(candidate, dateId)?.status === "CONFIRMED")
+    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+}
+
+function requiredRequirementsForDate(group: OptionGroup, dateId: string): OptionRequirement[] {
+  return group.requirements
+    .filter((requirement) => requirement.activeState === "ACTIVE" && Boolean(needFor(requirement, dateId)?.isRequired))
+    .sort((a, b) => a.order - b.order || a.slotNumber - b.slotNumber);
+}
+
+function displayedCandidateForRequirement(group: OptionGroup, requirement: OptionRequirement, dateId: string): OptionCandidate | undefined {
+  const explicit = candidateById(group, assignmentFor(requirement, dateId)?.candidateId);
+  if (explicit) return explicit;
+  const requirementIndex = requiredRequirementsForDate(group, dateId).findIndex((item) => item.id === requirement.id);
+  if (requirementIndex < 0) return undefined;
+  return confirmedCandidatesForDate(group, dateId)[requirementIndex];
+}
+
 function pipelineFor(group: OptionGroup, requirement: OptionRequirement, dateId: string): PipelineState {
   const need = needFor(requirement, dateId);
   if (!need?.isRequired) return "NOT_REQUIRED";
-  if (assignmentFor(requirement, dateId)) return "CONFIRMED";
+  if (displayedCandidateForRequirement(group, requirement, dateId)) return "CONFIRMED";
   const statuses = group.candidates
     .filter((candidate) => candidate.activeState === "ACTIVE")
     .map((candidate) => statusFor(candidate, dateId)?.status)
@@ -523,7 +543,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
               const isRequired = Boolean(need?.isRequired);
               const pipeline = pipelineFor(group, requirement, date.id);
               const assignment = assignmentFor(requirement, date.id);
-              const assignedCandidate = candidateById(group, assignment?.candidateId);
+              const shownCandidate = displayedCandidateForRequirement(group, requirement, date.id);
               return (
                 <div
                   key={date.id}
@@ -538,7 +558,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
                     }}
                     className={`inline-flex min-h-8 min-w-[82px] items-center justify-center rounded border px-2 text-[11px] font-semibold ${pipelineClass(pipeline)}`}
                   >
-                    {isRequired ? assignedCandidate?.name ?? shortPipeline(pipeline) : ""}
+                    {isRequired ? shownCandidate?.name ?? shortPipeline(pipeline) : ""}
                   </button>
                   {isRequired && (
                     <AssignmentDropdown

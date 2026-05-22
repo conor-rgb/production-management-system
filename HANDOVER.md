@@ -24,6 +24,8 @@
 - Added slot assignment:
   - each requirement/date cell can now assign one active candidate from the shared group pool
   - assigned cells show the candidate name and derive as confirmed in the matrix
+- Confirmed candidate holds now automatically populate the visible matrix slot for that date.
+- Manual slot assignment now also marks the selected candidate/date hold as confirmed.
 
 ## Schema
 - Added matrix models:
@@ -123,13 +125,13 @@
 - Legacy `OptionsBoard`, `OptionsCategory`, `Option`, and `OptionPhoto` still exist. They are not removed yet because they preserve the earlier client options/PDF work.
 - Candidate photos/client presentation are not reconnected to the new matrix candidate model yet.
 - Requirement row reorder is currently a simple order nudge via up/down controls, not drag-and-drop.
-- Slot assignment exists per requirement/date, but it does not yet automatically set the candidate date hold status to confirmed.
+- If multiple confirmed candidates exist for the same role/date, the matrix maps them to required slots by row order and candidate order unless an explicit slot assignment overrides it.
 - Date statuses exist in the matrix, but are not yet surfaced in the main Dates tab or calendar views.
 - Master timeline/date-first view is not implemented yet.
 
 ## Suggested next build
 1. Surface date status in the main Dates tab and calendar views.
 2. Add proper drag/drop row reorder rather than temporary up/down order nudges.
-3. Auto-sync candidate hold status to confirmed when assigning a slot.
-4. Add Blackbook entries and link candidates to reusable people/companies/locations.
-5. Rebuild client presentation/PDF from candidate groups once Blackbook/photos are in place.
+3. Add Blackbook entries and link candidates to reusable people/companies/locations.
+4. Rebuild client presentation/PDF from candidate groups once Blackbook/photos are in place.
+5. Add date-first timeline/master chasing view.

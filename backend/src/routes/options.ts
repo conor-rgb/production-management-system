@@ -435,6 +435,11 @@ router.patch("/matrix/requirements/:requirementId/dates/:dateId/assignment", asy
     update: { candidateId, notes },
     create: { requirementId: requirement.id, dateId: req.params.dateId, candidateId, notes },
   });
+  await prisma.candidateDateStatusRecord.upsert({
+    where: { candidateId_dateId: { candidateId, dateId: req.params.dateId } },
+    update: { status: "CONFIRMED" },
+    create: { candidateId, dateId: req.params.dateId, status: "CONFIRMED" },
+  });
   await prisma.requirementDateNeed.upsert({
     where: { requirementId_dateId: { requirementId: requirement.id, dateId: req.params.dateId } },
     update: { isRequired: true },
