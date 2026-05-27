@@ -1,3 +1,84 @@
+# HANDOVER - 2026-05-27 - Group PO to Bill Conversion
+
+## Built This Session
+- Added group-level "Add bill" / "Convert to bill" workflow for production purchase orders.
+- A grouped PO can now be converted to bill allocations from the production `POs` sheet.
+- The conversion keeps the budget structure intact:
+  - one grouped supplier PO remains visible in the `POs` tab,
+  - each allocation remains attached to its original budget line,
+  - each allocation changes from `PO` to `BILL`,
+  - line actuals/remaining values are recalculated after conversion.
+- Optional invoice metadata is captured:
+  - invoice number,
+  - invoice date,
+  - invoice file upload.
+- Uploaded invoice files are saved into the production job file structure using the existing `JobFile` system.
+- The same invoice file is linked to every converted allocation, so one supplier invoice can cover multiple estimate pots.
+
+## Backend
+- Updated `backend/src/routes/budgets.ts`.
+- Added `multer` memory upload handling for grouped PO bill invoices.
+- Reused `autoFileDocument()` from `backend/src/services/fileStorage.ts`.
+- New endpoint:
+  - `POST /api/budgets/purchase-orders/:purchaseOrderId/convert-to-bill`
+- Multipart fields:
+  - `invoiceFile` optional file, max 25MB,
+  - `invoiceNumber`,
+  - `invoiceDate`,
+  - `allocations` JSON array with allocation IDs and final amounts.
+- Conversion rules:
+  - cancelled POs cannot be converted,
+  - selected allocations become `lineType = BILL`,
+  - `isInvoiced = true`,
+  - `isPaid = false`,
+  - `status = INVOICED`,
+  - `invoiceFileId` is linked when a file is uploaded.
+- PO group status sync still derives from allocation state:
+  - mixed PO/Bill -> `PART_BILLED`,
+  - all bill allocations unpaid -> `BILLED`,
+  - all paid -> `PAID`.
+
+## Frontend
+- Updated `frontend/src/pages/Productions.tsx`.
+- Added an `Add bill` / `Bill linked` action to each row in the production `POs` tab.
+- Added a right-side bill drawer:
+  - invoice number,
+  - invoice date,
+  - invoice file picker,
+  - editable amount per allocation,
+  - clear explanation that budget lines stay separate.
+- Updated `frontend/src/lib/types.ts` so PO allocations expose linked invoice file metadata.
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
+
+## Current State
+- The production `POs` tab now supports the core lifecycle:
+  - create one grouped supplier PO across multiple budget lines,
+  - convert that grouped PO into bill allocations,
+  - attach the supplier invoice file once and link it to every affected line.
+- This is the right workflow for a photography agency invoice covering Photographer, Camera Kit, Lighting Kit, and Photo Assistant while keeping each budget pot readable.
+
+## Known Gaps / Technical Debt
+- No automatic AI invoice parsing in this drawer yet.
+- No PO PDF/export/email yet.
+- No secure supplier onboarding public form yet.
+- Invoice files are stored in the job `Receipts` folder for now; we may want an `Invoices` or `Supplier Bills` folder later.
+- Existing legacy single-line POs are still not backfilled into grouped PO records.
+
+## Exact Next Steps
+1. Add PO PDF generation and email send.
+2. Add AI invoice parsing to prefill invoice number, supplier, date, and allocation suggestions from uploaded files.
+3. Add secure supplier onboarding links for new Blackbook suppliers.
+4. Add grouped bill paid/unpaid controls once FreeAgent matching is ready.
+
+---
+
 # HANDOVER - 2026-05-27 - Project Purchase Orders Foundation
 
 ## Built This Session

@@ -425,6 +425,7 @@ function PurchaseOrdersTab({ production }: { production: Production }) {
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderGroup[]>([]);
   const [context, setContext] = useState<PurchaseOrderContext | null>(null);
   const [creating, setCreating] = useState(false);
+  const [billPo, setBillPo] = useState<PurchaseOrderGroup | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -476,13 +477,13 @@ function PurchaseOrdersTab({ production }: { production: Production }) {
       </div>
 
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <div className="grid grid-cols-[110px_1.2fr_1.4fr_100px_130px_80px_40px] items-center border-b border-gray-200 bg-[#f8f8f6] px-3 py-2 text-[10px] uppercase tracking-[0.05em] text-gray-400">
+        <div className="grid grid-cols-[110px_1.2fr_1.4fr_100px_130px_120px_40px] items-center border-b border-gray-200 bg-[#f8f8f6] px-3 py-2 text-[10px] uppercase tracking-[0.05em] text-gray-400">
           <div>PO</div>
           <div>Supplier</div>
           <div>Lines</div>
           <div className="text-right">Total</div>
           <div>Status</div>
-          <div>Files</div>
+          <div>Bill</div>
           <div />
         </div>
         {loading ? (
@@ -494,7 +495,7 @@ function PurchaseOrdersTab({ production }: { production: Production }) {
             <button onClick={() => setCreating(true)} className="mt-4 min-h-10 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white">+ Create PO</button>
           </div>
         ) : purchaseOrders.map((po) => (
-          <div key={po.id} className="grid grid-cols-[110px_1.2fr_1.4fr_100px_130px_80px_40px] items-start border-b border-gray-100 px-3 py-3 text-xs last:border-b-0 hover:bg-gray-50">
+          <div key={po.id} className="grid grid-cols-[110px_1.2fr_1.4fr_100px_130px_120px_40px] items-start border-b border-gray-100 px-3 py-3 text-xs last:border-b-0 hover:bg-gray-50">
             <div className="font-mono font-semibold text-gray-900">{po.poNumber}</div>
             <div className="min-w-0">
               <p className="truncate font-medium text-gray-900">{po.supplierName}</p>
@@ -514,7 +515,15 @@ function PurchaseOrdersTab({ production }: { production: Production }) {
                 {PO_STATUSES.map((status) => <option key={status} value={status}>{PO_STATUS_LABELS[status]}</option>)}
               </select>
             </div>
-            <div className="text-[11px] text-gray-400">{po.allocations.some((allocation) => allocation.invoiceFileId) ? "Invoice" : "—"}</div>
+            <div>
+              <button
+                onClick={() => setBillPo(po)}
+                className={`inline-flex h-8 items-center gap-1 rounded-md border px-2 text-[11px] font-medium ${po.allocations.some((allocation) => allocation.invoiceFileId) ? "border-blue-100 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-500 hover:border-gray-400"}`}
+              >
+                <FileText size={12} />
+                {po.allocations.some((allocation) => allocation.invoiceFileId) ? "Bill linked" : "Add bill"}
+              </button>
+            </div>
             <button onClick={() => deletePo(po).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-gray-300 hover:bg-red-50 hover:text-red-600" title="Delete PO"><Trash2 size={13} /></button>
           </div>
         ))}
@@ -528,6 +537,125 @@ function PurchaseOrdersTab({ production }: { production: Production }) {
           onCreated={() => { setCreating(false); load().catch(console.error); }}
         />
       )}
+      {billPo && (
+        <PurchaseOrderBillPanel
+          po={billPo}
+          onClose={() => setBillPo(null)}
+          onSaved={(updated) => {
+            setPurchaseOrders((items) => items.map((item) => item.id === updated.id ? updated : item));
+            setBillPo(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function PurchaseOrderBillPanel({ po, onClose, onSaved }: {
+  po: PurchaseOrderGroup;
+  onClose: () => void;
+  onSaved: (po: PurchaseOrderGroup) => void;
+}) {
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [amounts, setAmounts] = useState<Record<string, string>>(() => Object.fromEntries(po.allocations.map((allocation) => [allocation.id, String(allocation.amount ?? 0)])));
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const form = new FormData();
+      if (invoiceNumber.trim()) form.append("invoiceNumber", invoiceNumber.trim());
+      if (invoiceDate) form.append("invoiceDate", invoiceDate);
+      if (file) form.append("invoiceFile", file);
+      form.append("allocations", JSON.stringify(po.allocations.map((allocation) => ({
+        id: allocation.id,
+        amount: Number(amounts[allocation.id] || allocation.amount || 0),
+      }))));
+      const res = await fetch(`/api/budgets/purchase-orders/${po.id}/convert-to-bill`, {
+        method: "POST",
+        credentials: "include",
+        body: form,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Failed to add bill" }));
+        throw new Error(typeof body.error === "string" ? body.error : "Failed to add bill");
+      }
+      onSaved(await res.json() as PurchaseOrderGroup);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const total = po.allocations.reduce((sum, allocation) => sum + Number(amounts[allocation.id] || allocation.amount || 0), 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/10" onMouseDown={onClose}>
+      <div className="h-full w-full max-w-2xl overflow-auto bg-white shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Add bill to {po.poNumber}</h3>
+            <p className="text-xs text-gray-500">{po.supplierName} · converts selected PO allocations to bills</p>
+          </div>
+          <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg text-gray-500 hover:bg-gray-50"><X size={16} /></button>
+        </div>
+
+        <div className="space-y-5 p-4">
+          <section className="rounded-lg border border-gray-200 p-3">
+            <h4 className="text-xs font-semibold uppercase tracking-[0.05em] text-gray-400">Invoice details</h4>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <Input label="Invoice number" value={invoiceNumber} onChange={setInvoiceNumber} placeholder="INV-001" />
+              <Input label="Invoice date" value={invoiceDate} onChange={setInvoiceDate} type="date" />
+            </div>
+            <label className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-center hover:border-gray-500">
+              <FileText size={18} className="text-gray-400" />
+              <span className="mt-2 text-sm font-medium text-gray-800">{file ? file.name : "Choose invoice file"}</span>
+              <span className="mt-1 text-xs text-gray-400">PDF or image. The file is saved to the job Receipts folder and linked to every allocation below.</span>
+              <input
+                type="file"
+                className="hidden"
+                accept="application/pdf,image/*"
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              />
+            </label>
+          </section>
+
+          <section className="rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.05em] text-gray-400">Bill allocations</h4>
+              <span className="text-xs font-medium tabular-nums text-gray-900">Total {formatCurrency(total)}</span>
+            </div>
+            {po.allocations.map((allocation) => (
+              <div key={allocation.id} className="grid grid-cols-[1fr_120px] items-center gap-3 border-b border-gray-50 px-3 py-2 text-xs last:border-b-0">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-gray-900">{allocation.lineItem.lineCode} {allocation.lineItem.description}</p>
+                  <p className="mt-0.5 text-[11px] text-gray-400">{allocation.lineItem.section.code} {allocation.lineItem.section.name}</p>
+                  {allocation.invoiceFile && <p className="mt-0.5 truncate text-[11px] text-blue-600">{allocation.invoiceFile.originalFilename}</p>}
+                </div>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={amounts[allocation.id] ?? ""}
+                  onChange={(event) => setAmounts((current) => ({ ...current, [allocation.id]: event.target.value }))}
+                  className="h-9 rounded-lg border border-gray-200 px-2 text-right text-sm tabular-nums text-gray-900 outline-none focus:border-gray-500"
+                />
+              </div>
+            ))}
+          </section>
+
+          <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-800">
+            This does not merge the budget lines. It keeps each estimate pot clear, marks the linked PO cost lines as bills, and attaches the same invoice file to those bill rows.
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button onClick={onClose} className="min-h-10 rounded-lg px-4 text-sm text-gray-500 hover:bg-gray-50">Cancel</button>
+            <button onClick={() => save().catch((err: unknown) => window.alert(err instanceof Error ? err.message : "Failed to add bill"))} disabled={saving} className="min-h-10 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-40">
+              {saving ? "Saving..." : "Convert to bill"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

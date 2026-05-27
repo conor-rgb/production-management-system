@@ -532,6 +532,7 @@ export interface PurchaseOrderGroup {
   blackbookEntry?: { id: string; displayName: string; email?: string | null; phone?: string | null; category?: string; entryType?: string } | null;
   optionCandidate?: { id: string; name: string; group?: { id: string; name: string; type: string } | null } | null;
   allocations: Array<SubCost & {
+    invoiceFile?: { id: string; originalFilename: string; mimeType: string; sizeBytes: number; uploadedAt: string } | null;
     lineItem: Pick<BudgetLineItem, "id" | "lineCode" | "description" | "estimatedTotal" | "actualTotal" | "variance"> & {
       section: { id: string; code: string; name: string };
     };

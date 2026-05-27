@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import multer from "multer";
 import { AdvanceCalcType, BlackbookCategory, BlackbookEntryType, BlackbookLifecycleStatus, Prisma, PurchaseOrderStatus, RevisionStatus, SubCostLineType, SubCostStatus } from "@prisma/client";
 import prisma from "../prisma";
 import {
@@ -16,8 +17,13 @@ import {
   updateLineItem,
 } from "../services/budgetService";
 import { exportRevisionPdf } from "../services/budgetPdf";
+import { autoFileDocument } from "../services/fileStorage";
 
 const router = Router();
+const invoiceUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 
 function numberOrNull(value: unknown): number | null | undefined {
   if (value === undefined) return undefined;
@@ -58,6 +64,7 @@ const purchaseOrderInclude = {
   allocations: {
     orderBy: { createdAt: "asc" as const },
     include: {
+      invoiceFile: { select: { id: true, originalFilename: true, mimeType: true, sizeBytes: true, uploadedAt: true } },
       lineItem: {
         select: {
           id: true,
@@ -112,6 +119,19 @@ async function syncPurchaseOrderStatus(purchaseOrderGroupId: string | null | und
       data: { status: nextStatus },
     });
   }
+}
+
+function parseBillAllocationOverrides(value: unknown): Array<{ id: string; amount?: number }> {
+  if (typeof value !== "string" || !value.trim()) return [];
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.flatMap((item): Array<{ id: string; amount?: number }> => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as { id?: unknown; amount?: unknown };
+    if (typeof record.id !== "string") return [];
+    const amount = Number(record.amount);
+    return [{ id: record.id, amount: Number.isFinite(amount) && amount >= 0 ? amount : undefined }];
+  });
 }
 
 function budgetPatch(body: Record<string, unknown>): Prisma.BudgetUpdateInput {
@@ -672,6 +692,93 @@ router.patch("/purchase-orders/:purchaseOrderId", async (req: Request, res: Resp
     include: purchaseOrderInclude,
   });
   res.json(decoratePurchaseOrder(updated));
+});
+
+router.post("/purchase-orders/:purchaseOrderId/convert-to-bill", async (req: Request, res: Response): Promise<void> => {
+  invoiceUpload.single("invoiceFile")(req, res, async (err: unknown) => {
+    try {
+      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+        res.status(413).json({ error: "Maximum invoice file size is 25MB" });
+        return;
+      }
+      if (err) {
+        res.status(400).json({ error: err instanceof Error ? err.message : "Invoice upload failed" });
+        return;
+      }
+
+      const po = await prisma.purchaseOrderGroup.findUnique({
+        where: { id: req.params.purchaseOrderId },
+        include: { allocations: true, production: true },
+      });
+      if (!po) {
+        res.status(404).json({ error: "PO not found" });
+        return;
+      }
+      if (po.status === PurchaseOrderStatus.CANCELLED) {
+        res.status(400).json({ error: "Cancelled POs cannot be converted to bills" });
+        return;
+      }
+      if (!po.allocations.length) {
+        res.status(400).json({ error: "PO has no budget allocations" });
+        return;
+      }
+
+      const allocationOverrides = parseBillAllocationOverrides(req.body.allocations);
+      const allocationIds = allocationOverrides.length ? allocationOverrides.map((allocation) => allocation.id) : po.allocations.map((allocation) => allocation.id);
+      const targetAllocations = po.allocations.filter((allocation) => allocationIds.includes(allocation.id));
+      if (!targetAllocations.length) {
+        res.status(400).json({ error: "No matching PO allocations selected" });
+        return;
+      }
+
+      const file = req.file;
+      const jobFile = file
+        ? await autoFileDocument(po.productionId, "Receipts", file.buffer, file.originalname, file.mimetype, {
+            notes: `Invoice for ${po.poNumber}`,
+            linkedBudgetLineId: targetAllocations[0]?.lineItemId,
+            receiptVendor: po.supplierName,
+            receiptAmount: Math.round(targetAllocations.reduce((sum, allocation) => sum + Number(allocation.amount ?? 0), 0) * 100),
+          })
+        : null;
+
+      const invoiceNumber = typeof req.body.invoiceNumber === "string" && req.body.invoiceNumber.trim()
+        ? req.body.invoiceNumber.trim()
+        : null;
+      const invoiceDate = dateOrNull(req.body.invoiceDate) ?? null;
+
+      await prisma.$transaction(async (tx) => {
+        for (const allocation of targetAllocations) {
+          const override = allocationOverrides.find((item) => item.id === allocation.id);
+          await tx.subCost.update({
+            where: { id: allocation.id },
+            data: {
+              lineType: SubCostLineType.BILL,
+              status: SubCostStatus.INVOICED,
+              isInvoiced: true,
+              isPaid: false,
+              invoiceNumber,
+              invoiceDate,
+              invoiceFileId: jobFile?.id ?? allocation.invoiceFileId,
+              amount: override?.amount,
+            },
+          });
+        }
+      });
+
+      for (const allocation of targetAllocations) {
+        await recalculateAfterSubCost(allocation.lineItemId);
+      }
+      await syncPurchaseOrderStatus(po.id);
+
+      const updated = await prisma.purchaseOrderGroup.findUniqueOrThrow({
+        where: { id: po.id },
+        include: purchaseOrderInclude,
+      });
+      res.json(decoratePurchaseOrder(updated));
+    } catch (caught) {
+      res.status(400).json({ error: caught instanceof Error ? caught.message : "Failed to convert PO to bill" });
+    }
+  });
 });
 
 router.delete("/purchase-orders/:purchaseOrderId", async (req: Request, res: Response): Promise<void> => {
