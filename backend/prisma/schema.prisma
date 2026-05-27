@@ -619,6 +619,7 @@ model OptionGroup {
   order        Int                   @default(0)
   requirements OptionRequirement[]
   candidates   OptionCandidate[]
+  deckTemplate OptionDeckTemplate?
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
 
@@ -626,6 +627,19 @@ model OptionGroup {
 
   @@index([productionId, order])
   @@map("pms_option_groups")
+}
+
+model OptionDeckTemplate {
+  id        String   @id @default(uuid())
+  groupId   String   @unique
+  name      String   @default("Options deck")
+  blocks    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  group OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@map("pms_option_deck_templates")
 }
 
 model OptionRequirement {

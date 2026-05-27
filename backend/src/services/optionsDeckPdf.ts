@@ -34,6 +34,25 @@ type LinkItem = {
   url: string;
 };
 
+export type DeckBlockType = "field" | "links" | "dateStatus" | "imageGrid" | "notes" | "map" | "footer";
+export type DeckField = "name" | "subtitle" | "location" | "address" | "clientNotes" | "internalNotes" | "project";
+
+export interface DeckTemplateBlock {
+  id: string;
+  type: DeckBlockType;
+  label: string;
+  field?: DeckField;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  fontSize?: number;
+  fontWeight?: number;
+  align?: "left" | "center" | "right";
+  uppercase?: boolean;
+  imageCount?: number;
+}
+
 const PAGE_WIDTH = 1920;
 const PAGE_HEIGHT = 1080;
 const LEFT = 44;
@@ -109,6 +128,35 @@ function selectedPhotos(candidate: DeckCandidate): DeckPhoto[] {
     .slice()
     .sort((a, b) => a.order - b.order)
     .slice(0, 10);
+}
+
+function countryName(code: string | null): string | null {
+  if (!code) return null;
+  if (code === "GB") return "United Kingdom";
+  if (code === "FR") return "France";
+  if (code === "IT") return "Italy";
+  if (code === "US") return "United States";
+  return code;
+}
+
+function addressLines(candidate: DeckCandidate): string[] {
+  const cityLine = [candidate.city, candidate.postcode].filter(Boolean).join(", ");
+  const regionLine = [candidate.region, countryName(candidate.country)].filter(Boolean).join(", ");
+  return [candidate.addressLine1, candidate.addressLine2, cityLine, regionLine].filter((line): line is string => Boolean(line));
+}
+
+function candidateLocation(candidate: DeckCandidate): string {
+  return [candidate.city, countryName(candidate.country)].filter(Boolean).join(", ");
+}
+
+function fieldValue(group: OptionsDeckGroup, candidate: DeckCandidate, field: DeckField): string {
+  if (field === "name") return candidateDisplayName(candidate);
+  if (field === "subtitle") return candidate.subtitle ?? "";
+  if (field === "location") return candidateLocation(candidate);
+  if (field === "address") return addressLines(candidate).join("\n");
+  if (field === "clientNotes") return candidate.clientNotes ?? "";
+  if (field === "internalNotes") return candidate.internalNotes ?? "";
+  return projectTitle(group);
 }
 
 function orderedStatuses(candidate: DeckCandidate): DeckDateStatus[] {
@@ -260,6 +308,109 @@ function drawFooter(doc: PDFKit.PDFDocument, group: OptionsDeckGroup, pageNumber
   doc.font("Helvetica").fontSize(10).fillColor("#b5b5af").text(`${pageNumber} / ${pageCount}`, LEFT, 1018, { width: 120 });
 }
 
+function rect(block: DeckTemplateBlock) {
+  return {
+    x: (block.x / 100) * PAGE_WIDTH,
+    y: (block.y / 100) * PAGE_HEIGHT,
+    w: (block.w / 100) * PAGE_WIDTH,
+    h: (block.h / 100) * PAGE_HEIGHT,
+  };
+}
+
+function drawTemplateText(doc: PDFKit.PDFDocument, text: string, block: DeckTemplateBlock): void {
+  const box = rect(block);
+  const font = (block.fontWeight ?? 400) >= 700 ? "Helvetica-Bold" : "Helvetica";
+  const value = block.uppercase ? text.toUpperCase() : text;
+  doc
+    .font(font)
+    .fontSize(block.fontSize ?? 16)
+    .fillColor(TEXT)
+    .text(value, box.x, box.y, {
+      width: box.w,
+      height: box.h,
+      align: block.align ?? "left",
+      ellipsis: true,
+      lineGap: 4,
+    });
+}
+
+function drawTemplateLinks(doc: PDFKit.PDFDocument, candidate: DeckCandidate, block: DeckTemplateBlock): void {
+  const box = rect(block);
+  let x = box.x;
+  const links = candidateLinks(candidate);
+  for (const link of links) {
+    const width = doc.font("Helvetica").fontSize(block.fontSize ?? 16).widthOfString(link.label) + 4;
+    if (x + width > box.x + box.w) break;
+    doc.fillColor(TEXT).text(link.label, x, box.y, { width, height: box.h, link: link.url, underline: true });
+    x += width + 18;
+  }
+}
+
+function drawTemplateDateStatus(doc: PDFKit.PDFDocument, candidate: DeckCandidate, block: DeckTemplateBlock): void {
+  const statuses = orderedStatuses(candidate).slice(0, 8);
+  const box = rect(block);
+  if (!statuses.length) return;
+  const rowHeight = box.h / statuses.length;
+  statuses.forEach((item, index) => {
+    const style = HOLD_STYLES[item.status];
+    const y = box.y + index * rowHeight;
+    doc.rect(box.x, y, box.w, rowHeight).fillAndStroke(style.fill, style.stroke);
+    doc.font("Helvetica-Bold").fontSize(block.fontSize ?? 13).fillColor(style.text).text(`${formatDate(item.date.date)} — ${style.label}`, box.x + 8, y + Math.max(2, (rowHeight - (block.fontSize ?? 13)) / 2), {
+      width: box.w - 16,
+      height: rowHeight,
+      align: block.align ?? "center",
+      ellipsis: true,
+    });
+  });
+}
+
+function drawTemplateImageGrid(doc: PDFKit.PDFDocument, candidate: DeckCandidate, block: DeckTemplateBlock): void {
+  const photos = selectedPhotos(candidate);
+  const count = Math.max(1, block.imageCount ?? 4);
+  const box = rect(block);
+  const columns = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(count))));
+  const rows = Math.ceil(count / columns);
+  const gap = 18;
+  const cellW = (box.w - gap * (columns - 1)) / columns;
+  const cellH = (box.h - gap * (rows - 1)) / rows;
+  const size = Math.min(cellW, cellH);
+
+  Array.from({ length: count }).forEach((_, index) => {
+    const col = index % columns;
+    const row = Math.floor(index / columns);
+    const x = box.x + col * (cellW + gap) + (cellW - size) / 2;
+    const y = box.y + row * (cellH + gap) + (cellH - size);
+    drawImageInSquare(doc, photos[index], { x, y, size });
+  });
+}
+
+function drawTemplateMap(doc: PDFKit.PDFDocument, candidate: DeckCandidate, block: DeckTemplateBlock): void {
+  const box = rect(block);
+  doc.rect(box.x, box.y, box.w, box.h).fillAndStroke("#eef3ee", LIGHT_BORDER);
+  doc.font("Helvetica-Bold").fontSize(18).fillColor("#6b6b66").text("MAP", box.x + 18, box.y + 18, { width: box.w - 36 });
+  doc.font("Helvetica").fontSize(14).fillColor("#6b6b66").text(addressLines(candidate).join("\n") || "Address / coordinates", box.x + 18, box.y + 52, {
+    width: box.w - 36,
+    height: box.h - 70,
+    lineGap: 5,
+  });
+}
+
+function drawTemplateFooter(doc: PDFKit.PDFDocument, group: OptionsDeckGroup, block: DeckTemplateBlock, pageNumber: number): void {
+  const box = rect(block);
+  doc.font("Helvetica").fontSize(block.fontSize ?? 12).fillColor(TEXT).text("unlimited.bond", box.x, box.y, { width: box.w / 3 });
+  doc.font("Helvetica").fontSize(block.fontSize ?? 12).fillColor(MUTED).text(projectTitle(group), box.x + box.w / 3, box.y, { width: box.w / 3, align: "center" });
+  doc.font("Helvetica").fontSize(block.fontSize ?? 12).fillColor(TEXT).text(String(pageNumber), box.x + (box.w * 2) / 3, box.y, { width: box.w / 3, align: "right" });
+}
+
+function drawTemplateBlock(doc: PDFKit.PDFDocument, group: OptionsDeckGroup, candidate: DeckCandidate, block: DeckTemplateBlock, pageNumber: number): void {
+  if (block.type === "field" || block.type === "notes") drawTemplateText(doc, fieldValue(group, candidate, block.field ?? "name"), block);
+  else if (block.type === "links") drawTemplateLinks(doc, candidate, block);
+  else if (block.type === "dateStatus") drawTemplateDateStatus(doc, candidate, block);
+  else if (block.type === "imageGrid") drawTemplateImageGrid(doc, candidate, block);
+  else if (block.type === "map") drawTemplateMap(doc, candidate, block);
+  else if (block.type === "footer") drawTemplateFooter(doc, group, block, pageNumber);
+}
+
 function drawableCandidates(group: OptionsDeckGroup): DeckCandidate[] {
   return group.candidates
     .filter((candidate) => candidate.activeState !== "RELEASED")
@@ -267,7 +418,7 @@ function drawableCandidates(group: OptionsDeckGroup): DeckCandidate[] {
     .sort((a, b) => a.order - b.order || candidateDisplayName(a).localeCompare(candidateDisplayName(b)));
 }
 
-export async function renderOptionsDeckPdf(group: OptionsDeckGroup): Promise<Buffer> {
+export async function renderOptionsDeckPdf(group: OptionsDeckGroup, templateBlocks?: DeckTemplateBlock[] | null): Promise<Buffer> {
   const doc = new PDFDocument({ size: [PAGE_WIDTH, PAGE_HEIGHT], margin: 0, bufferPages: true, autoFirstPage: false });
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -281,11 +432,15 @@ export async function renderOptionsDeckPdf(group: OptionsDeckGroup): Promise<Buf
   } else {
     candidates.forEach((candidate, index) => {
       doc.addPage();
-      drawHeader(doc, group, candidate);
-      drawStatusTable(doc, candidate);
-      drawImages(doc, candidate);
-      drawNotes(doc, candidate);
-      drawFooter(doc, group, index + 1, candidates.length);
+      if (templateBlocks?.length) {
+        templateBlocks.forEach((block) => drawTemplateBlock(doc, group, candidate, block, index + 1));
+      } else {
+        drawHeader(doc, group, candidate);
+        drawStatusTable(doc, candidate);
+        drawImages(doc, candidate);
+        drawNotes(doc, candidate);
+        drawFooter(doc, group, index + 1, candidates.length);
+      }
     });
   }
 

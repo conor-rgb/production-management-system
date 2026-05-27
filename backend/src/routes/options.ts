@@ -26,7 +26,7 @@ import {
 import prisma from "../prisma";
 import { ensureProductionFolders, fileExtension, autoFileDocument } from "../services/fileStorage";
 import { renderOptionsPdf } from "../services/optionsPdf";
-import { optionsDeckFilename, renderOptionsDeckPdf } from "../services/optionsDeckPdf";
+import { DeckTemplateBlock, optionsDeckFilename, renderOptionsDeckPdf } from "../services/optionsDeckPdf";
 import { getPlaceDetails, searchPlaces } from "../services/googlePlacesService";
 
 const router = Router();
@@ -526,6 +526,42 @@ function publicBaseUrl(): string {
 
 function publicCandidatePdfUrl(token: string): string {
   return `${publicBaseUrl()}/api/public/options/candidate-pdfs/${token}`;
+}
+
+const DECK_BLOCK_TYPES = new Set(["field", "links", "dateStatus", "imageGrid", "notes", "map", "footer"]);
+const DECK_FIELDS = new Set(["name", "subtitle", "location", "address", "clientNotes", "internalNotes", "project"]);
+const DECK_ALIGNS = new Set(["left", "center", "right"]);
+
+function templateNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function sanitizeDeckBlocks(value: unknown): DeckTemplateBlock[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index): DeckTemplateBlock[] => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    const type = typeof record.type === "string" && DECK_BLOCK_TYPES.has(record.type) ? record.type as DeckTemplateBlock["type"] : null;
+    if (!type) return [];
+    const block: DeckTemplateBlock = {
+      id: typeof record.id === "string" && record.id.trim() ? record.id : `${type}-${index}`,
+      type,
+      label: typeof record.label === "string" && record.label.trim() ? record.label.trim() : type,
+      x: templateNumber(record.x, 5, 0, 99),
+      y: templateNumber(record.y, 5, 0, 99),
+      w: templateNumber(record.w, 20, 1, 100),
+      h: templateNumber(record.h, 10, 1, 100),
+      fontSize: templateNumber(record.fontSize, 16, 4, 160),
+      fontWeight: templateNumber(record.fontWeight, 400, 100, 1000),
+      uppercase: record.uppercase === true,
+      imageCount: templateNumber(record.imageCount, 4, 1, 12),
+    };
+    if (typeof record.field === "string" && DECK_FIELDS.has(record.field)) block.field = record.field as DeckTemplateBlock["field"];
+    if (typeof record.align === "string" && DECK_ALIGNS.has(record.align)) block.align = record.align as DeckTemplateBlock["align"];
+    return [block];
+  });
 }
 
 async function boardResponse(boardId: string) {
@@ -1926,6 +1962,45 @@ router.get("/candidate-photos/:photoId/serve", async (req: Request, res: Respons
   fsSync.createReadStream(photo.storedPath).pipe(res);
 });
 
+router.get("/matrix/groups/:groupId/deck-template", async (req: Request, res: Response): Promise<void> => {
+  const group = await prisma.optionGroup.findUnique({
+    where: { id: req.params.groupId },
+    select: { id: true, name: true, deckTemplate: true },
+  });
+  if (!group) {
+    res.status(404).json({ error: "Option group not found" });
+    return;
+  }
+  res.json(group.deckTemplate ?? null);
+});
+
+router.patch("/matrix/groups/:groupId/deck-template", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { name?: string; blocks?: unknown };
+  const group = await prisma.optionGroup.findUnique({ where: { id: req.params.groupId }, select: { id: true, name: true } });
+  if (!group) {
+    res.status(404).json({ error: "Option group not found" });
+    return;
+  }
+  const blocks = sanitizeDeckBlocks(body.blocks);
+  if (!blocks.length) {
+    res.status(400).json({ error: "At least one template block is required" });
+    return;
+  }
+  const template = await prisma.optionDeckTemplate.upsert({
+    where: { groupId: group.id },
+    update: {
+      name: body.name?.trim() || `${group.name} deck`,
+      blocks: blocks as unknown as Prisma.InputJsonValue,
+    },
+    create: {
+      groupId: group.id,
+      name: body.name?.trim() || `${group.name} deck`,
+      blocks: blocks as unknown as Prisma.InputJsonValue,
+    },
+  });
+  res.json(template);
+});
+
 router.post("/matrix/groups/:groupId/export-pdf", async (req: Request, res: Response): Promise<void> => {
   const group = await getOptionGroupWithDeckData(req.params.groupId);
   if (!group) {
@@ -1933,7 +2008,9 @@ router.post("/matrix/groups/:groupId/export-pdf", async (req: Request, res: Resp
     return;
   }
 
-  const pdfBuffer = await renderOptionsDeckPdf(group);
+  const template = await prisma.optionDeckTemplate.findUnique({ where: { groupId: group.id } });
+  const blocks = template ? sanitizeDeckBlocks(template.blocks) : null;
+  const pdfBuffer = await renderOptionsDeckPdf(group, blocks?.length ? blocks : null);
   const filename = optionsDeckFilename(group);
   await autoFileDocument(group.productionId, "Estimates", pdfBuffer, filename, "application/pdf", {
     notes: `Options deck export: ${group.name}`,

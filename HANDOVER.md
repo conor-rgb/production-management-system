@@ -1,3 +1,74 @@
+# HANDOVER - 2026-05-27 - Saved Options PDF Templates and Export Wiring
+
+## Built This Session
+- Moved options PDF designer templates from local browser-only state into the database.
+- Added API endpoints to load/save one deck template per option group.
+- Updated group PDF export so it uses the saved designer template when one exists.
+- The current PDF export now renders designer blocks through PDFKit:
+  - text fields,
+  - links,
+  - date status block,
+  - image grid,
+  - notes,
+  - map placeholder,
+  - footer.
+
+## Backend
+- Updated `backend/prisma/schema.prisma`.
+- Added migration:
+  - `backend/prisma/migrations/20260527084000_option_deck_templates/migration.sql`
+- New model:
+  - `OptionDeckTemplate`
+- Added `OptionGroup.deckTemplate` relation.
+- Updated `backend/src/routes/options.ts`.
+- New endpoints:
+  - `GET /api/options/matrix/groups/:groupId/deck-template`
+  - `PATCH /api/options/matrix/groups/:groupId/deck-template`
+- Save endpoint sanitizes block JSON before storing.
+- Updated `POST /api/options/matrix/groups/:groupId/export-pdf`:
+  - loads saved template,
+  - sanitizes blocks,
+  - passes them into the PDF renderer.
+- Updated `backend/src/services/optionsDeckPdf.ts`.
+- `renderOptionsDeckPdf(group, templateBlocks)` now renders saved template blocks when present and falls back to the previous hard-coded deck when not.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Designer now:
+  - loads saved template from API on open,
+  - shows saved/load status in the header,
+  - has `Save for export`,
+  - no longer relies on localStorage as source of truth.
+
+## Deployment / Verification
+- Prisma migration deployed.
+- Prisma client generated.
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
+
+## Current State
+- You can design a layout, click `Save for export`, then use `Export PDF`.
+- The exported PDF will use the saved layout for that option group.
+- If no template is saved, export still uses the previous hard-coded PDF layout.
+
+## Known Gaps / Technical Debt
+- PDF rendering still uses PDFKit, so it is not pixel-identical to the live HTML preview yet.
+- The map block is still a placeholder; it needs static map generation/caching.
+- Resize is via numeric inspector only.
+- Template is one-per-option-group; no global template library yet.
+
+## Exact Next Steps
+1. Add static Google map image generation/caching for location candidates.
+2. Add reusable global template library with duplicate/apply-to-group.
+3. Add drag resize handles and snap grid.
+4. Move export rendering to HTML/Chromium if we need exact preview-to-PDF fidelity.
+
+---
+
 # HANDOVER - 2026-05-27 - Options PDF Designer Foundation
 
 ## Built This Session

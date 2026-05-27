@@ -1473,27 +1473,32 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
   dates: MatrixDate[];
   onClose: () => void;
 }) {
-  const storageKey = `optionsDeckTemplate:${group.id}`;
-  const [template, setTemplate] = useState<DeckTemplate>(() => {
-    const saved = window.localStorage.getItem(storageKey);
-    if (saved) {
-      try {
-        return JSON.parse(saved) as DeckTemplate;
-      } catch {
-        return defaultDeckTemplate(group);
-      }
-    }
-    return defaultDeckTemplate(group);
-  });
+  const [template, setTemplate] = useState<DeckTemplate>(() => defaultDeckTemplate(group));
   const [previewCandidateId, setPreviewCandidateId] = useState(group.candidates[0]?.id ?? "");
   const [selectedBlockId, setSelectedBlockId] = useState(template.blocks[0]?.id ?? "");
   const [drag, setDrag] = useState<{ blockId: string; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const [loadingTemplate, setLoadingTemplate] = useState(true);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const previewCandidate = group.candidates.find((candidate) => candidate.id === previewCandidateId) ?? group.candidates[0] ?? null;
   const selectedBlock = template.blocks.find((block) => block.id === selectedBlockId) ?? null;
 
   useEffect(() => {
-    window.localStorage.setItem(storageKey, JSON.stringify(template));
-  }, [storageKey, template]);
+    let active = true;
+    setLoadingTemplate(true);
+    api.get<{ id: string; name: string; blocks: DeckTemplateBlock[] } | null>(`/api/options/matrix/groups/${group.id}/deck-template`)
+      .then((saved) => {
+        if (!active || !saved?.blocks?.length) return;
+        setTemplate({ id: saved.id, name: saved.name, blocks: saved.blocks });
+        setSelectedBlockId(saved.blocks[0]?.id ?? "");
+        setSavedAt("Loaded saved template");
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setLoadingTemplate(false);
+      });
+    return () => { active = false; };
+  }, [group.id]);
 
   useEffect(() => {
     if (!drag) return;
@@ -1547,6 +1552,21 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
     const value = next === "location" ? baseLocationTemplate() : baseTalentTemplate(group);
     setTemplate(value);
     setSelectedBlockId(value.blocks[0]?.id ?? "");
+    setSavedAt(null);
+  }
+
+  async function saveTemplate() {
+    setSavingTemplate(true);
+    try {
+      const saved = await api.patch<{ id: string; name: string; blocks: DeckTemplateBlock[] }>(`/api/options/matrix/groups/${group.id}/deck-template`, {
+        name: template.name,
+        blocks: template.blocks,
+      });
+      setTemplate({ id: saved.id, name: saved.name, blocks: saved.blocks });
+      setSavedAt("Saved for PDF export");
+    } finally {
+      setSavingTemplate(false);
+    }
   }
 
   return (
@@ -1555,7 +1575,7 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
         <div className="flex h-12 items-center justify-between border-b border-gray-300 bg-white px-4">
           <div>
             <h3 className="text-sm font-semibold text-gray-900">PDF layout designer</h3>
-            <p className="text-[11px] text-gray-400">{group.name} · live candidate preview</p>
+            <p className="text-[11px] text-gray-400">{group.name} · {loadingTemplate ? "loading saved template..." : savedAt ?? "unsaved changes stay in preview until saved"}</p>
           </div>
           <div className="flex items-center gap-2">
             <select value={previewCandidate?.id ?? ""} onChange={(event) => setPreviewCandidateId(event.target.value)} className="h-8 rounded-md border border-gray-200 bg-white px-2 text-xs">
@@ -1563,6 +1583,7 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
             </select>
             <button onClick={() => resetTemplate("editorial")} className="rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50">Editorial base</button>
             <button onClick={() => resetTemplate("location")} className="rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50">Location base</button>
+            <button onClick={() => saveTemplate().catch((err: Error) => window.alert(err.message))} disabled={savingTemplate} className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">{savingTemplate ? "Saving..." : "Save for export"}</button>
             <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100"><X size={15} /></button>
           </div>
         </div>
