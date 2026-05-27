@@ -17,6 +17,7 @@ type BlackbookAddressType = "WORK" | "BILLING" | "PERSONAL" | "CUSTOM";
 type DeckBlockType = "field" | "links" | "dateStatus" | "imageGrid" | "notes" | "map" | "footer";
 type DeckField = "name" | "subtitle" | "location" | "address" | "clientNotes" | "internalNotes" | "project";
 type DeckImageLayout = "grid" | "justify";
+type DeckImageFit = "contain" | "cover" | "natural";
 
 interface DeckTemplateBlock {
   id: string;
@@ -33,7 +34,11 @@ interface DeckTemplateBlock {
   uppercase?: boolean;
   imageCount?: number;
   imagePadding?: number;
+  imageGap?: number;
   imageLayout?: DeckImageLayout;
+  imageFit?: DeckImageFit;
+  imageAllowRows?: boolean;
+  imageHideEmptySlots?: boolean;
   hidden?: boolean;
   locked?: boolean;
 }
@@ -348,9 +353,9 @@ const DECK_BLOCK_PRESETS: Array<{ label: string; block: Omit<DeckTemplateBlock, 
   { label: "Project tag", block: { type: "field", field: "project", label: "Project", x: 66, y: 5, w: 32, h: 4, fontSize: 16, align: "right" } },
   { label: "Links row", block: { type: "links", label: "Links", x: 2, y: 14, w: 40, h: 4, fontSize: 18, fontWeight: 800 } },
   { label: "Date status", block: { type: "dateStatus", label: "Date status", x: 68, y: 12, w: 30, h: 14, fontSize: 12, fontWeight: 800, align: "center" } },
-  { label: "Image grid 4", block: { type: "imageGrid", label: "Image grid", x: 2, y: 24, w: 96, h: 31, imageCount: 4, imagePadding: 12, imageLayout: "grid" } },
-  { label: "Image grid 6", block: { type: "imageGrid", label: "Image grid", x: 2, y: 22, w: 96, h: 48, imageCount: 6, imagePadding: 12, imageLayout: "grid" } },
-  { label: "Justified image row", block: { type: "imageGrid", label: "Justified images", x: 2, y: 28, w: 96, h: 24, imageCount: 5, imagePadding: 10, imageLayout: "justify" } },
+  { label: "Image grid 4", block: { type: "imageGrid", label: "Image grid", x: 2, y: 24, w: 96, h: 31, imageCount: 4, imagePadding: 12, imageGap: 12, imageLayout: "grid", imageFit: "contain" } },
+  { label: "Image grid 6", block: { type: "imageGrid", label: "Image grid", x: 2, y: 22, w: 96, h: 48, imageCount: 6, imagePadding: 12, imageGap: 12, imageLayout: "grid", imageFit: "contain" } },
+  { label: "Justified image row", block: { type: "imageGrid", label: "Justified images", x: 2, y: 28, w: 96, h: 24, imageCount: 10, imagePadding: 10, imageGap: 10, imageLayout: "justify", imageFit: "natural", imageHideEmptySlots: true } },
   { label: "Map", block: { type: "map", label: "Map", x: 2, y: 58, w: 46, h: 32 } },
   { label: "Notes", block: { type: "notes", field: "clientNotes", label: "Deck notes", x: 50, y: 60, w: 34, h: 16, fontSize: 15 } },
   { label: "Footer", block: { type: "footer", label: "Footer", x: 2, y: 94, w: 96, h: 3, fontSize: 12 } },
@@ -364,7 +369,7 @@ function baseTalentTemplate(group: OptionGroup): DeckTemplate {
       { id: "name", type: "field", field: "name", label: "Name", x: 2, y: 3, w: 74, h: 9, fontSize: 72, fontWeight: 900, uppercase: true },
       { id: "links", type: "links", label: "Links", x: 2, y: 13, w: 36, h: 4, fontSize: 20, fontWeight: 500 },
       { id: "date-status", type: "dateStatus", label: "Date status", x: 82, y: 7, w: 16, h: 15, fontSize: 13, fontWeight: 700, align: "center" },
-      { id: "images", type: "imageGrid", label: "Image grid", x: 2, y: 21, w: 76, h: 55, imageCount: 8, imagePadding: 12, imageLayout: "grid" },
+      { id: "images", type: "imageGrid", label: "Image grid", x: 2, y: 21, w: 76, h: 55, imageCount: 8, imagePadding: 12, imageGap: 12, imageLayout: "grid", imageFit: "contain" },
       { id: "notes", type: "notes", field: "clientNotes", label: "Deck notes", x: 2, y: 80, w: 74, h: 14, fontSize: 18 },
       { id: "footer", type: "footer", label: "Footer", x: 82, y: 88, w: 15, h: 8, fontSize: 15, align: "right" },
     ],
@@ -380,7 +385,7 @@ function baseLocationTemplate(): DeckTemplate {
       { id: "location", type: "field", field: "location", label: "City / country", x: 80, y: 5, w: 17, h: 4, fontSize: 14, align: "right" },
       { id: "links", type: "links", label: "Links", x: 2, y: 13, w: 36, h: 4, fontSize: 18, fontWeight: 800 },
       { id: "date-status", type: "dateStatus", label: "Date status", x: 2, y: 17, w: 34, h: 5, fontSize: 16, fontWeight: 800 },
-      { id: "images", type: "imageGrid", label: "Images", x: 2, y: 24, w: 96, h: 31, imageCount: 4, imagePadding: 12, imageLayout: "grid" },
+      { id: "images", type: "imageGrid", label: "Images", x: 2, y: 24, w: 96, h: 31, imageCount: 4, imagePadding: 12, imageGap: 12, imageLayout: "grid", imageFit: "contain" },
       { id: "map", type: "map", label: "Map", x: 2, y: 57, w: 46, h: 33 },
       { id: "notes", type: "notes", field: "clientNotes", label: "Notes", x: 50, y: 59, w: 34, h: 18, fontSize: 15 },
       { id: "footer", type: "footer", label: "Footer", x: 2, y: 93, w: 96, h: 4, fontSize: 12 },
@@ -1874,13 +1879,23 @@ function BlockInspector({ block, onChange, onDuplicate, onLayer, onToggleLock, o
       {block.type === "imageGrid" && (
         <div className="space-y-2 rounded-md border border-gray-100 bg-gray-50 p-2">
           <NumberSetting label="Image count" value={block.imageCount ?? 4} onChange={(imageCount) => onChange({ imageCount })} />
-          <NumberSetting label="Padding" value={block.imagePadding ?? 8} onChange={(imagePadding) => onChange({ imagePadding })} />
+          <NumberSetting label="Outer padding" value={block.imagePadding ?? 8} onChange={(imagePadding) => onChange({ imagePadding })} />
+          <NumberSetting label="Gap" value={block.imageGap ?? block.imagePadding ?? 8} onChange={(imageGap) => onChange({ imageGap })} />
           <label className="block text-gray-500">Layout
             <select value={block.imageLayout ?? "grid"} onChange={(event) => onChange({ imageLayout: event.target.value as DeckImageLayout })} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-gray-900">
               <option value="grid">Tiled boxes</option>
               <option value="justify">Justified row</option>
             </select>
           </label>
+          <label className="block text-gray-500">Fit
+            <select value={block.imageFit ?? (block.imageLayout === "justify" ? "natural" : "contain")} onChange={(event) => onChange({ imageFit: event.target.value as DeckImageFit })} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-gray-900">
+              <option value="contain">Contain</option>
+              <option value="cover">Cover</option>
+              <option value="natural">Natural height</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-gray-500"><input type="checkbox" checked={Boolean(block.imageAllowRows)} onChange={(event) => onChange({ imageAllowRows: event.target.checked })} /> Allow multiple rows</label>
+          <label className="flex items-center gap-2 text-gray-500"><input type="checkbox" checked={Boolean(block.imageHideEmptySlots)} onChange={(event) => onChange({ imageHideEmptySlots: event.target.checked })} /> Hide empty slots</label>
         </div>
       )}
       <label className="flex items-center gap-2 text-gray-500"><input type="checkbox" checked={Boolean(block.uppercase)} onChange={(event) => onChange({ uppercase: event.target.checked })} /> Uppercase</label>
@@ -2029,26 +2044,41 @@ function DeckBlockContent({ matrix, group, dates, candidate, block }: {
     );
   }
   if (block.type === "imageGrid") {
-    const photos = candidate.photos.filter((photo) => photo.exportSelected).concat(candidate.photos.filter((photo) => !photo.exportSelected)).slice(0, block.imageCount ?? 4);
+    const allPhotos = candidate.photos.filter((photo) => photo.exportSelected).concat(candidate.photos.filter((photo) => !photo.exportSelected));
     const count = block.imageCount ?? 4;
     const padding = Math.max(0, Math.min(80, block.imagePadding ?? 8));
-    const cells = Array.from({ length: count }).map((_, index) => {
-      const photo = photos[index];
+    const gap = Math.max(0, Math.min(80, block.imageGap ?? block.imagePadding ?? 8));
+    const slots = block.imageHideEmptySlots ? allPhotos.slice(0, count) : Array.from({ length: count }).map((_, index) => allPhotos[index] ?? null);
+    const fit = block.imageFit ?? (block.imageLayout === "justify" ? "natural" : "contain");
+    const imageClass = fit === "cover"
+      ? "h-full w-full object-cover object-bottom"
+      : fit === "natural"
+        ? "h-full w-auto max-w-none object-contain object-bottom"
+        : "max-h-full max-w-full object-contain object-bottom";
+    const cells = slots.map((photo, index) => {
+      const ratio = photo?.width && photo.height ? photo.width / photo.height : 1.4;
       return (
-        <div key={photo?.id ?? index} className="flex min-h-0 min-w-0 items-end justify-center overflow-hidden bg-white">
-          {photo ? <img src={photo.url} className="max-h-full max-w-full object-contain object-bottom" /> : <div className="grid h-full w-full place-items-center border border-gray-200 text-gray-300"><ImageIcon size={22} /></div>}
+        <div
+          key={photo?.id ?? index}
+          className="flex min-h-0 min-w-0 items-end justify-center overflow-hidden bg-white"
+          style={block.imageLayout === "justify" ? { aspectRatio: ratio } : undefined}
+        >
+          {photo ? <img src={photo.url} className={imageClass} /> : <div className="grid h-full w-full place-items-center border border-gray-200 text-gray-300"><ImageIcon size={22} /></div>}
         </div>
       );
     });
     if (block.imageLayout === "justify") {
       return (
-        <div className="flex h-full w-full items-end" style={{ gap: padding, padding }}>
-          {cells.map((cell, index) => <div key={index} className="h-full min-w-0 flex-1">{cell}</div>)}
+        <div
+          className={`flex h-full w-full items-end content-end overflow-hidden ${block.imageAllowRows ? "flex-wrap" : "flex-nowrap"}`}
+          style={{ gap, padding }}
+        >
+          {cells.map((cell, index) => <div key={index} className={block.imageAllowRows ? "min-w-0" : "h-full min-w-0 shrink-0"} style={block.imageAllowRows ? { height: `calc((100% - ${gap}px) / 2)` } : { height: "100%" }}>{cell}</div>)}
         </div>
       );
     }
     return (
-      <div className="grid h-full w-full" style={{ gap: padding, padding, gridTemplateColumns: `repeat(${Math.min(4, Math.max(1, Math.ceil(Math.sqrt(count))))}, minmax(0, 1fr))` }}>
+      <div className="grid h-full w-full" style={{ gap, padding, gridTemplateColumns: `repeat(${Math.min(4, Math.max(1, Math.ceil(Math.sqrt(count))))}, minmax(0, 1fr))` }}>
         {cells}
       </div>
     );

@@ -551,6 +551,7 @@ const DECK_BLOCK_TYPES = new Set(["field", "links", "dateStatus", "imageGrid", "
 const DECK_FIELDS = new Set(["name", "subtitle", "location", "address", "clientNotes", "internalNotes", "project"]);
 const DECK_ALIGNS = new Set(["left", "center", "right"]);
 const DECK_IMAGE_LAYOUTS = new Set(["grid", "justify"]);
+const DECK_IMAGE_FITS = new Set(["contain", "cover", "natural"]);
 
 function templateNumber(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value);
@@ -578,12 +579,16 @@ function sanitizeDeckBlocks(value: unknown): DeckTemplateBlock[] {
       uppercase: record.uppercase === true,
       imageCount: templateNumber(record.imageCount, 4, 1, 12),
       imagePadding: templateNumber(record.imagePadding, 8, 0, 80),
+      imageGap: templateNumber(record.imageGap, templateNumber(record.imagePadding, 8, 0, 80), 0, 80),
+      imageAllowRows: record.imageAllowRows === true,
+      imageHideEmptySlots: record.imageHideEmptySlots === true,
       hidden: record.hidden === true,
       locked: record.locked === true,
     };
     if (typeof record.field === "string" && DECK_FIELDS.has(record.field)) block.field = record.field as DeckTemplateBlock["field"];
     if (typeof record.align === "string" && DECK_ALIGNS.has(record.align)) block.align = record.align as DeckTemplateBlock["align"];
     if (typeof record.imageLayout === "string" && DECK_IMAGE_LAYOUTS.has(record.imageLayout)) block.imageLayout = record.imageLayout as DeckTemplateBlock["imageLayout"];
+    if (typeof record.imageFit === "string" && DECK_IMAGE_FITS.has(record.imageFit)) block.imageFit = record.imageFit as DeckTemplateBlock["imageFit"];
     return [block];
   });
 }

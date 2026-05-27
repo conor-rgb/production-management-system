@@ -33,6 +33,7 @@ type LinkItem = {
 export type DeckBlockType = "field" | "links" | "dateStatus" | "imageGrid" | "notes" | "map" | "footer";
 export type DeckField = "name" | "subtitle" | "location" | "address" | "clientNotes" | "internalNotes" | "project";
 export type DeckImageLayout = "grid" | "justify";
+export type DeckImageFit = "contain" | "cover" | "natural";
 
 export interface DeckTemplateBlock {
   id: string;
@@ -49,7 +50,11 @@ export interface DeckTemplateBlock {
   uppercase?: boolean;
   imageCount?: number;
   imagePadding?: number;
+  imageGap?: number;
   imageLayout?: DeckImageLayout;
+  imageFit?: DeckImageFit;
+  imageAllowRows?: boolean;
+  imageHideEmptySlots?: boolean;
   hidden?: boolean;
   locked?: boolean;
 }
@@ -200,7 +205,7 @@ function baseTalentTemplate(group: OptionsDeckGroup): DeckTemplateBlock[] {
     { id: "project", type: "field", field: "project", label: "Project", x: 66, y: 5, w: 32, h: 4, fontSize: 16, align: "right" },
     { id: "links", type: "links", label: "Links", x: 2, y: 13, w: 42, h: 4, fontSize: 18, fontWeight: 800 },
     { id: "date-status", type: "dateStatus", label: "Date status", x: 67, y: 12, w: 31, h: 16, fontSize: 12, fontWeight: 800 },
-    { id: "images", type: "imageGrid", label: "Images", x: 2, y: 22, w: 96, h: 56, imageCount: group.type === "LOCATION" ? 4 : 6, imagePadding: 12, imageLayout: "grid" },
+    { id: "images", type: "imageGrid", label: "Images", x: 2, y: 22, w: 96, h: 56, imageCount: group.type === "LOCATION" ? 4 : 6, imagePadding: 12, imageGap: 12, imageLayout: "grid", imageFit: "contain" },
     { id: "notes", type: "notes", field: "clientNotes", label: "Deck notes", x: 2, y: 81, w: 52, h: 10, fontSize: 18 },
     { id: "footer", type: "footer", label: "Footer", x: 2, y: 94, w: 96, h: 3, fontSize: 12 },
   ];
@@ -212,7 +217,7 @@ function baseLocationTemplate(): DeckTemplateBlock[] {
     { id: "location", type: "field", field: "location", label: "City / country", x: 80, y: 5, w: 17, h: 4, fontSize: 14, align: "right" },
     { id: "links", type: "links", label: "Links", x: 2, y: 13, w: 36, h: 4, fontSize: 18, fontWeight: 800 },
     { id: "date-status", type: "dateStatus", label: "Date status", x: 2, y: 17, w: 34, h: 5, fontSize: 16, fontWeight: 800 },
-    { id: "images", type: "imageGrid", label: "Images", x: 2, y: 24, w: 96, h: 31, imageCount: 4, imagePadding: 12, imageLayout: "grid" },
+    { id: "images", type: "imageGrid", label: "Images", x: 2, y: 24, w: 96, h: 31, imageCount: 4, imagePadding: 12, imageGap: 12, imageLayout: "grid", imageFit: "contain" },
     { id: "map", type: "map", label: "Map", x: 2, y: 57, w: 46, h: 33 },
     { id: "notes", type: "notes", field: "clientNotes", label: "Notes", x: 50, y: 59, w: 34, h: 18, fontSize: 15 },
     { id: "footer", type: "footer", label: "Footer", x: 2, y: 93, w: 96, h: 4, fontSize: 12 },
@@ -265,15 +270,19 @@ function renderImageGridBlock(candidate: DeckCandidate, block: DeckTemplateBlock
   const count = Math.max(1, Math.min(12, block.imageCount ?? 4));
   const columns = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(count))));
   const padding = Math.max(0, Math.min(80, block.imagePadding ?? 8));
-  const cells = Array.from({ length: count }).map((_, index) => {
-    const photo = selected[index];
+  const gap = Math.max(0, Math.min(80, block.imageGap ?? block.imagePadding ?? 8));
+  const fit = block.imageFit ?? (block.imageLayout === "justify" ? "natural" : "contain");
+  const slots: Array<DeckPhoto | undefined> = block.imageHideEmptySlots ? selected.slice(0, count) : Array.from({ length: count }).map((_, index) => selected[index]);
+  const cells = slots.map((photo, index) => {
     const src = imageDataUrl(photo?.storedPath);
-    return `<div class="image-cell">${src ? `<img src="${src}" alt="">` : `<div class="image-placeholder">No image</div>`}</div>`;
+    const ratio = photo?.width && photo.height ? Math.max(0.2, Math.min(8, photo.width / photo.height)) : 1.4;
+    const style = block.imageLayout === "justify" ? ` style="--image-ratio:${ratio};"` : "";
+    return `<div class="image-cell"${style}>${src ? `<img class="image-fit-${fit}" src="${src}" alt="">` : `<div class="image-placeholder">No image</div>`}</div>`;
   }).join("");
   if (block.imageLayout === "justify") {
-    return `<div class="block image-grid-block image-grid-block--justify" style="${blockStyle(block)};--image-padding:${padding}px;--image-gap:${padding}px;">${cells}</div>`;
+    return `<div class="block image-grid-block image-grid-block--justify ${block.imageAllowRows ? "image-grid-block--wrap" : ""}" style="${blockStyle(block)};--image-padding:${padding}px;--image-gap:${gap}px;">${cells}</div>`;
   }
-  return `<div class="block image-grid-block" style="${blockStyle(block)};--image-padding:${padding}px;--image-gap:${padding}px;grid-template-columns:repeat(${columns},minmax(0,1fr));">${cells}</div>`;
+  return `<div class="block image-grid-block" style="${blockStyle(block)};--image-padding:${padding}px;--image-gap:${gap}px;grid-template-columns:repeat(${columns},minmax(0,1fr));">${cells}</div>`;
 }
 
 function renderMapBlock(candidate: DeckCandidate, block: DeckTemplateBlock): string {
@@ -325,10 +334,15 @@ export function renderOptionsDeckHtml(group: OptionsDeckGroup, templateBlocks?: 
     .date-status-block { display: flex; flex-direction: column; gap: 7px; border: 0; }
     .date-status-row { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; border: 1px solid; border-radius: 2px; padding: 0 10px; font-weight: 700; letter-spacing: 0; white-space: nowrap; }
     .image-grid-block { display: grid; gap: var(--image-gap, 18px); padding: var(--image-padding, 8px); }
-    .image-grid-block--justify { display: flex; align-items: flex-end; }
-    .image-grid-block--justify .image-cell { flex: 1 1 0; height: 100%; }
+    .image-grid-block--justify { display: flex; align-items: flex-end; align-content: flex-end; flex-wrap: nowrap; overflow: hidden; }
+    .image-grid-block--justify.image-grid-block--wrap { flex-wrap: wrap; }
+    .image-grid-block--justify .image-cell { flex: 0 0 auto; height: 100%; aspect-ratio: var(--image-ratio, 1.4); }
+    .image-grid-block--justify.image-grid-block--wrap .image-cell { height: calc((100% - var(--image-gap, 18px)) / 2); }
     .image-cell { min-width: 0; min-height: 0; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; background: #fff; }
-    .image-cell img { max-width: 100%; max-height: 100%; object-fit: contain; object-position: center bottom; display: block; }
+    .image-cell img { display: block; object-position: center bottom; }
+    .image-fit-contain { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .image-fit-cover { width: 100%; height: 100%; object-fit: cover; }
+    .image-fit-natural { width: auto; height: 100%; max-width: none; object-fit: contain; }
     .image-placeholder { width: 100%; height: 100%; display: grid; place-items: end center; padding-bottom: 24px; color: #b8b8b2; background: #f0f0ee; border: 1px solid #e1e1dc; font-size: 24px; }
     .map-block { background: #eef3ee; border: 1px solid ${LIGHT_BORDER}; }
     .map-block img { width: 100%; height: 100%; object-fit: cover; display: block; }

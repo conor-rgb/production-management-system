@@ -1,3 +1,77 @@
+# HANDOVER - 2026-05-27 - Options Image Grid Fit Controls
+
+## Built This Session
+- Improved options deck image blocks so justified layouts behave more like editorial contact sheets.
+- Added separate image controls:
+  - outer padding,
+  - gap between images,
+  - layout mode,
+  - image fit mode,
+  - allow multiple rows,
+  - hide empty slots.
+- Justified image rows now:
+  - scale images to the height of the block,
+  - preserve each image's natural aspect ratio,
+  - align images to the bottom of the block,
+  - keep a single row by default,
+  - hide overflow unless multiple rows are enabled.
+- Multiple-row mode wraps justified images into two height-matched rows.
+- Tiled box mode keeps the square/grid behaviour but can now use `contain` or `cover`.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Extended deck block JSON with:
+  - `imageGap`
+  - `imageFit`
+  - `imageAllowRows`
+  - `imageHideEmptySlots`
+- The designer inspector now labels image spacing clearly:
+  - `Outer padding`
+  - `Gap`
+- `Justified image row` preset now defaults to:
+  - max 10 images,
+  - natural height fit,
+  - hidden empty slots,
+  - single-row overflow.
+
+## Backend
+- Updated `backend/src/services/optionsDeckPdf.ts`.
+- Updated `backend/src/routes/options.ts`.
+- The HTML/PDF export renderer now respects all new image settings.
+- The sanitizer preserves the new JSON fields and clamps numeric spacing values.
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK.
+- Chromium export smoke test passed with:
+  - justified row,
+  - natural fit,
+  - hidden empty slots,
+  - custom padding/gap.
+  - PDF buffer: 11,075,616 bytes.
+
+## Current State
+- Image grids now cover the two important modes:
+  - structured tiled boxes,
+  - looser justified editorial rows.
+- This should make location and talent decks less rigid while keeping exports predictable.
+
+## Known Gaps / Technical Debt
+- Multiple-row justified mode currently uses two rows. A future pass could calculate row count based on block height and image count.
+- There are still no per-image focal point/crop controls.
+- Export order is still driven by photo order/export selection in the photo manager.
+
+## Exact Next Steps
+1. Add per-image crop/focal-point controls.
+2. Add an export-order strip in the photo manager.
+3. Add hero image presets such as `Hero + thumbnails` and `Full bleed hero`.
+
+---
+
 # HANDOVER - 2026-05-27 - Options Deck Editor Layers and Image Layouts
 
 ## Built This Session
