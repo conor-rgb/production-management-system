@@ -1491,7 +1491,10 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
   const [template, setTemplate] = useState<DeckTemplate>(() => defaultDeckTemplate(group));
   const [previewCandidateId, setPreviewCandidateId] = useState(group.candidates[0]?.id ?? "");
   const [selectedBlockId, setSelectedBlockId] = useState(template.blocks[0]?.id ?? "");
-  const [drag, setDrag] = useState<{ blockId: string; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const [drag, setDrag] = useState<DeckDragState | null>(null);
+  const [viewMode, setViewMode] = useState<"edit" | "final">("edit");
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [finalPreviewKey, setFinalPreviewKey] = useState(0);
   const [loadingTemplate, setLoadingTemplate] = useState(true);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -1521,10 +1524,16 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
     function move(event: MouseEvent) {
       const dx = ((event.clientX - activeDrag.startX) / 1280) * 100;
       const dy = ((event.clientY - activeDrag.startY) / 720) * 100;
-      updateBlock(activeDrag.blockId, {
-        x: Math.max(0, Math.min(99, activeDrag.originX + dx)),
-        y: Math.max(0, Math.min(99, activeDrag.originY + dy)),
-      });
+      const snap = snapEnabled && !event.altKey;
+      if (activeDrag.kind === "move") {
+        updateBlock(activeDrag.blockId, {
+          x: constrainDeckValue(activeDrag.origin.x + dx, 0, 100 - activeDrag.origin.w, snap),
+          y: constrainDeckValue(activeDrag.origin.y + dy, 0, 100 - activeDrag.origin.h, snap),
+        });
+        return;
+      }
+      const next = resizeDeckRect(activeDrag, dx, dy, snap);
+      updateBlock(activeDrag.blockId, next);
     }
     function up() {
       setDrag(null);
@@ -1584,6 +1593,12 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
     }
   }
 
+  async function showFinalPreview() {
+    await saveTemplate();
+    setFinalPreviewKey((current) => current + 1);
+    setViewMode("final");
+  }
+
   async function previewExport() {
     const previewWindow = window.open("about:blank", "_blank");
     try {
@@ -1608,9 +1623,17 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
             <p className="text-[11px] text-gray-400">{group.name} · {loadingTemplate ? "loading saved template..." : savedAt ?? "unsaved changes stay in preview until saved"}</p>
           </div>
           <div className="flex items-center gap-2">
+            <div className="mr-1 flex rounded-md border border-gray-200 bg-gray-50 p-0.5">
+              <button onClick={() => setViewMode("edit")} className={`rounded px-2 py-1 text-xs ${viewMode === "edit" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}>Edit</button>
+              <button onClick={() => showFinalPreview().catch((err: Error) => window.alert(err.message))} disabled={savingTemplate} className={`rounded px-2 py-1 text-xs ${viewMode === "final" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"} disabled:opacity-50`}>Final</button>
+            </div>
             <select value={previewCandidate?.id ?? ""} onChange={(event) => setPreviewCandidateId(event.target.value)} className="h-8 rounded-md border border-gray-200 bg-white px-2 text-xs">
               {group.candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
             </select>
+            <label className="flex h-8 items-center gap-1 rounded-md border border-gray-200 px-2 text-xs text-gray-500">
+              <input type="checkbox" checked={snapEnabled} onChange={(event) => setSnapEnabled(event.target.checked)} className="h-3 w-3" />
+              Snap
+            </label>
             <button onClick={() => resetTemplate("editorial")} className="rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50">Editorial base</button>
             <button onClick={() => resetTemplate("location")} className="rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50">Location base</button>
             <button onClick={() => previewExport().catch((err: Error) => window.alert(err.message))} disabled={savingTemplate} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Preview export</button>
@@ -1641,7 +1664,9 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
 
           <main className="min-w-0 overflow-auto p-6">
             <div className="mx-auto aspect-video w-full max-w-[1280px] bg-white shadow-2xl">
-              {previewCandidate ? (
+              {viewMode === "final" ? (
+                <DeckFinalPreview groupId={group.id} previewKey={finalPreviewKey} />
+              ) : previewCandidate ? (
                 <DeckPagePreview
                   matrix={matrix}
                   group={group}
@@ -1652,7 +1677,24 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
                   onSelectBlock={setSelectedBlockId}
                   onDragStart={(block, event) => {
                     setSelectedBlockId(block.id);
-                    setDrag({ blockId: block.id, startX: event.clientX, startY: event.clientY, originX: block.x, originY: block.y });
+                    setDrag({
+                      kind: "move",
+                      blockId: block.id,
+                      startX: event.clientX,
+                      startY: event.clientY,
+                      origin: deckRectFromBlock(block),
+                    });
+                  }}
+                  onResizeStart={(block, handle, event) => {
+                    setSelectedBlockId(block.id);
+                    setDrag({
+                      kind: "resize",
+                      blockId: block.id,
+                      handle,
+                      startX: event.clientX,
+                      startY: event.clientY,
+                      origin: deckRectFromBlock(block),
+                    });
                   }}
                 />
               ) : (
@@ -1678,6 +1720,56 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
       </div>
     </div>
   );
+}
+
+type DeckResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+
+type DeckRect = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+type DeckDragState =
+  | { kind: "move"; blockId: string; startX: number; startY: number; origin: DeckRect }
+  | { kind: "resize"; blockId: string; handle: DeckResizeHandle; startX: number; startY: number; origin: DeckRect };
+
+const DECK_SNAP_PERCENT = 1.25;
+
+function snapDeckValue(value: number): number {
+  return Math.round(value / DECK_SNAP_PERCENT) * DECK_SNAP_PERCENT;
+}
+
+function constrainDeckValue(value: number, min: number, max: number, snap: boolean): number {
+  const next = snap ? snapDeckValue(value) : value;
+  return Math.max(min, Math.min(max, Math.round(next * 10) / 10));
+}
+
+function deckRectFromBlock(block: DeckTemplateBlock): DeckRect {
+  return { x: block.x, y: block.y, w: block.w, h: block.h };
+}
+
+function resizeDeckRect(drag: Extract<DeckDragState, { kind: "resize" }>, dx: number, dy: number, snap: boolean): Partial<DeckTemplateBlock> {
+  const minW = 2;
+  const minH = 2;
+  let { x, y, w, h } = drag.origin;
+  if (drag.handle.includes("e")) w = drag.origin.w + dx;
+  if (drag.handle.includes("s")) h = drag.origin.h + dy;
+  if (drag.handle.includes("w")) {
+    x = drag.origin.x + dx;
+    w = drag.origin.w - dx;
+  }
+  if (drag.handle.includes("n")) {
+    y = drag.origin.y + dy;
+    h = drag.origin.h - dy;
+  }
+
+  x = constrainDeckValue(x, 0, 100 - minW, snap);
+  y = constrainDeckValue(y, 0, 100 - minH, snap);
+  w = constrainDeckValue(w, minW, 100 - x, snap);
+  h = constrainDeckValue(h, minH, 100 - y, snap);
+  return { x, y, w, h };
 }
 
 function BlockInspector({ block, onChange, onDelete }: { block: DeckTemplateBlock; onChange: (patch: Partial<DeckTemplateBlock>) => void; onDelete: () => void }) {
@@ -1725,7 +1817,7 @@ function NumberSetting({ label: labelText, value, onChange }: { label: string; v
   );
 }
 
-function DeckPagePreview({ matrix, group, dates, candidate, template, selectedBlockId, onSelectBlock, onDragStart }: {
+function DeckPagePreview({ matrix, group, dates, candidate, template, selectedBlockId, onSelectBlock, onDragStart, onResizeStart }: {
   matrix: MatrixResponse;
   group: OptionGroup;
   dates: MatrixDate[];
@@ -1734,13 +1826,23 @@ function DeckPagePreview({ matrix, group, dates, candidate, template, selectedBl
   selectedBlockId: string;
   onSelectBlock: (id: string) => void;
   onDragStart: (block: DeckTemplateBlock, event: React.MouseEvent<HTMLDivElement>) => void;
+  onResizeStart: (block: DeckTemplateBlock, handle: DeckResizeHandle, event: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   return (
-    <div className="relative h-full w-full overflow-hidden bg-white">
+    <div
+      className="relative h-full w-full overflow-hidden bg-white"
+      style={{
+        backgroundImage: "linear-gradient(rgba(0,0,0,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.035) 1px, transparent 1px)",
+        backgroundSize: "16px 16px",
+      }}
+    >
       {template.blocks.map((block) => (
         <div
           key={block.id}
-          onMouseDown={(event) => onDragStart(block, event)}
+          onMouseDown={(event) => {
+            if ((event.target as HTMLElement).dataset.resizeHandle) return;
+            onDragStart(block, event);
+          }}
           onClick={(event) => {
             event.stopPropagation();
             onSelectBlock(block.id);
@@ -1749,8 +1851,57 @@ function DeckPagePreview({ matrix, group, dates, candidate, template, selectedBl
           style={{ left: `${block.x}%`, top: `${block.y}%`, width: `${block.w}%`, height: `${block.h}%` }}
         >
           <DeckBlockContent matrix={matrix} group={group} dates={dates} candidate={candidate} block={block} />
+          {selectedBlockId === block.id && (
+            <DeckResizeHandles block={block} onResizeStart={onResizeStart} />
+          )}
         </div>
       ))}
+    </div>
+  );
+}
+
+function DeckResizeHandles({ block, onResizeStart }: { block: DeckTemplateBlock; onResizeStart: (block: DeckTemplateBlock, handle: DeckResizeHandle, event: React.MouseEvent<HTMLDivElement>) => void }) {
+  const handles: Array<{ id: DeckResizeHandle; className: string; cursor: string }> = [
+    { id: "nw", className: "left-0 top-0", cursor: "nwse-resize" },
+    { id: "n", className: "left-1/2 top-0 -translate-x-1/2", cursor: "ns-resize" },
+    { id: "ne", className: "right-0 top-0", cursor: "nesw-resize" },
+    { id: "e", className: "right-0 top-1/2 -translate-y-1/2", cursor: "ew-resize" },
+    { id: "se", className: "bottom-0 right-0", cursor: "nwse-resize" },
+    { id: "s", className: "bottom-0 left-1/2 -translate-x-1/2", cursor: "ns-resize" },
+    { id: "sw", className: "bottom-0 left-0", cursor: "nesw-resize" },
+    { id: "w", className: "left-0 top-1/2 -translate-y-1/2", cursor: "ew-resize" },
+  ];
+  return (
+    <>
+      {handles.map((handle) => (
+        <div
+          key={handle.id}
+          data-resize-handle={handle.id}
+          onMouseDown={(event) => {
+            event.stopPropagation();
+            onResizeStart(block, handle.id, event);
+          }}
+          className={`absolute z-10 h-3 w-3 rounded-full border border-red-500 bg-white shadow ${handle.className}`}
+          style={{ cursor: handle.cursor }}
+        />
+      ))}
+    </>
+  );
+}
+
+function DeckFinalPreview({ groupId, previewKey }: { groupId: string; previewKey: number }) {
+  return (
+    <div className="relative h-full w-full overflow-hidden bg-white">
+      <iframe
+        key={previewKey}
+        title="Final PDF preview"
+        src={`/api/options/matrix/groups/${groupId}/export-preview-html?preview=${previewKey}`}
+        className="origin-top-left border-0"
+        style={{ width: 1920, height: 1080, transform: "scale(0.6666667)" }}
+      />
+      <div className="pointer-events-none absolute bottom-3 right-3 rounded bg-white/90 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.06em] text-gray-500 shadow-sm">
+        Final export HTML
+      </div>
     </div>
   );
 }

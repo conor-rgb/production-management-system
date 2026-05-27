@@ -1,3 +1,60 @@
+# HANDOVER - 2026-05-27 - Options PDF Editor Resize and Final Preview
+
+## Built This Session
+- Added core layout-tool interactions to the options PDF designer.
+- The designer now has an `Edit / Final` toggle.
+  - `Edit` shows the red editable placement boxes.
+  - `Final` saves the current template and embeds the exact backend export HTML inside the designer.
+- Added snap-to-grid for block movement and resizing.
+  - Snap is on by default.
+  - Holding `Alt` while dragging temporarily disables snap.
+- Added resize handles to selected blocks.
+  - Supports all edges and corners.
+  - Existing numeric W/H/X/Y inputs remain for precise adjustments.
+- Added a subtle edit grid behind the red placement boxes.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Added:
+  - `DeckDragState`
+  - `DeckResizeHandle`
+  - `DeckFinalPreview`
+  - `DeckResizeHandles`
+  - snap/constrain helpers for percent-based deck coordinates.
+
+## Backend
+- No backend changes in this pass.
+- Existing HTML export preview route is reused:
+  - `GET /api/options/matrix/groups/:groupId/export-preview-html`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
+
+## Current State
+- The editor is now more usable for actual layout work:
+  - drag to move,
+  - drag handles to resize,
+  - snap for clean alignment,
+  - final HTML preview in place.
+- Final preview saves before rendering, so it always represents what export will use.
+
+## Known Gaps / Technical Debt
+- Resize handles are functional but minimal; next pass should make them more polished and add keyboard nudging.
+- Final preview is scaled to the current 1280px editor canvas. If the designer canvas becomes responsive below 1280px, the iframe scale should become dynamic.
+- No layer controls yet.
+
+## Exact Next Steps
+1. Add duplicate, lock, hide, bring forward, and send backward controls.
+2. Add keyboard nudging with arrow keys and shift-arrow larger increments.
+3. Add smart branded block presets.
+4. Add reusable global deck template library.
+
+---
+
 # HANDOVER - 2026-05-27 - WYSIWYG HTML Options Deck Export
 
 ## Built This Session
