@@ -52,6 +52,20 @@ const INVOICE_STATUSES: FreeAgentInvoiceStatus[] = ["NOT_RAISED", "DRAFT", "SENT
 const TABS = ["Overview", "Dates", "Crew", "Options", "Budget", "POs", "Comms", "Files"] as const;
 type Tab = typeof TABS[number];
 const PO_STATUSES: PurchaseOrderStatus[] = ["DRAFT", "SENT", "ACCEPTED", "PART_BILLED", "BILLED", "PAID", "CANCELLED"];
+type ParsedBill = {
+  supplierName: string | null;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  amountNet: number | null;
+  amountGross: number | null;
+  vatAmount: number | null;
+  vatRate: number | null;
+  currency: string;
+  description: string | null;
+  confidence: "high" | "medium" | "low";
+  rawText: string | null;
+  allocations: Array<{ id: string; amount: number }>;
+};
 const PO_STATUS_LABELS: Record<PurchaseOrderStatus, string> = {
   DRAFT: "Draft",
   SENT: "Sent",
@@ -559,8 +573,46 @@ function PurchaseOrderBillPanel({ po, onClose, onSaved }: {
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [parsedBill, setParsedBill] = useState<ParsedBill | null>(null);
+  const [parsing, setParsing] = useState(false);
   const [amounts, setAmounts] = useState<Record<string, string>>(() => Object.fromEntries(po.allocations.map((allocation) => [allocation.id, String(allocation.amount ?? 0)])));
   const [saving, setSaving] = useState(false);
+
+  async function parseInvoice(nextFile: File) {
+    setParsing(true);
+    setParsedBill(null);
+    try {
+      const form = new FormData();
+      form.append("invoiceFile", nextFile);
+      const res = await fetch(`/api/budgets/purchase-orders/${po.id}/parse-bill`, {
+        method: "POST",
+        credentials: "include",
+        body: form,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Invoice parse failed" }));
+        throw new Error(typeof body.error === "string" ? body.error : "Invoice parse failed");
+      }
+      const parsed = await res.json() as ParsedBill;
+      setParsedBill(parsed);
+      if (parsed.invoiceNumber) setInvoiceNumber(parsed.invoiceNumber);
+      if (parsed.invoiceDate) setInvoiceDate(parsed.invoiceDate.slice(0, 10));
+      if (parsed.allocations.length) {
+        setAmounts((current) => ({
+          ...current,
+          ...Object.fromEntries(parsed.allocations.map((allocation) => [allocation.id, String(allocation.amount)])),
+        }));
+      }
+    } finally {
+      setParsing(false);
+    }
+  }
+
+  function selectFile(nextFile: File | null) {
+    setFile(nextFile);
+    if (nextFile) parseInvoice(nextFile).catch((err: unknown) => window.alert(err instanceof Error ? err.message : "Invoice parse failed"));
+    else setParsedBill(null);
+  }
 
   async function save() {
     setSaving(true);
@@ -611,14 +663,27 @@ function PurchaseOrderBillPanel({ po, onClose, onSaved }: {
             <label className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-center hover:border-gray-500">
               <FileText size={18} className="text-gray-400" />
               <span className="mt-2 text-sm font-medium text-gray-800">{file ? file.name : "Choose invoice file"}</span>
-              <span className="mt-1 text-xs text-gray-400">PDF or image. The file is saved to the job Receipts folder and linked to every allocation below.</span>
+              <span className="mt-1 text-xs text-gray-400">
+                {parsing ? "Reading invoice with AI..." : "PDF or image. AI will prefill invoice fields and allocation suggestions."}
+              </span>
               <input
                 type="file"
                 className="hidden"
                 accept="application/pdf,image/*"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
               />
             </label>
+            {parsedBill && (
+              <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900">
+                <p className="font-medium">AI parsed {parsedBill.confidence} confidence</p>
+                <p>
+                  {[parsedBill.supplierName, parsedBill.amountNet !== null ? `net ${formatCurrency(parsedBill.amountNet)}` : null, parsedBill.vatAmount !== null ? `VAT ${formatCurrency(parsedBill.vatAmount)}` : null]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+                {parsedBill.description && <p className="mt-1 text-blue-700">{parsedBill.description}</p>}
+              </div>
+            )}
           </section>
 
           <section className="rounded-lg border border-gray-200">

@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export interface ParsedReceipt {
   vendor: string | null;
+  invoiceNumber: string | null;
   amountGross: number | null;
   amountNet: number | null;
   vatAmount: number | null;
@@ -17,6 +18,7 @@ export interface ParsedReceipt {
 
 type ReceiptJson = {
   vendor?: unknown;
+  invoiceNumber?: unknown;
   amountGross?: unknown;
   amountNet?: unknown;
   vatAmount?: unknown;
@@ -36,6 +38,7 @@ const RECEIPT_ANALYSIS_PROMPT = `Analyse this document carefully. It may be a re
 
 {
   "vendor": "the name of the supplier, business, or company issuing this document — look for company name, 'From:', letterhead, or logo text",
+  "invoiceNumber": "the invoice number, bill number, receipt number, or document reference if present",
   "amountGross": the total amount INCLUDING VAT as a number (what was actually paid),
   "amountNet": the total amount EXCLUDING VAT as a number (the net cost before VAT),
   "vatAmount": the VAT amount as a number,
@@ -88,6 +91,7 @@ function percentageValue(value: unknown): number | null {
 function fallback(rawText: string | null = null): ParsedReceipt {
   return {
     vendor: null,
+    invoiceNumber: null,
     amountGross: null,
     amountNet: null,
     vatAmount: null,
@@ -107,6 +111,7 @@ function parseReceiptResponse(text: string): ParsedReceipt {
     const parsed = JSON.parse(text.replace(/```json\n?|\n?```/g, "").trim()) as ReceiptJson;
     return {
       vendor: cleanText(parsed.vendor),
+      invoiceNumber: cleanText(parsed.invoiceNumber),
       amountGross: amountToPence(parsed.amountGross),
       amountNet: amountToPence(parsed.amountNet),
       vatAmount: amountToPence(parsed.vatAmount),

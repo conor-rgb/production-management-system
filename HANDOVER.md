@@ -1,3 +1,76 @@
+# HANDOVER - 2026-05-27 - AI Bill Parsing for Grouped POs
+
+## Built This Session
+- Added AI invoice/bill parsing to the grouped PO bill drawer.
+- When a PDF or image invoice is selected in the `POs` tab bill drawer:
+  - the backend sends it through the existing Anthropic document/image parser,
+  - invoice number is extracted,
+  - invoice date is extracted,
+  - supplier/vendor is extracted,
+  - net/gross/VAT totals are extracted,
+  - bill allocation suggestions are generated against the grouped PO allocations.
+- The drawer now pre-fills:
+  - invoice number,
+  - invoice date,
+  - suggested final allocation amounts.
+- The drawer shows a compact AI confidence/summary card after parsing.
+
+## Backend
+- Updated `backend/src/services/receiptParser.ts`.
+- Existing parser now also extracts `invoiceNumber`.
+- Updated `backend/src/routes/budgets.ts`.
+- New endpoint:
+  - `POST /api/budgets/purchase-orders/:purchaseOrderId/parse-bill`
+- The endpoint accepts multipart field:
+  - `invoiceFile`
+- Accepted file types:
+  - PDF,
+  - JPEG,
+  - PNG,
+  - GIF,
+  - WEBP.
+- Max file size:
+  - 25MB.
+- Allocation suggestion logic:
+  - uses parsed net amount where present,
+  - falls back to gross amount,
+  - distributes the parsed total proportionally across the PO's existing allocation amounts,
+  - rounds to 2 decimals and adjusts the final allocation so totals match.
+
+## Frontend
+- Updated `frontend/src/pages/Productions.tsx`.
+- In `PurchaseOrderBillPanel`, choosing an invoice file now immediately calls the parse endpoint.
+- Parsed data updates the bill form before save.
+- Existing `Convert to bill` save flow remains unchanged and still uploads/saves the selected invoice file to job files.
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
+
+## Current State
+- Grouped POs can now move from:
+  - multi-line supplier PO,
+  - to AI-assisted bill review,
+  - to saved bill allocations linked to the uploaded invoice file.
+- This uses the already installed PDF/image AI route capability rather than a new parser stack.
+
+## Known Gaps / Technical Debt
+- AI parsing does not yet do semantic line-item matching to specific budget lines; it proportionally suggests allocations from existing PO amounts.
+- The parser extracts invoice-level totals and references, not supplier bank/payment details.
+- The invoice file is parsed once before save and uploaded again on save; we can optimize this later by parsing and storing in one backend transaction.
+
+## Exact Next Steps
+1. Add semantic invoice line-item matching against grouped PO allocation descriptions.
+2. Add PO PDF generation and email send.
+3. Add secure supplier onboarding links for new Blackbook suppliers.
+4. Add grouped bill paid/unpaid controls once FreeAgent matching is ready.
+
+---
+
 # HANDOVER - 2026-05-27 - Group PO to Bill Conversion
 
 ## Built This Session

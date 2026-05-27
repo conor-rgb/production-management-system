@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import multer from "multer";
+import mime from "mime-types";
 import { AdvanceCalcType, BlackbookCategory, BlackbookEntryType, BlackbookLifecycleStatus, Prisma, PurchaseOrderStatus, RevisionStatus, SubCostLineType, SubCostStatus } from "@prisma/client";
 import prisma from "../prisma";
 import {
@@ -18,12 +19,14 @@ import {
 } from "../services/budgetService";
 import { exportRevisionPdf } from "../services/budgetPdf";
 import { autoFileDocument } from "../services/fileStorage";
+import { parseReceiptImage } from "../services/receiptParser";
 
 const router = Router();
 const invoiceUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024 },
 });
+const billParseMimeTypes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"]);
 
 function numberOrNull(value: unknown): number | null | undefined {
   if (value === undefined) return undefined;
@@ -131,6 +134,30 @@ function parseBillAllocationOverrides(value: unknown): Array<{ id: string; amoun
     if (typeof record.id !== "string") return [];
     const amount = Number(record.amount);
     return [{ id: record.id, amount: Number.isFinite(amount) && amount >= 0 ? amount : undefined }];
+  });
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function suggestBillAllocations(
+  allocations: Array<{ id: string; amount: number }>,
+  parsedNetAmount: number | null
+): Array<{ id: string; amount: number }> {
+  const currentTotal = allocations.reduce((sum, allocation) => sum + Number(allocation.amount ?? 0), 0);
+  if (!parsedNetAmount || parsedNetAmount <= 0 || currentTotal <= 0) {
+    return allocations.map((allocation) => ({ id: allocation.id, amount: roundMoney(Number(allocation.amount ?? 0)) }));
+  }
+
+  let running = 0;
+  return allocations.map((allocation, index) => {
+    if (index === allocations.length - 1) {
+      return { id: allocation.id, amount: roundMoney(parsedNetAmount - running) };
+    }
+    const amount = roundMoney((Number(allocation.amount ?? 0) / currentTotal) * parsedNetAmount);
+    running += amount;
+    return { id: allocation.id, amount };
   });
 }
 
@@ -692,6 +719,69 @@ router.patch("/purchase-orders/:purchaseOrderId", async (req: Request, res: Resp
     include: purchaseOrderInclude,
   });
   res.json(decoratePurchaseOrder(updated));
+});
+
+router.post("/purchase-orders/:purchaseOrderId/parse-bill", async (req: Request, res: Response): Promise<void> => {
+  invoiceUpload.single("invoiceFile")(req, res, async (err: unknown) => {
+    try {
+      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+        res.status(413).json({ error: "Maximum invoice file size is 25MB" });
+        return;
+      }
+      if (err) {
+        res.status(400).json({ error: err instanceof Error ? err.message : "Invoice upload failed" });
+        return;
+      }
+
+      const file = req.file;
+      if (!file) {
+        res.status(400).json({ error: "Invoice file is required" });
+        return;
+      }
+
+      const detectedMimeType = mime.lookup(file.originalname) || file.mimetype || "application/octet-stream";
+      const mimeType = billParseMimeTypes.has(detectedMimeType) ? detectedMimeType : file.mimetype;
+      if (!billParseMimeTypes.has(mimeType)) {
+        res.status(400).json({ error: "Invoice must be a PDF or image" });
+        return;
+      }
+
+      const po = await prisma.purchaseOrderGroup.findUnique({
+        where: { id: req.params.purchaseOrderId },
+        include: { allocations: true },
+      });
+      if (!po) {
+        res.status(404).json({ error: "PO not found" });
+        return;
+      }
+
+      const parsed = await parseReceiptImage(file.buffer, mimeType);
+      const parsedNetAmount = parsed.amountNet ? parsed.amountNet / 100 : null;
+      const parsedGrossAmount = parsed.amountGross ? parsed.amountGross / 100 : null;
+      const suggestedAmount = parsedNetAmount ?? parsedGrossAmount;
+      const suggestedAllocations = suggestBillAllocations(
+        po.allocations.map((allocation) => ({ id: allocation.id, amount: Number(allocation.amount ?? 0) })),
+        suggestedAmount
+      );
+
+      res.json({
+        supplierName: parsed.vendor,
+        invoiceNumber: parsed.invoiceNumber,
+        invoiceDate: parsed.date,
+        amountNet: parsedNetAmount,
+        amountGross: parsedGrossAmount,
+        vatAmount: parsed.vatAmount ? parsed.vatAmount / 100 : null,
+        vatRate: parsed.vatRate,
+        currency: parsed.currency,
+        description: parsed.description,
+        confidence: parsed.confidence,
+        rawText: parsed.rawText,
+        allocations: suggestedAllocations,
+      });
+    } catch (caught) {
+      res.status(400).json({ error: caught instanceof Error ? caught.message : "Failed to parse invoice" });
+    }
+  });
 });
 
 router.post("/purchase-orders/:purchaseOrderId/convert-to-bill", async (req: Request, res: Response): Promise<void> => {
