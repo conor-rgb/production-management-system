@@ -1584,6 +1584,21 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
     }
   }
 
+  async function previewExport() {
+    const previewWindow = window.open("about:blank", "_blank");
+    try {
+      await saveTemplate();
+      if (previewWindow) {
+        previewWindow.location.href = `/api/options/matrix/groups/${group.id}/export-preview-html`;
+      } else {
+        window.open(`/api/options/matrix/groups/${group.id}/export-preview-html`, "_blank");
+      }
+    } catch (error) {
+      previewWindow?.close();
+      throw error;
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[80] bg-[#ececea]">
       <div className="flex h-full min-h-0 flex-col">
@@ -1598,6 +1613,7 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
             </select>
             <button onClick={() => resetTemplate("editorial")} className="rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50">Editorial base</button>
             <button onClick={() => resetTemplate("location")} className="rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50">Location base</button>
+            <button onClick={() => previewExport().catch((err: Error) => window.alert(err.message))} disabled={savingTemplate} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Preview export</button>
             <button onClick={() => saveTemplate().catch((err: Error) => window.alert(err.message))} disabled={savingTemplate} className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">{savingTemplate ? "Saving..." : "Save for export"}</button>
             <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100"><X size={15} /></button>
           </div>

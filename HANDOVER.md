@@ -1,3 +1,81 @@
+# HANDOVER - 2026-05-27 - WYSIWYG HTML Options Deck Export
+
+## Built This Session
+- Replaced the options candidate deck export renderer with a Chromium HTML-to-PDF pipeline.
+- The export now uses a fixed 1920 x 1080 HTML canvas, matching the designer’s preview model.
+- Added an actual export preview route so the user can inspect the HTML that Chromium will print.
+- Added a `Preview export` button in the PDF layout designer:
+  - saves the current template,
+  - opens the exact backend export HTML in a new tab.
+- Installed Playwright and Chromium runtime dependencies on the server.
+
+## Backend
+- Updated `backend/package.json` and `backend/package-lock.json`.
+- Added dependency:
+  - `playwright`
+- Installed Playwright Chromium and Linux runtime dependencies:
+  - `npx playwright install chromium`
+  - `npx playwright install-deps chromium`
+- Rebuilt `backend/src/services/optionsDeckPdf.ts`.
+  - Keeps exported types/function names used by routes.
+  - Adds `renderOptionsDeckHtml(group, blocks)`.
+  - `renderOptionsDeckPdf(group, blocks)` now:
+    - renders the same HTML,
+    - opens it in headless Chromium,
+    - prints it with `preferCSSPageSize`,
+    - returns a PDF buffer.
+  - The HTML renderer supports:
+    - field blocks,
+    - links,
+    - date status blocks,
+    - image grids with bottom-aligned contained images,
+    - cached map images,
+    - notes,
+    - footer blocks.
+- Updated `backend/src/routes/options.ts`.
+  - New route:
+    - `GET /api/options/matrix/groups/:groupId/export-preview-html`
+  - Existing route:
+    - `POST /api/options/matrix/groups/:groupId/export-pdf`
+    - now uses Chromium-backed HTML export.
+  - Both preview and PDF prewarm static maps if the saved template contains map blocks.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Added `Preview export` button to the PDF layout designer.
+- Preview export saves the current template first, then opens:
+  - `/api/options/matrix/groups/:groupId/export-preview-html`
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Chromium export smoke test passed:
+  - generated `/tmp/options-deck-smoke.pdf`
+  - 1 page
+  - 1.7 MB
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
+
+## Current State
+- Options deck exports are now much closer to WYSIWYG because the browser is the PDF renderer.
+- The designer’s live red-box editor is still React-rendered, but `Preview export` shows the true final export HTML before PDF generation.
+- Export PDF uses the same HTML as preview.
+
+## Known Gaps / Technical Debt
+- The live editor preview still has red editing boxes and is not literally the exact export iframe.
+- The next clean-up is to embed the backend export HTML renderer into the designer as a side-by-side or toggleable preview, while keeping red boxes for edit mode.
+- Playwright browser binaries live in the server cache; future server rebuilds should include `npx playwright install chromium`.
+
+## Exact Next Steps
+1. Add an `Edit / Final preview` toggle inside the designer so the final HTML appears in-place.
+2. Add drag resize handles and snap grid.
+3. Add map settings: zoom, marker, branded style.
+4. Add a reusable global deck template library.
+
+---
+
 # HANDOVER - 2026-05-27 - Static Map Blocks for Options PDF Designer
 
 ## Built This Session

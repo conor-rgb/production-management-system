@@ -26,7 +26,7 @@ import {
 import prisma from "../prisma";
 import { ensureProductionFolders, fileExtension, autoFileDocument } from "../services/fileStorage";
 import { renderOptionsPdf } from "../services/optionsPdf";
-import { DeckTemplateBlock, optionsDeckFilename, renderOptionsDeckPdf } from "../services/optionsDeckPdf";
+import { DeckTemplateBlock, optionsDeckFilename, renderOptionsDeckHtml, renderOptionsDeckPdf } from "../services/optionsDeckPdf";
 import { getPlaceDetails, searchPlaces } from "../services/googlePlacesService";
 import { ensureCandidateStaticMap } from "../services/optionMapService";
 
@@ -2066,6 +2066,23 @@ router.patch("/matrix/groups/:groupId/deck-template", async (req: Request, res: 
     },
   });
   res.json(template);
+});
+
+router.get("/matrix/groups/:groupId/export-preview-html", async (req: Request, res: Response): Promise<void> => {
+  const group = await getOptionGroupWithDeckData(req.params.groupId);
+  if (!group) {
+    res.status(404).send("Option group not found");
+    return;
+  }
+
+  const template = await prisma.optionDeckTemplate.findUnique({ where: { groupId: group.id } });
+  const blocks = template ? sanitizeDeckBlocks(template.blocks) : null;
+  if (blocks?.some((block) => block.type === "map")) {
+    await Promise.all(group.candidates.map((candidate) => ensureCandidateStaticMap(candidate.id).catch(() => null)));
+  }
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(renderOptionsDeckHtml(group, blocks?.length ? blocks : null));
 });
 
 router.post("/matrix/groups/:groupId/export-pdf", async (req: Request, res: Response): Promise<void> => {
