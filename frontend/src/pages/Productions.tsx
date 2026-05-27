@@ -576,8 +576,44 @@ function PurchaseOrderBillPanel({ po, onClose, onSaved }: {
   const [file, setFile] = useState<File | null>(null);
   const [parsedBill, setParsedBill] = useState<ParsedBill | null>(null);
   const [parsing, setParsing] = useState(false);
+  const [lineAssignments, setLineAssignments] = useState<Record<number, string>>({});
   const [amounts, setAmounts] = useState<Record<string, string>>(() => Object.fromEntries(po.allocations.map((allocation) => [allocation.id, String(allocation.amount ?? 0)])));
   const [saving, setSaving] = useState(false);
+
+  function parsedLineAmount(lineItem: ParsedBill["lineItems"][number]) {
+    return lineItem.amountNet ?? lineItem.amountGross ?? 0;
+  }
+
+  function inferLineAssignments(parsed: ParsedBill) {
+    const inferred: Record<number, string> = {};
+    parsed.lineItems.forEach((lineItem, index) => {
+      if (!lineItem.description) return;
+      const matchedAllocation = parsed.allocations.find((allocation) =>
+        allocation.matchedLineItems?.some((match) => match === lineItem.description)
+      );
+      if (matchedAllocation) inferred[index] = matchedAllocation.id;
+    });
+    return inferred;
+  }
+
+  function allocationAmountsFromLines(assignments: Record<number, string>, parsed: ParsedBill) {
+    const next = Object.fromEntries(po.allocations.map((allocation) => [allocation.id, "0"]));
+    parsed.lineItems.forEach((lineItem, index) => {
+      const allocationId = assignments[index];
+      if (!allocationId) return;
+      const current = Number(next[allocationId] ?? 0);
+      next[allocationId] = String(Math.round((current + parsedLineAmount(lineItem)) * 100) / 100);
+    });
+    return next;
+  }
+
+  function updateLineAssignment(index: number, allocationId: string) {
+    if (!parsedBill) return;
+    const nextAssignments = { ...lineAssignments, [index]: allocationId };
+    if (!allocationId) delete nextAssignments[index];
+    setLineAssignments(nextAssignments);
+    setAmounts(allocationAmountsFromLines(nextAssignments, parsedBill));
+  }
 
   async function parseInvoice(nextFile: File) {
     setParsing(true);
@@ -595,7 +631,9 @@ function PurchaseOrderBillPanel({ po, onClose, onSaved }: {
         throw new Error(typeof body.error === "string" ? body.error : "Invoice parse failed");
       }
       const parsed = await res.json() as ParsedBill;
+      const inferredAssignments = inferLineAssignments(parsed);
       setParsedBill(parsed);
+      setLineAssignments(inferredAssignments);
       if (parsed.invoiceNumber) setInvoiceNumber(parsed.invoiceNumber);
       if (parsed.invoiceDate) setInvoiceDate(parsed.invoiceDate.slice(0, 10));
       if (parsed.allocations.length) {
@@ -612,7 +650,10 @@ function PurchaseOrderBillPanel({ po, onClose, onSaved }: {
   function selectFile(nextFile: File | null) {
     setFile(nextFile);
     if (nextFile) parseInvoice(nextFile).catch((err: unknown) => window.alert(err instanceof Error ? err.message : "Invoice parse failed"));
-    else setParsedBill(null);
+    else {
+      setParsedBill(null);
+      setLineAssignments({});
+    }
   }
 
   async function save() {
@@ -689,6 +730,38 @@ function PurchaseOrderBillPanel({ po, onClose, onSaved }: {
               </div>
             )}
           </section>
+
+          {parsedBill?.lineItems.length ? (
+            <section className="rounded-lg border border-gray-200">
+              <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+                <h4 className="text-xs font-semibold uppercase tracking-[0.05em] text-gray-400">Invoice line review</h4>
+                <span className="text-[11px] text-gray-400">Assign lines to budget allocations</span>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {parsedBill.lineItems.map((lineItem, index) => (
+                  <div key={`${lineItem.description ?? "line"}-${index}`} className="grid grid-cols-[1fr_92px_180px] items-center gap-3 px-3 py-2 text-xs">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-gray-800">{lineItem.description || "Invoice line"}</p>
+                      {lineItem.vatAmount !== null && <p className="mt-0.5 text-[11px] text-gray-400">VAT {formatCurrency(lineItem.vatAmount)}</p>}
+                    </div>
+                    <div className="text-right font-medium tabular-nums text-gray-900">{formatCurrency(parsedLineAmount(lineItem))}</div>
+                    <select
+                      value={lineAssignments[index] ?? ""}
+                      onChange={(event) => updateLineAssignment(index, event.target.value)}
+                      className="h-8 rounded-md border border-gray-200 bg-white px-2 text-[11px] text-gray-700 outline-none focus:border-gray-500"
+                    >
+                      <option value="">Unassigned</option>
+                      {po.allocations.map((allocation) => (
+                        <option key={allocation.id} value={allocation.id}>
+                          {allocation.lineItem.lineCode} {allocation.lineItem.description}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <section className="rounded-lg border border-gray-200">
             <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">

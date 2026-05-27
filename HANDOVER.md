@@ -1,3 +1,57 @@
+# HANDOVER - 2026-05-27 - Manual Bill Line Assignment Review
+
+## Built This Session
+- Added a manual review layer to the grouped PO bill drawer.
+- After AI parses an invoice, the drawer now shows an `Invoice line review` section.
+- Each extracted invoice line displays:
+  - description,
+  - net/gross amount used for allocation,
+  - VAT amount where present,
+  - dropdown to assign it to a specific PO allocation.
+- Changing an invoice line assignment recalculates the bill allocation amounts immediately.
+- The existing AI semantic matches are used as the initial dropdown selections.
+- Unassigned invoice lines are ignored in allocation totals until assigned.
+
+## Frontend
+- Updated `frontend/src/pages/Productions.tsx`.
+- Added local assignment state in `PurchaseOrderBillPanel`.
+- Added assignment inference from AI matched line item labels.
+- Added recalculation helper that sums assigned invoice line amounts into the selected allocation rows.
+- Added compact review UI between invoice parse summary and final bill allocations.
+
+## Backend
+- No backend schema changes.
+- Existing parse and convert endpoints remain unchanged.
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
+
+## Current State
+- The grouped PO bill flow now supports:
+  1. AI metadata extraction,
+  2. AI invoice line extraction,
+  3. automatic allocation matching,
+  4. manual correction before saving.
+- This should make multi-line agency invoices practical even when the AI match is close but not perfect.
+
+## Known Gaps / Technical Debt
+- Manual assignment is dropdown-based, not drag-and-drop.
+- Split one invoice line across multiple budget allocations is not supported yet.
+- Unassigned invoice lines are excluded from totals; this is deliberate but should be visually reviewed before saving.
+
+## Exact Next Steps
+1. Add split-line support if agency invoices commonly bundle several services into one invoice line.
+2. Add PO PDF generation and email send.
+3. Add secure supplier onboarding links for new Blackbook suppliers.
+4. Add grouped bill paid/unpaid controls once FreeAgent matching is ready.
+
+---
+
 # HANDOVER - 2026-05-27 - Semantic Bill Line Matching for Grouped POs
 
 ## Built This Session
