@@ -1,3 +1,42 @@
+# HANDOVER - 2026-05-27 - Options Deck Edit/Final Canvas Sync
+
+## Built This Session
+- Synced the options deck editor canvas with the backend export canvas.
+- Edit mode now renders on the same 1920 x 1080 coordinate space as Final/export and scales down visually to 1280 x 720.
+- This removes drift caused by pixel-based values being rendered directly at 1280 x 720 in Edit mode while export used 1920 x 1080.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Added shared deck canvas constants:
+  - export width: 1920
+  - export height: 1080
+  - editor scale: 2/3
+  - editor display: 1280 x 720
+- Updated drag math to use the scaled editor display dimensions.
+- Final iframe and Edit canvas now use the same constants.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK.
+
+## Current State
+- Edit and Final should now agree much more closely for:
+  - position,
+  - font size,
+  - image padding,
+  - image gaps,
+  - borders,
+  - justified image sizing.
+
+## Known Gaps / Technical Debt
+- The editor display is fixed at 1280 x 720. Smaller screens rely on scrolling inside the designer.
+- A future pass could make the scale responsive while keeping the underlying 1920 x 1080 export coordinate system.
+
+---
+
 # HANDOVER - 2026-05-27 - Justified Image Editor Preview Fix
 
 ## Built This Session

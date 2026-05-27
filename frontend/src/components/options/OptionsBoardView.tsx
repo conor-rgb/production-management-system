@@ -361,6 +361,12 @@ const DECK_BLOCK_PRESETS: Array<{ label: string; block: Omit<DeckTemplateBlock, 
   { label: "Footer", block: { type: "footer", label: "Footer", x: 2, y: 94, w: 96, h: 3, fontSize: 12 } },
 ];
 
+const DECK_EXPORT_WIDTH = 1920;
+const DECK_EXPORT_HEIGHT = 1080;
+const DECK_EDITOR_SCALE = 2 / 3;
+const DECK_EDITOR_WIDTH = DECK_EXPORT_WIDTH * DECK_EDITOR_SCALE;
+const DECK_EDITOR_HEIGHT = DECK_EXPORT_HEIGHT * DECK_EDITOR_SCALE;
+
 function baseTalentTemplate(group: OptionGroup): DeckTemplate {
   return {
     id: "editorial-grid",
@@ -1546,8 +1552,8 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
     if (!drag) return;
     const activeDrag = drag;
     function move(event: MouseEvent) {
-      const dx = ((event.clientX - activeDrag.startX) / 1280) * 100;
-      const dy = ((event.clientY - activeDrag.startY) / 720) * 100;
+      const dx = ((event.clientX - activeDrag.startX) / DECK_EDITOR_WIDTH) * 100;
+      const dy = ((event.clientY - activeDrag.startY) / DECK_EDITOR_HEIGHT) * 100;
       const snap = snapEnabled && !event.altKey;
       if (activeDrag.kind === "move") {
         updateBlock(activeDrag.blockId, {
@@ -1723,7 +1729,10 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
           </aside>
 
           <main className="min-w-0 overflow-auto p-6">
-            <div className="mx-auto aspect-video w-full max-w-[1280px] bg-white shadow-2xl">
+            <div
+              className="mx-auto overflow-hidden bg-white shadow-2xl"
+              style={{ width: DECK_EDITOR_WIDTH, height: DECK_EDITOR_HEIGHT }}
+            >
               {viewMode === "final" ? (
                 <DeckFinalPreview groupId={group.id} previewKey={finalPreviewKey} />
               ) : previewCandidate ? (
@@ -1932,10 +1941,14 @@ function DeckPagePreview({ matrix, group, dates, candidate, template, selectedBl
 }) {
   return (
     <div
-      className="relative h-full w-full overflow-hidden bg-white"
+      className="relative overflow-hidden bg-white"
       style={{
+        width: DECK_EXPORT_WIDTH,
+        height: DECK_EXPORT_HEIGHT,
+        transform: `scale(${DECK_EDITOR_SCALE})`,
+        transformOrigin: "top left",
         backgroundImage: "linear-gradient(rgba(0,0,0,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.035) 1px, transparent 1px)",
-        backgroundSize: "16px 16px",
+        backgroundSize: "24px 24px",
       }}
     >
       {template.blocks.map((block) => (
@@ -2001,7 +2014,7 @@ function DeckFinalPreview({ groupId, previewKey }: { groupId: string; previewKey
         title="Final PDF preview"
         src={`/api/options/matrix/groups/${groupId}/export-preview-html?preview=${previewKey}`}
         className="origin-top-left border-0"
-        style={{ width: 1920, height: 1080, transform: "scale(0.6666667)" }}
+        style={{ width: DECK_EXPORT_WIDTH, height: DECK_EXPORT_HEIGHT, transform: `scale(${DECK_EDITOR_SCALE})` }}
       />
       <div className="pointer-events-none absolute bottom-3 right-3 rounded bg-white/90 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.06em] text-gray-500 shadow-sm">
         Final export HTML
