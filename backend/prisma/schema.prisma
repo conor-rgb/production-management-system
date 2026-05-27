@@ -710,6 +710,10 @@ model OptionCandidate {
   postcode          String?
   country           String?
   locationType      String?
+  latitude          Float?
+  longitude         Float?
+  mapImagePath      String?
+  mapImageUpdatedAt DateTime?
   rate              Float?
   rateUnit          String?
   currency          String                      @default("GBP")

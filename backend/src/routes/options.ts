@@ -28,6 +28,7 @@ import { ensureProductionFolders, fileExtension, autoFileDocument } from "../ser
 import { renderOptionsPdf } from "../services/optionsPdf";
 import { DeckTemplateBlock, optionsDeckFilename, renderOptionsDeckPdf } from "../services/optionsDeckPdf";
 import { getPlaceDetails, searchPlaces } from "../services/googlePlacesService";
+import { ensureCandidateStaticMap } from "../services/optionMapService";
 
 const router = Router();
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -71,6 +72,8 @@ type OptionFieldBody = {
   order?: number;
   blackbookEntryId?: string | null;
   selectedAddressId?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
 };
 
 type AddressFieldBody = {
@@ -334,6 +337,8 @@ function candidateAddressPatch(address: {
   region: string | null;
   postcode: string | null;
   country: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }): Prisma.OptionCandidateUpdateInput {
   return {
     selectedAddress: { connect: { id: address.id } },
@@ -343,6 +348,10 @@ function candidateAddressPatch(address: {
     region: address.region,
     postcode: address.postcode,
     country: address.country,
+    latitude: address.latitude,
+    longitude: address.longitude,
+    mapImagePath: null,
+    mapImageUpdatedAt: null,
   };
 }
 
@@ -449,6 +458,8 @@ function candidatePatchFromBlackbook(entry: {
   region: string | null;
   postcode: string | null;
   country: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   locationType: string | null;
   addresses?: Array<{
     id: string;
@@ -460,6 +471,8 @@ function candidatePatchFromBlackbook(entry: {
     region: string | null;
     postcode: string | null;
     country: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
     isDefaultBilling: boolean;
   }>;
   defaultRate: number | null;
@@ -485,6 +498,8 @@ function candidatePatchFromBlackbook(entry: {
       region: entry.region,
       postcode: entry.postcode,
       country: entry.country,
+      latitude: entry.latitude,
+      longitude: entry.longitude,
     }),
     locationType: entry.locationType,
     rate: entry.defaultRate,
@@ -518,6 +533,10 @@ function photoUrl(photoId: string): string {
 
 function candidatePhotoUrl(photoId: string): string {
   return `/api/options/candidate-photos/${photoId}/serve`;
+}
+
+function candidateMapUrl(candidateId: string): string {
+  return `/api/options/matrix/candidates/${candidateId}/map/serve`;
 }
 
 function publicBaseUrl(): string {
@@ -626,6 +645,7 @@ async function getOptionGroupWithDeckData(groupId: string) {
         orderBy: { order: "asc" },
         include: {
           blackbookEntry: true,
+          selectedAddress: true,
           photos: { orderBy: { order: "asc" } },
           dateStatuses: {
             include: { date: true },
@@ -710,7 +730,16 @@ async function matrixResponse(productionId: string) {
     groups: groups.map((group) => ({
       ...group,
       candidates: group.candidates.map((candidate) => ({
-        ...candidate,
+        ...(() => {
+          const { mapImagePath: _mapImagePath, ...publicCandidate } = candidate;
+          return publicCandidate;
+        })(),
+        mapImageUrl:
+          candidate.mapImagePath ||
+          (candidate.latitude != null && candidate.longitude != null) ||
+          (candidate.selectedAddress?.latitude != null && candidate.selectedAddress?.longitude != null)
+            ? candidateMapUrl(candidate.id)
+            : null,
         photos: candidate.photos.map((photo) => ({ ...photo, url: candidatePhotoUrl(photo.id) })),
       })),
     })),
@@ -1385,6 +1414,8 @@ router.post("/blackbook/:entryId/add-to-options", async (req: Request, res: Resp
       region: selectedAddress?.region ?? entry.region,
       postcode: selectedAddress?.postcode ?? entry.postcode,
       country: selectedAddress?.country ?? entry.country,
+      latitude: selectedAddress?.latitude ?? entry.latitude,
+      longitude: selectedAddress?.longitude ?? entry.longitude,
       locationType: entry.locationType,
       rate: entry.defaultRate,
       rateUnit: entry.rateUnit,
@@ -1621,6 +1652,8 @@ router.post("/matrix/groups/:groupId/candidates", async (req: Request, res: Resp
       postcode: body.postcode ?? linkedEntry?.postcode,
       country: body.country ?? linkedEntry?.country,
       locationType: body.locationType ?? linkedEntry?.locationType,
+      latitude: asNumber(body.latitude) ?? linkedEntry?.latitude,
+      longitude: asNumber(body.longitude) ?? linkedEntry?.longitude,
       rate: asNumber(body.rate) ?? linkedEntry?.defaultRate,
       rateUnit: body.rateUnit ?? linkedEntry?.rateUnit,
       currency: body.currency ?? linkedEntry?.currency ?? "GBP",
@@ -1664,6 +1697,22 @@ router.patch("/matrix/candidates/:candidateId", async (req: Request, res: Respon
   if (body.postcode !== undefined) data.postcode = optionalText(body.postcode);
   if (body.country !== undefined) data.country = optionalText(body.country);
   if (body.locationType !== undefined) data.locationType = optionalText(body.locationType);
+  if (body.latitude !== undefined) data.latitude = asNumber(body.latitude);
+  if (body.longitude !== undefined) data.longitude = asNumber(body.longitude);
+  if (
+    body.selectedAddressId !== undefined ||
+    body.addressLine1 !== undefined ||
+    body.addressLine2 !== undefined ||
+    body.city !== undefined ||
+    body.region !== undefined ||
+    body.postcode !== undefined ||
+    body.country !== undefined ||
+    body.latitude !== undefined ||
+    body.longitude !== undefined
+  ) {
+    data.mapImagePath = null;
+    data.mapImageUpdatedAt = null;
+  }
   if (body.rate !== undefined) data.rate = asNumber(body.rate);
   if (body.rateUnit !== undefined) data.rateUnit = body.rateUnit;
   if (body.currency !== undefined) data.currency = body.currency;
@@ -1962,6 +2011,24 @@ router.get("/candidate-photos/:photoId/serve", async (req: Request, res: Respons
   fsSync.createReadStream(photo.storedPath).pipe(res);
 });
 
+router.get("/matrix/candidates/:candidateId/map/serve", async (req: Request, res: Response): Promise<void> => {
+  let storedPath: string | null = null;
+  try {
+    storedPath = await ensureCandidateStaticMap(req.params.candidateId);
+  } catch (error) {
+    console.error("[OPTIONS MAP] Failed to generate static map:", error instanceof Error ? error.message : error);
+    res.status(502).json({ error: "Map generation failed" });
+    return;
+  }
+  if (!storedPath || !fsSync.existsSync(storedPath)) {
+    res.status(404).json({ error: "No coordinates available for map" });
+    return;
+  }
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Content-Disposition", 'inline; filename="map.png"');
+  fsSync.createReadStream(storedPath).pipe(res);
+});
+
 router.get("/matrix/groups/:groupId/deck-template", async (req: Request, res: Response): Promise<void> => {
   const group = await prisma.optionGroup.findUnique({
     where: { id: req.params.groupId },
@@ -2010,6 +2077,9 @@ router.post("/matrix/groups/:groupId/export-pdf", async (req: Request, res: Resp
 
   const template = await prisma.optionDeckTemplate.findUnique({ where: { groupId: group.id } });
   const blocks = template ? sanitizeDeckBlocks(template.blocks) : null;
+  if (blocks?.some((block) => block.type === "map")) {
+    await Promise.all(group.candidates.map((candidate) => ensureCandidateStaticMap(candidate.id).catch(() => null)));
+  }
   const pdfBuffer = await renderOptionsDeckPdf(group, blocks?.length ? blocks : null);
   const filename = optionsDeckFilename(group);
   await autoFileDocument(group.productionId, "Estimates", pdfBuffer, filename, "application/pdf", {

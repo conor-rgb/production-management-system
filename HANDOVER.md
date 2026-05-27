@@ -1,3 +1,78 @@
+# HANDOVER - 2026-05-27 - Static Map Blocks for Options PDF Designer
+
+## Built This Session
+- Replaced the options PDF designer map placeholder with real cached Google Static Map imagery.
+- Added map coordinates/cache metadata to option candidates.
+- Added server-side static map generation using the existing Google Maps API key.
+- Map images are stored inside the relevant job Options folder and served through the options API.
+- Saved PDF templates that include a `map` block now render the cached map image in exported PDFs.
+- Designer preview map blocks now show the same served map image when the candidate has coordinates.
+
+## Backend
+- Updated `backend/prisma/schema.prisma`.
+- Added migration:
+  - `backend/prisma/migrations/20260527091000_option_candidate_static_maps/migration.sql`
+- New `OptionCandidate` fields:
+  - `latitude`
+  - `longitude`
+  - `mapImagePath`
+  - `mapImageUpdatedAt`
+- Added `backend/src/services/optionMapService.ts`.
+  - Fetches Google Static Maps images.
+  - Caches each candidate map as `map.png`.
+  - Stores maps under:
+    - `/backend/storage/jobs/[job folder]/Options/[group name]/[candidateId]/map.png`
+- Updated `backend/src/routes/options.ts`.
+  - Matrix responses now return `mapImageUrl` and never expose raw `mapImagePath`.
+  - Candidate address changes invalidate the cached map.
+  - New route:
+    - `GET /api/options/matrix/candidates/:candidateId/map/serve`
+  - Group PDF export prewarms maps before rendering if the saved template contains a map block.
+- Updated `backend/src/services/optionsDeckPdf.ts`.
+  - Option deck PDF data now includes `selectedAddress`.
+  - Map blocks render cached map images when available.
+  - Address/location text uses selected structured address where present.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Candidate types now include map metadata.
+- PDF designer map blocks now render the candidate map image via `mapImageUrl`.
+- If no coordinates exist, the designer keeps the existing address placeholder.
+
+## Deployment / Verification
+- Prisma migration deployed.
+- Prisma client generated.
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
+- Static map generation was verified directly through the service for `La Petite Chaise`:
+  - generated `map.png`
+  - size: 1280 x 840
+  - stored in the GANNI job Options folder.
+
+## Current State
+- Location options with Google Places coordinates can now show real map imagery in the PDF designer preview.
+- Exported PDFs using a saved template with a map block will include cached maps.
+- Existing address autocomplete remains the source of coordinates.
+- Manual addresses without coordinates still show the text placeholder until coordinates are available.
+
+## Known Gaps / Technical Debt
+- Map styling is Google default roadmap; no branded custom style yet.
+- Map zoom is fixed at 14.
+- Manual address geocoding is not implemented yet; only Google Places-created/saved addresses carry coordinates.
+- The preview image route is auth-protected like the rest of the app, which is correct for logged-in UI but unauthenticated curl receives 401.
+
+## Exact Next Steps
+1. Add configurable map block settings in the designer: zoom, marker on/off, map style.
+2. Add manual address geocoding for already-entered addresses that lack coordinates.
+3. Add reusable global PDF templates and duplicate/apply-to-group.
+4. Add drag resize handles and snap grid for deck blocks.
+
+---
+
 # HANDOVER - 2026-05-27 - Saved Options PDF Templates and Export Wiring
 
 ## Built This Session

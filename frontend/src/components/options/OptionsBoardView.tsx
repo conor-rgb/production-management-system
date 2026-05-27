@@ -203,6 +203,10 @@ interface OptionCandidate {
   postcode: string | null;
   country: string | null;
   locationType: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  mapImageUrl: string | null;
+  mapImageUpdatedAt: string | null;
   rate: number | null;
   rateUnit: string | null;
   currency: string;
@@ -523,6 +527,17 @@ function addressDisplayLines(address: AddressLike): string[] {
 
 function candidateLocation(candidate: OptionCandidate): string {
   return [candidate.city, countryName(candidate.country)].filter(Boolean).join(", ");
+}
+
+function candidateCoordinates(candidate: OptionCandidate): { latitude: number; longitude: number } | null {
+  const latitude = candidate.latitude ?? candidate.selectedAddress?.latitude;
+  const longitude = candidate.longitude ?? candidate.selectedAddress?.longitude;
+  return typeof latitude === "number" && typeof longitude === "number" ? { latitude, longitude } : null;
+}
+
+function candidateMapUrl(candidate: OptionCandidate): string | null {
+  if (candidate.mapImageUrl) return candidate.mapImageUrl;
+  return candidateCoordinates(candidate) ? `/api/options/matrix/candidates/${candidate.id}/map/serve` : null;
 }
 
 function candidateFieldValue(candidate: OptionCandidate, field: DeckField, matrix: MatrixResponse): string {
@@ -1773,13 +1788,20 @@ function DeckBlockContent({ matrix, group, dates, candidate, block }: {
     );
   }
   if (block.type === "map") {
+    const mapUrl = candidateMapUrl(candidate);
     return (
-      <div className="grid h-full place-items-center border border-gray-300 bg-[#eef3ee] p-3 text-center text-xs text-gray-500">
-        <div>
-          <Globe size={22} className="mx-auto mb-2" />
-          Map block<br />
-          {addressSummary(candidate) || "Address / coordinates"}
-        </div>
+      <div className="h-full w-full overflow-hidden border border-gray-300 bg-[#eef3ee]">
+        {mapUrl ? (
+          <img src={mapUrl} className="h-full w-full object-cover" />
+        ) : (
+          <div className="grid h-full place-items-center p-3 text-center text-xs text-gray-500">
+            <div>
+              <Globe size={22} className="mx-auto mb-2" />
+              Map block<br />
+              {addressSummary(candidate) || "Address / coordinates"}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

@@ -8,6 +8,7 @@ export type OptionsDeckGroup = Prisma.OptionGroupGetPayload<{
     candidates: {
       include: {
         blackbookEntry: true;
+        selectedAddress: true;
         photos: true;
         dateStatuses: {
           include: {
@@ -140,13 +141,15 @@ function countryName(code: string | null): string | null {
 }
 
 function addressLines(candidate: DeckCandidate): string[] {
-  const cityLine = [candidate.city, candidate.postcode].filter(Boolean).join(", ");
-  const regionLine = [candidate.region, countryName(candidate.country)].filter(Boolean).join(", ");
-  return [candidate.addressLine1, candidate.addressLine2, cityLine, regionLine].filter((line): line is string => Boolean(line));
+  const address = candidate.selectedAddress ?? candidate;
+  const cityLine = [address.city, address.postcode].filter(Boolean).join(", ");
+  const regionLine = [address.region, countryName(address.country)].filter(Boolean).join(", ");
+  return [address.addressLine1, address.addressLine2, cityLine, regionLine].filter((line): line is string => Boolean(line));
 }
 
 function candidateLocation(candidate: DeckCandidate): string {
-  return [candidate.city, countryName(candidate.country)].filter(Boolean).join(", ");
+  const address = candidate.selectedAddress ?? candidate;
+  return [address.city, countryName(address.country)].filter(Boolean).join(", ");
 }
 
 function fieldValue(group: OptionsDeckGroup, candidate: DeckCandidate, field: DeckField): string {
@@ -386,6 +389,16 @@ function drawTemplateImageGrid(doc: PDFKit.PDFDocument, candidate: DeckCandidate
 
 function drawTemplateMap(doc: PDFKit.PDFDocument, candidate: DeckCandidate, block: DeckTemplateBlock): void {
   const box = rect(block);
+  if (candidate.mapImagePath && fs.existsSync(candidate.mapImagePath)) {
+    doc.rect(box.x, box.y, box.w, box.h).fill("#f0f0ee");
+    try {
+      doc.image(candidate.mapImagePath, box.x, box.y, { fit: [box.w, box.h], align: "center", valign: "center" });
+      return;
+    } catch {
+      // Fall through to the text placeholder if PDFKit cannot decode the cached map.
+    }
+  }
+
   doc.rect(box.x, box.y, box.w, box.h).fillAndStroke("#eef3ee", LIGHT_BORDER);
   doc.font("Helvetica-Bold").fontSize(18).fillColor("#6b6b66").text("MAP", box.x + 18, box.y + 18, { width: box.w - 36 });
   doc.font("Helvetica").fontSize(14).fillColor("#6b6b66").text(addressLines(candidate).join("\n") || "Address / coordinates", box.x + 18, box.y + 52, {
