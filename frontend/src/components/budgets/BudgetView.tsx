@@ -104,6 +104,25 @@ function stateCounts(revision: BudgetRevision) {
   return counts;
 }
 
+function displayActualForLine(line: BudgetLineItem) {
+  return line.subCosts.length > 0 ? Number(line.actualTotal ?? 0) : Number(line.estimatedTotal ?? 0);
+}
+
+function displayRemainingForLine(line: BudgetLineItem) {
+  return line.subCosts.length > 0 ? Number(line.variance ?? 0) : 0;
+}
+
+function displaySectionTotals(section: BudgetSection) {
+  const lines = section.lineItems.filter((line) => !line.parentId);
+  const estimated = lines.reduce((sum, line) => sum + Number(line.estimatedTotal ?? 0), 0);
+  const actual = lines.reduce((sum, line) => sum + displayActualForLine(line), 0);
+  return {
+    estimated,
+    actual,
+    remaining: estimated - actual,
+  };
+}
+
 export default function BudgetView({ entity, onBack }: { entity: Entity; onBack: () => void }) {
   const [budget, setBudget] = useState<Budget | null>(null);
   const [revision, setRevision] = useState<BudgetRevision | null>(null);
@@ -467,9 +486,10 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
   internal: boolean;
 } & Omit<Parameters<typeof BudgetTable>[0], "mode">) {
   const sectionTotal = props.revision.totals.sectionTotals.find((item) => item.sectionId === section.id);
-  const estimated = sectionTotal?.estimatedTotal ?? 0;
-  const actual = sectionTotal?.actualTotal ?? 0;
-  const remaining = sectionTotal?.remainingBudget ?? 0;
+  const displayTotals = displaySectionTotals(section);
+  const estimated = sectionTotal?.estimatedTotal ?? displayTotals.estimated;
+  const actual = displayTotals.actual;
+  const remaining = displayTotals.remaining;
   const topLevelLines = section.lineItems.filter((line) => !line.parentId);
   const dots = topLevelLines.slice(0, 10).map((line) => getDotState(line));
   const overflowCount = Math.max(0, topLevelLines.length - dots.length);
@@ -547,7 +567,9 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
 } & Omit<Parameters<typeof BudgetTable>[0], "revision" | "mode">) {
   const state = getDotState(line);
   const hasSubCosts = line.subCosts.length > 0;
-  const actualClass = hasSubCosts ? "text-blue-600" : moneyClass(line.actualTotal);
+  const displayActual = displayActualForLine(line);
+  const displayRemaining = displayRemainingForLine(line);
+  const actualClass = hasSubCosts ? "text-blue-600" : "text-[#c8c8c4]";
   const autoExpanded = state === "PURPLE" || state === "BLUE";
   const costLinesExpanded = hasSubCosts && (autoExpanded ? !toggledCostLines : toggledCostLines);
   const rowStyle = internal
@@ -591,8 +613,8 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
         <MoneyCell value={line.rate} onSave={(value) => props.onSaveLine(line, { rate: value ?? 0 })} readOnly={closed} />
         {internal && <PercentCell value={line.agencyFeePercent} onSave={(value) => props.onSaveLine(line, { agencyFeePercent: value ?? 0 })} readOnly={closed} className={Number(line.agencyFeePercent ?? 0) > 0 ? "text-[#d97706]" : ""} />}
         <EstimatedCell line={line} />
-        {internal && <ReadMoney value={line.actualTotal} className={actualClass} />}
-        {internal && <ReadMoney value={line.variance} className={remainingClass(line.variance, line.estimatedTotal)} />}
+        {internal && <ReadMoney value={displayActual} className={actualClass} title={hasSubCosts ? undefined : "No cost lines yet; showing estimated value as a placeholder"} />}
+        {internal && <ReadMoney value={displayRemaining} className={remainingClass(displayRemaining, line.estimatedTotal)} />}
         {internal && <StatusButton active={line.isClosed} onClick={() => props.onSaveLine(line, { isClosed: !line.isClosed }).catch(console.error)} title="Close this line when fully settled" />}
         {internal && (
           <div className="absolute inset-y-0 right-0 flex items-center justify-end gap-1 bg-[#f5f5f3]/95 px-2 opacity-0 group-hover:opacity-100">
@@ -616,8 +638,8 @@ function Cell({ children, className = "" }: { children?: ReactNode; className?: 
   return <div className={`flex min-h-[34px] items-center px-2 ${className}`}>{children}</div>;
 }
 
-function ReadMoney({ value, strong, className }: { value: number | null | undefined; strong?: boolean; className?: string }) {
-  return <div className={`flex min-h-[34px] items-center justify-end px-2 text-right tabular-nums ${strong ? "font-medium" : ""} ${className ?? moneyClass(value)}`}>{money(value)}</div>;
+function ReadMoney({ value, strong, className, title }: { value: number | null | undefined; strong?: boolean; className?: string; title?: string }) {
+  return <div title={title} className={`flex min-h-[34px] items-center justify-end px-2 text-right tabular-nums ${strong ? "font-medium" : ""} ${className ?? moneyClass(value)}`}>{money(value)}</div>;
 }
 
 function StatusDot({ state }: { state: DotState }) {

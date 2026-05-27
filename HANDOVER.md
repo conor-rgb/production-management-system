@@ -1,3 +1,63 @@
+# HANDOVER - 2026-05-27 - Budget Estimate Actuals Display
+
+## Built This Session
+- Updated the internal budget/estimate table display for parent line items with no PO/Bill/Receipt cost lines.
+- If a line has no cost lines:
+  - Actuals now displays the line's estimated total in muted grey.
+  - Remaining displays `£0.00`.
+  - Tooltip explains this is a placeholder display because no cost lines exist yet.
+- Section headers and section total rows now use the same display logic:
+  - Empty lines are treated as fully allocated for display purposes.
+  - Lines with real cost lines still show actual PO/Bill/Receipt totals and true remaining budget.
+
+## Why
+- Before this pass, empty lines showed actuals as `£0.00` and remaining as the full estimate, which made it look like there was a large amount of free money left.
+- The new display is more conservative for production management: uncommitted estimate pots no longer read as available margin.
+
+## Important Data Note
+- This is display-only.
+- Backend `actualTotal`, production actual spend, and reports still count only real PO/Bill/Receipt cost lines.
+- No schema or backend calculation changes were made.
+
+## Multi-Line PO Review
+- Current model:
+  - A parent budget line is the quoted/estimated pot.
+  - Each PO/Bill/Receipt is stored as a `SubCost` under one parent line.
+  - PO numbers live on each `SubCost`.
+- For an agency charging multiple line items, the right workflow should be a shared PO group:
+  - one PO number,
+  - one supplier,
+  - separate cost-line allocations under each affected parent line,
+  - each parent line remains clear and keeps its own actual/remaining values.
+- This can be implemented without changing the visible line structure by creating multiple `SubCost` rows with the same `poNumber` and supplier.
+- Recommended next build:
+  1. Add a "Multi-line PO" action.
+  2. User selects supplier and multiple budget lines.
+  3. Form shows one row per selected budget line with amount allocation.
+  4. Save creates one shared PO number and one PO cost line under each selected parent.
+  5. Later, converting to Bill can either convert all allocations together or line-by-line.
+
+## Frontend
+- Updated `frontend/src/components/budgets/BudgetView.tsx`.
+- Added display helpers:
+  - `displayActualForLine`
+  - `displayRemainingForLine`
+  - `displaySectionTotals`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
+
+## Exact Next Steps
+1. Build the shared/multi-line PO action for jobs like Polomi NYC.
+2. Decide whether multi-line bills should convert all grouped PO allocations at once or allow partial conversion.
+3. Optionally add a grouped PO visual indicator on cost lines, e.g. `PO-2647-001 · 4 lines`.
+
+---
+
 # HANDOVER - 2026-05-22 - Options Contact Sync / Blackbook Email Model
 
 ## Built This Session
