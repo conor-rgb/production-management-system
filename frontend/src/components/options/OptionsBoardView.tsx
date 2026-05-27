@@ -14,6 +14,30 @@ type BlackbookLifecycleStatus = "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT"
 type CandidateSortKey = "manual" | "name" | "notes" | "links" | "rate" | "state" | `date:${string}`;
 type SortDirection = "asc" | "desc";
 type BlackbookAddressType = "WORK" | "BILLING" | "PERSONAL" | "CUSTOM";
+type DeckBlockType = "field" | "links" | "dateStatus" | "imageGrid" | "notes" | "map" | "footer";
+type DeckField = "name" | "subtitle" | "location" | "address" | "clientNotes" | "internalNotes" | "project";
+
+interface DeckTemplateBlock {
+  id: string;
+  type: DeckBlockType;
+  label: string;
+  field?: DeckField;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  fontSize?: number;
+  fontWeight?: number;
+  align?: "left" | "center" | "right";
+  uppercase?: boolean;
+  imageCount?: number;
+}
+
+interface DeckTemplate {
+  id: string;
+  name: string;
+  blocks: DeckTemplateBlock[];
+}
 
 interface BlackbookAddress {
   id: string;
@@ -299,6 +323,52 @@ const CANDIDATE_STATE_WEIGHT: Record<CandidateState, number> = {
   RELEASED: 2,
 };
 
+const DECK_FIELD_OPTIONS: Array<{ value: DeckField; label: string }> = [
+  { value: "name", label: "Option name" },
+  { value: "subtitle", label: "Subtitle" },
+  { value: "location", label: "Location" },
+  { value: "address", label: "Address" },
+  { value: "clientNotes", label: "Deck notes" },
+  { value: "internalNotes", label: "Internal notes" },
+  { value: "project", label: "Project" },
+];
+
+function baseTalentTemplate(group: OptionGroup): DeckTemplate {
+  return {
+    id: "editorial-grid",
+    name: group.type === "LOCATION" ? "Location editorial" : "Editorial option page",
+    blocks: [
+      { id: "name", type: "field", field: "name", label: "Name", x: 2, y: 3, w: 74, h: 9, fontSize: 72, fontWeight: 900, uppercase: true },
+      { id: "links", type: "links", label: "Links", x: 2, y: 13, w: 36, h: 4, fontSize: 20, fontWeight: 500 },
+      { id: "date-status", type: "dateStatus", label: "Date status", x: 82, y: 7, w: 16, h: 15, fontSize: 13, fontWeight: 700, align: "center" },
+      { id: "images", type: "imageGrid", label: "Image grid", x: 2, y: 21, w: 76, h: 55, imageCount: 8 },
+      { id: "notes", type: "notes", field: "clientNotes", label: "Deck notes", x: 2, y: 80, w: 74, h: 14, fontSize: 18 },
+      { id: "footer", type: "footer", label: "Footer", x: 82, y: 88, w: 15, h: 8, fontSize: 15, align: "right" },
+    ],
+  };
+}
+
+function baseLocationTemplate(): DeckTemplate {
+  return {
+    id: "location-map",
+    name: "Location with map",
+    blocks: [
+      { id: "name", type: "field", field: "name", label: "Location name", x: 2, y: 4, w: 70, h: 8, fontSize: 46, fontWeight: 900, uppercase: true },
+      { id: "location", type: "field", field: "location", label: "City / country", x: 80, y: 5, w: 17, h: 4, fontSize: 14, align: "right" },
+      { id: "links", type: "links", label: "Links", x: 2, y: 13, w: 36, h: 4, fontSize: 18, fontWeight: 800 },
+      { id: "date-status", type: "dateStatus", label: "Date status", x: 2, y: 17, w: 34, h: 5, fontSize: 16, fontWeight: 800 },
+      { id: "images", type: "imageGrid", label: "Images", x: 2, y: 24, w: 96, h: 31, imageCount: 4 },
+      { id: "map", type: "map", label: "Map", x: 2, y: 57, w: 46, h: 33 },
+      { id: "notes", type: "notes", field: "clientNotes", label: "Notes", x: 50, y: 59, w: 34, h: 18, fontSize: 15 },
+      { id: "footer", type: "footer", label: "Footer", x: 2, y: 93, w: 96, h: 4, fontSize: 12 },
+    ],
+  };
+}
+
+function defaultDeckTemplate(group: OptionGroup): DeckTemplate {
+  return group.type === "LOCATION" ? baseLocationTemplate() : baseTalentTemplate(group);
+}
+
 function label(value: string): string {
   return value.replace(/_/g, " ").toLowerCase();
 }
@@ -449,6 +519,30 @@ function addressDisplayLines(address: AddressLike): string[] {
   const cityLine = [address.city, address.postcode].filter(Boolean).join(", ");
   const regionLine = [address.region, countryName(address.country)].filter(Boolean).join(", ");
   return [address.addressLine1, address.addressLine2, cityLine, regionLine].filter((line): line is string => Boolean(line));
+}
+
+function candidateLocation(candidate: OptionCandidate): string {
+  return [candidate.city, countryName(candidate.country)].filter(Boolean).join(", ");
+}
+
+function candidateFieldValue(candidate: OptionCandidate, field: DeckField, matrix: MatrixResponse): string {
+  if (field === "name") return candidate.name;
+  if (field === "subtitle") return candidate.subtitle ?? "";
+  if (field === "location") return candidateLocation(candidate);
+  if (field === "address") return addressDisplayLines(candidate).join("\n");
+  if (field === "clientNotes") return candidate.clientNotes ?? "";
+  if (field === "internalNotes") return candidate.internalNotes ?? "";
+  return [matrix.production.brand, matrix.production.clientName].filter(Boolean).join(" x ") || matrix.production.title;
+}
+
+function candidateLinks(candidate: OptionCandidate): Array<{ label: string; href: string }> {
+  return [
+    candidate.bookUrl ? { label: "Book", href: candidate.bookUrl } : null,
+    candidate.socialUrl ? { label: "social", href: candidate.socialUrl } : null,
+    candidate.modelsComUrl ? { label: "models.com", href: candidate.modelsComUrl } : null,
+    candidate.website ? { label: "website", href: candidate.website } : null,
+    candidate.pdfUrl ? { label: "pdf", href: candidate.pdfUrl } : null,
+  ].filter((item): item is { label: string; href: string } => Boolean(item));
 }
 
 function addressTypeLabel(type: BlackbookAddressType): string {
@@ -1071,6 +1165,7 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
 
       {selectedGroup ? (
         <CandidateSheet
+          matrix={matrix}
           group={selectedGroup}
           dates={matrix.dates}
           onUpdateCandidate={updateCandidate}
@@ -1215,7 +1310,8 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   );
 }
 
-function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate }: {
+function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate }: {
+  matrix: MatrixResponse;
   group: OptionGroup;
   dates: MatrixDate[];
   onUpdateCandidate: (candidateId: string, patch: Partial<OptionCandidate>) => Promise<void>;
@@ -1235,6 +1331,7 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [dragCandidateId, setDragCandidateId] = useState<string | null>(null);
   const [dropCandidateId, setDropCandidateId] = useState<string | null>(null);
+  const [designerOpen, setDesignerOpen] = useState(false);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
   const gridColumns = `56px 320px ${dates.map(() => "92px").join(" ")} 160px 230px 170px 82px 200px 58px 88px 34px`;
   const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
@@ -1279,6 +1376,12 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
 
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-white p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-xs text-gray-400">Client deck layout can be previewed and adjusted before export.</div>
+        <button onClick={() => setDesignerOpen(true)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+          Design PDF
+        </button>
+      </div>
       <div className="inline-block overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm" style={{ minWidth: minimumSheetWidth }}>
         <div className="sticky top-0 z-20 grid h-8 items-center gap-x-2 border-b border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
           <button onClick={() => setSort("manual")} className={`pl-1 text-left ${sortKey === "manual" ? "font-semibold text-gray-700" : ""}`}>Img{sortKey === "manual" ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}</button>
@@ -1352,6 +1455,318 @@ function CandidateSheet({ group, dates, onUpdateCandidate, onLinkBlackbook, onOp
           onDelete={onDeletePhoto}
         />
       )}
+      {designerOpen && (
+        <DeckDesigner
+          matrix={matrix}
+          group={group}
+          dates={dates}
+          onClose={() => setDesignerOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function DeckDesigner({ matrix, group, dates, onClose }: {
+  matrix: MatrixResponse;
+  group: OptionGroup;
+  dates: MatrixDate[];
+  onClose: () => void;
+}) {
+  const storageKey = `optionsDeckTemplate:${group.id}`;
+  const [template, setTemplate] = useState<DeckTemplate>(() => {
+    const saved = window.localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        return JSON.parse(saved) as DeckTemplate;
+      } catch {
+        return defaultDeckTemplate(group);
+      }
+    }
+    return defaultDeckTemplate(group);
+  });
+  const [previewCandidateId, setPreviewCandidateId] = useState(group.candidates[0]?.id ?? "");
+  const [selectedBlockId, setSelectedBlockId] = useState(template.blocks[0]?.id ?? "");
+  const [drag, setDrag] = useState<{ blockId: string; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const previewCandidate = group.candidates.find((candidate) => candidate.id === previewCandidateId) ?? group.candidates[0] ?? null;
+  const selectedBlock = template.blocks.find((block) => block.id === selectedBlockId) ?? null;
+
+  useEffect(() => {
+    window.localStorage.setItem(storageKey, JSON.stringify(template));
+  }, [storageKey, template]);
+
+  useEffect(() => {
+    if (!drag) return;
+    const activeDrag = drag;
+    function move(event: MouseEvent) {
+      const dx = ((event.clientX - activeDrag.startX) / 1280) * 100;
+      const dy = ((event.clientY - activeDrag.startY) / 720) * 100;
+      updateBlock(activeDrag.blockId, {
+        x: Math.max(0, Math.min(99, activeDrag.originX + dx)),
+        y: Math.max(0, Math.min(99, activeDrag.originY + dy)),
+      });
+    }
+    function up() {
+      setDrag(null);
+    }
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+    return () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+    };
+  }, [drag]);
+
+  function updateBlock(blockId: string, patch: Partial<DeckTemplateBlock>) {
+    setTemplate((current) => ({
+      ...current,
+      blocks: current.blocks.map((block) => block.id === blockId ? { ...block, ...patch } : block),
+    }));
+  }
+
+  function addBlock(type: DeckBlockType) {
+    const id = `${type}-${Date.now()}`;
+    const block: DeckTemplateBlock = {
+      id,
+      type,
+      label: type === "field" ? "Field" : label(type),
+      field: type === "field" || type === "notes" ? "clientNotes" : undefined,
+      x: 8,
+      y: 8,
+      w: type === "imageGrid" ? 34 : 24,
+      h: type === "imageGrid" ? 28 : 8,
+      fontSize: 18,
+      fontWeight: type === "field" ? 700 : 400,
+      imageCount: type === "imageGrid" ? 4 : undefined,
+    };
+    setTemplate((current) => ({ ...current, blocks: [...current.blocks, block] }));
+    setSelectedBlockId(id);
+  }
+
+  function resetTemplate(next: "editorial" | "location") {
+    const value = next === "location" ? baseLocationTemplate() : baseTalentTemplate(group);
+    setTemplate(value);
+    setSelectedBlockId(value.blocks[0]?.id ?? "");
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] bg-[#ececea]">
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex h-12 items-center justify-between border-b border-gray-300 bg-white px-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">PDF layout designer</h3>
+            <p className="text-[11px] text-gray-400">{group.name} · live candidate preview</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select value={previewCandidate?.id ?? ""} onChange={(event) => setPreviewCandidateId(event.target.value)} className="h-8 rounded-md border border-gray-200 bg-white px-2 text-xs">
+              {group.candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+            </select>
+            <button onClick={() => resetTemplate("editorial")} className="rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50">Editorial base</button>
+            <button onClick={() => resetTemplate("location")} className="rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50">Location base</button>
+            <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100"><X size={15} /></button>
+          </div>
+        </div>
+
+        <div className="grid min-h-0 flex-1 grid-cols-[190px_1fr_260px]">
+          <aside className="border-r border-gray-300 bg-white p-3">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400">Place fields</div>
+            <div className="grid gap-1">
+              {(["field", "links", "dateStatus", "imageGrid", "notes", "map", "footer"] as const).map((type) => (
+                <button key={type} onClick={() => addBlock(type)} className="rounded-md border border-gray-200 px-2 py-2 text-left text-xs text-gray-700 hover:border-gray-400 hover:bg-gray-50">
+                  + {type === "dateStatus" ? "Date status" : type === "imageGrid" ? "Image grid" : label(type)}
+                </button>
+              ))}
+            </div>
+            <div className="mt-5 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400">Blocks</div>
+            <div className="mt-2 max-h-[50vh] overflow-auto">
+              {template.blocks.map((block) => (
+                <button key={block.id} onClick={() => setSelectedBlockId(block.id)} className={`mb-1 block w-full rounded px-2 py-1.5 text-left text-[11px] ${selectedBlockId === block.id ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-50"}`}>
+                  {block.label}
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          <main className="min-w-0 overflow-auto p-6">
+            <div className="mx-auto aspect-video w-full max-w-[1280px] bg-white shadow-2xl">
+              {previewCandidate ? (
+                <DeckPagePreview
+                  matrix={matrix}
+                  group={group}
+                  dates={dates}
+                  candidate={previewCandidate}
+                  template={template}
+                  selectedBlockId={selectedBlockId}
+                  onSelectBlock={setSelectedBlockId}
+                  onDragStart={(block, event) => {
+                    setSelectedBlockId(block.id);
+                    setDrag({ blockId: block.id, startX: event.clientX, startY: event.clientY, originX: block.x, originY: block.y });
+                  }}
+                />
+              ) : (
+                <div className="grid h-full place-items-center text-sm text-gray-400">Add a candidate to preview this template.</div>
+              )}
+            </div>
+          </main>
+
+          <aside className="overflow-auto border-l border-gray-300 bg-white p-3">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400">Selected block</div>
+            {selectedBlock ? (
+              <BlockInspector
+                block={selectedBlock}
+                onChange={(patch) => updateBlock(selectedBlock.id, patch)}
+                onDelete={() => {
+                  setTemplate((current) => ({ ...current, blocks: current.blocks.filter((block) => block.id !== selectedBlock.id) }));
+                  setSelectedBlockId(template.blocks.find((block) => block.id !== selectedBlock.id)?.id ?? "");
+                }}
+              />
+            ) : <div className="text-xs text-gray-400">Select a red placement box.</div>}
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BlockInspector({ block, onChange, onDelete }: { block: DeckTemplateBlock; onChange: (patch: Partial<DeckTemplateBlock>) => void; onDelete: () => void }) {
+  return (
+    <div className="space-y-3 text-xs">
+      <label className="block text-gray-500">Label<input value={block.label} onChange={(event) => onChange({ label: event.target.value })} className="mt-1 h-8 w-full rounded border border-gray-200 px-2 text-gray-900" /></label>
+      {(block.type === "field" || block.type === "notes") && (
+        <label className="block text-gray-500">Field
+          <select value={block.field ?? "clientNotes"} onChange={(event) => onChange({ field: event.target.value as DeckField })} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-gray-900">
+            {DECK_FIELD_OPTIONS.map((field) => <option key={field.value} value={field.value}>{field.label}</option>)}
+          </select>
+        </label>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <NumberSetting label="X" value={block.x} onChange={(x) => onChange({ x })} />
+        <NumberSetting label="Y" value={block.y} onChange={(y) => onChange({ y })} />
+        <NumberSetting label="W" value={block.w} onChange={(w) => onChange({ w })} />
+        <NumberSetting label="H" value={block.h} onChange={(h) => onChange({ h })} />
+      </div>
+      {block.type !== "imageGrid" && block.type !== "map" && (
+        <div className="grid grid-cols-2 gap-2">
+          <NumberSetting label="Font" value={block.fontSize ?? 14} onChange={(fontSize) => onChange({ fontSize })} />
+          <NumberSetting label="Weight" value={block.fontWeight ?? 400} onChange={(fontWeight) => onChange({ fontWeight })} />
+        </div>
+      )}
+      {block.type === "imageGrid" && <NumberSetting label="Image count" value={block.imageCount ?? 4} onChange={(imageCount) => onChange({ imageCount })} />}
+      <label className="flex items-center gap-2 text-gray-500"><input type="checkbox" checked={Boolean(block.uppercase)} onChange={(event) => onChange({ uppercase: event.target.checked })} /> Uppercase</label>
+      <label className="block text-gray-500">Align
+        <select value={block.align ?? "left"} onChange={(event) => onChange({ align: event.target.value as DeckTemplateBlock["align"] })} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-gray-900">
+          <option value="left">Left</option>
+          <option value="center">Center</option>
+          <option value="right">Right</option>
+        </select>
+      </label>
+      <button onClick={onDelete} className="w-full rounded-md border border-red-100 px-2 py-2 text-red-600 hover:bg-red-50">Delete block</button>
+    </div>
+  );
+}
+
+function NumberSetting({ label: labelText, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  return (
+    <label className="block text-gray-500">{labelText}
+      <input type="number" value={Math.round(value * 10) / 10} onChange={(event) => onChange(Number(event.target.value) || 0)} className="mt-1 h-8 w-full rounded border border-gray-200 px-2 text-gray-900" />
+    </label>
+  );
+}
+
+function DeckPagePreview({ matrix, group, dates, candidate, template, selectedBlockId, onSelectBlock, onDragStart }: {
+  matrix: MatrixResponse;
+  group: OptionGroup;
+  dates: MatrixDate[];
+  candidate: OptionCandidate;
+  template: DeckTemplate;
+  selectedBlockId: string;
+  onSelectBlock: (id: string) => void;
+  onDragStart: (block: DeckTemplateBlock, event: React.MouseEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div className="relative h-full w-full overflow-hidden bg-white">
+      {template.blocks.map((block) => (
+        <div
+          key={block.id}
+          onMouseDown={(event) => onDragStart(block, event)}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelectBlock(block.id);
+          }}
+          className={`absolute cursor-move overflow-hidden border-2 border-dotted border-red-500 ${selectedBlockId === block.id ? "bg-red-50/20 ring-2 ring-red-500/30" : ""}`}
+          style={{ left: `${block.x}%`, top: `${block.y}%`, width: `${block.w}%`, height: `${block.h}%` }}
+        >
+          <DeckBlockContent matrix={matrix} group={group} dates={dates} candidate={candidate} block={block} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DeckBlockContent({ matrix, group, dates, candidate, block }: {
+  matrix: MatrixResponse;
+  group: OptionGroup;
+  dates: MatrixDate[];
+  candidate: OptionCandidate;
+  block: DeckTemplateBlock;
+}) {
+  const textStyle = {
+    fontSize: block.fontSize,
+    fontWeight: block.fontWeight,
+    textAlign: block.align,
+    textTransform: block.uppercase ? "uppercase" : "none",
+  } as React.CSSProperties;
+
+  if (block.type === "field" || block.type === "notes") {
+    return <div className="h-full whitespace-pre-line p-1 leading-tight text-black" style={textStyle}>{candidateFieldValue(candidate, block.field ?? "name", matrix) || block.label}</div>;
+  }
+  if (block.type === "links") {
+    const links = candidateLinks(candidate);
+    return <div className="flex h-full items-start gap-3 p-1 text-black" style={textStyle}>{links.length ? links.map((link) => <span key={link.label} className="underline">{link.label}</span>) : "Book  social  website  pdf"}</div>;
+  }
+  if (block.type === "dateStatus") {
+    const statuses = dates.map((date) => ({ date, status: statusFor(candidate, date.id)?.status })).filter((item) => item.status && item.status !== "NA");
+    return (
+      <div className="flex h-full flex-col overflow-hidden border border-black text-center text-black" style={textStyle}>
+        {statuses.length ? statuses.map(({ date, status }) => (
+          <div key={date.id} className={`flex flex-1 items-center justify-center border-b border-black px-1 last:border-b-0 ${status === "FIRST_OPTION" || status === "CONFIRMED" ? "bg-green-200" : status === "SECOND_OPTION" || status === "REQUESTED" ? "bg-cyan-100" : "bg-orange-100"}`}>
+            {new Date(date.date).toLocaleDateString("en-GB", { day: "numeric", month: "long" })} — {label(status ?? "").toUpperCase()}
+          </div>
+        )) : <div className="grid h-full place-items-center text-gray-400">Date status</div>}
+      </div>
+    );
+  }
+  if (block.type === "imageGrid") {
+    const photos = candidate.photos.filter((photo) => photo.exportSelected).concat(candidate.photos.filter((photo) => !photo.exportSelected)).slice(0, block.imageCount ?? 4);
+    return (
+      <div className="grid h-full w-full gap-4 p-2" style={{ gridTemplateColumns: `repeat(${Math.min(4, Math.max(1, Math.ceil(Math.sqrt(block.imageCount ?? 4))))}, minmax(0, 1fr))` }}>
+        {Array.from({ length: block.imageCount ?? 4 }).map((_, index) => {
+          const photo = photos[index];
+          return (
+            <div key={photo?.id ?? index} className="flex items-end justify-center overflow-hidden bg-white">
+              {photo ? <img src={photo.url} className="max-h-full max-w-full object-contain object-bottom" /> : <div className="grid h-full w-full place-items-center border border-gray-200 text-gray-300"><ImageIcon size={22} /></div>}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  if (block.type === "map") {
+    return (
+      <div className="grid h-full place-items-center border border-gray-300 bg-[#eef3ee] p-3 text-center text-xs text-gray-500">
+        <div>
+          <Globe size={22} className="mx-auto mb-2" />
+          Map block<br />
+          {addressSummary(candidate) || "Address / coordinates"}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-full items-end justify-between p-1 text-black" style={textStyle}>
+      <span>unlimited.bond</span>
+      <span>{[matrix.production.brand, matrix.production.clientName].filter(Boolean).join(" x ") || group.name}</span>
+      <span>1</span>
     </div>
   );
 }

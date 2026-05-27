@@ -1,3 +1,97 @@
+# HANDOVER - 2026-05-27 - Options PDF Designer Foundation
+
+## Built This Session
+- Added the first usable PDF layout designer foundation to the options candidate sheet.
+- Candidate sheets now have a `Design PDF` button.
+- The designer opens as a full-screen editor with:
+  - live candidate preview,
+  - editable red dotted placement boxes,
+  - field/block palette,
+  - selected block inspector,
+  - base templates for editorial/talent and locations,
+  - per-group local template persistence.
+- Every preview page is rendered from the current option/candidate data.
+
+## Designer Features
+- Placeable block types:
+  - field text,
+  - links,
+  - date status,
+  - image grid,
+  - notes,
+  - map placeholder,
+  - footer.
+- Field text can bind to:
+  - option name,
+  - subtitle,
+  - location,
+  - structured address,
+  - deck notes,
+  - internal notes,
+  - project name.
+- Block inspector supports:
+  - x/y placement,
+  - width/height,
+  - font size,
+  - font weight,
+  - alignment,
+  - uppercase toggle,
+  - image count for image grids,
+  - delete block.
+- Image grid follows the reference direction:
+  - images sit inside fixed boxes,
+  - object-fit contain,
+  - centered horizontally,
+  - aligned to the bottom vertically.
+- Date status block renders compact colored rows similar to the reference style.
+- Location template includes a map block placeholder ready for static map image integration.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Added:
+  - `DeckTemplate`,
+  - `DeckTemplateBlock`,
+  - default template builders,
+  - `DeckDesigner`,
+  - `BlockInspector`,
+  - `DeckPagePreview`,
+  - `DeckBlockContent`.
+- Templates are currently persisted in `localStorage` under the option group ID.
+
+## Backend
+- No backend changes in this pass.
+- Existing PDF export remains unchanged.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
+
+## Current State
+- This is an editor/preview foundation, not yet the production export renderer.
+- It proves the key interaction model:
+  - each options row field can become a placeable block,
+  - red editor boxes mirror the reference,
+  - candidate data fills the page live,
+  - templates can start from branded bases and then be edited.
+
+## Known Gaps / Technical Debt
+- Template persistence is local browser storage only; next pass should move it to the database.
+- Existing PDF export does not yet consume these templates.
+- Map block is a placeholder; it should become a cached Google Static Map image using candidate address coordinates.
+- Dragging moves blocks, but resize is currently via numeric inspector rather than drag handles.
+- No snap/grid controls yet.
+
+## Exact Next Steps
+1. Add database-backed PDF template models and save/load endpoints.
+2. Replace the current group PDF export with template-driven HTML-to-PDF rendering.
+3. Add static map image generation/caching for location candidates.
+4. Add resize handles and snap/grid controls in the designer.
+
+---
+
 # HANDOVER - 2026-05-27 - Manual Bill Line Assignment Review
 
 ## Built This Session
