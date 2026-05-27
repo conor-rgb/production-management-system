@@ -18,6 +18,8 @@ type DeckBlockType = "field" | "links" | "dateStatus" | "imageGrid" | "notes" | 
 type DeckField = "name" | "subtitle" | "location" | "address" | "clientNotes" | "internalNotes" | "project";
 type DeckImageLayout = "grid" | "justify";
 type DeckImageFit = "contain" | "cover" | "natural";
+type DeckVerticalAlign = "top" | "middle" | "bottom";
+type DeckImagePosition = "top" | "center" | "bottom";
 
 interface DeckTemplateBlock {
   id: string;
@@ -31,12 +33,23 @@ interface DeckTemplateBlock {
   fontSize?: number;
   fontWeight?: number;
   align?: "left" | "center" | "right";
+  verticalAlign?: DeckVerticalAlign;
+  lineHeight?: number;
+  letterSpacing?: number;
+  textColor?: string;
+  textPadding?: number;
+  textMaxLines?: number;
   uppercase?: boolean;
+  hideIfEmpty?: boolean;
   imageCount?: number;
   imagePadding?: number;
   imageGap?: number;
   imageLayout?: DeckImageLayout;
   imageFit?: DeckImageFit;
+  imagePosition?: DeckImagePosition;
+  imageBackground?: string;
+  imageBorder?: boolean;
+  imageRadius?: number;
   imageAllowRows?: boolean;
   imageHideEmptySlots?: boolean;
   hidden?: boolean;
@@ -348,16 +361,18 @@ const DECK_FIELD_OPTIONS: Array<{ value: DeckField; label: string }> = [
 ];
 
 const DECK_BLOCK_PRESETS: Array<{ label: string; block: Omit<DeckTemplateBlock, "id"> }> = [
-  { label: "Large title", block: { type: "field", field: "name", label: "Title", x: 2, y: 4, w: 60, h: 8, fontSize: 52, fontWeight: 900, uppercase: true } },
-  { label: "Subtitle", block: { type: "field", field: "subtitle", label: "Subtitle", x: 2, y: 12, w: 38, h: 4, fontSize: 18, fontWeight: 500 } },
-  { label: "Project tag", block: { type: "field", field: "project", label: "Project", x: 66, y: 5, w: 32, h: 4, fontSize: 16, align: "right" } },
-  { label: "Links row", block: { type: "links", label: "Links", x: 2, y: 14, w: 40, h: 4, fontSize: 18, fontWeight: 800 } },
+  { label: "Large title", block: { type: "field", field: "name", label: "Title", x: 2, y: 4, w: 60, h: 8, fontSize: 52, fontWeight: 900, lineHeight: 1, uppercase: true } },
+  { label: "Subtitle", block: { type: "field", field: "subtitle", label: "Subtitle", x: 2, y: 12, w: 38, h: 4, fontSize: 18, fontWeight: 500, lineHeight: 1.2, hideIfEmpty: true } },
+  { label: "Project tag", block: { type: "field", field: "project", label: "Project", x: 66, y: 5, w: 32, h: 4, fontSize: 16, align: "right", textColor: "#6f6f69" } },
+  { label: "Links row", block: { type: "links", label: "Links", x: 2, y: 14, w: 40, h: 4, fontSize: 18, fontWeight: 800, hideIfEmpty: true } },
   { label: "Date status", block: { type: "dateStatus", label: "Date status", x: 68, y: 12, w: 30, h: 14, fontSize: 12, fontWeight: 800, align: "center" } },
-  { label: "Image grid 4", block: { type: "imageGrid", label: "Image grid", x: 2, y: 24, w: 96, h: 31, imageCount: 4, imagePadding: 12, imageGap: 12, imageLayout: "grid", imageFit: "contain" } },
-  { label: "Image grid 6", block: { type: "imageGrid", label: "Image grid", x: 2, y: 22, w: 96, h: 48, imageCount: 6, imagePadding: 12, imageGap: 12, imageLayout: "grid", imageFit: "contain" } },
-  { label: "Justified image row", block: { type: "imageGrid", label: "Justified images", x: 2, y: 28, w: 96, h: 24, imageCount: 10, imagePadding: 10, imageGap: 10, imageLayout: "justify", imageFit: "natural", imageHideEmptySlots: true } },
+  { label: "Image grid 4", block: { type: "imageGrid", label: "Image grid", x: 2, y: 24, w: 96, h: 31, imageCount: 4, imagePadding: 12, imageGap: 12, imageLayout: "grid", imageFit: "contain", imagePosition: "bottom", imageBackground: "#ffffff" } },
+  { label: "Image grid 6", block: { type: "imageGrid", label: "Image grid", x: 2, y: 22, w: 96, h: 48, imageCount: 6, imagePadding: 12, imageGap: 12, imageLayout: "grid", imageFit: "contain", imagePosition: "bottom", imageBackground: "#ffffff" } },
+  { label: "Justified image row", block: { type: "imageGrid", label: "Justified images", x: 2, y: 28, w: 96, h: 24, imageCount: 10, imagePadding: 10, imageGap: 10, imageLayout: "justify", imageFit: "natural", imagePosition: "bottom", imageBackground: "#ffffff", imageHideEmptySlots: true } },
+  { label: "Full bleed image", block: { type: "imageGrid", label: "Full bleed image", x: 0, y: 0, w: 100, h: 100, imageCount: 1, imagePadding: 0, imageGap: 0, imageLayout: "grid", imageFit: "cover", imagePosition: "center", imageHideEmptySlots: true } },
+  { label: "Contained hero", block: { type: "imageGrid", label: "Hero image", x: 2, y: 20, w: 62, h: 58, imageCount: 1, imagePadding: 0, imageGap: 0, imageLayout: "grid", imageFit: "contain", imagePosition: "bottom", imageBackground: "#ffffff", imageHideEmptySlots: true } },
   { label: "Map", block: { type: "map", label: "Map", x: 2, y: 58, w: 46, h: 32 } },
-  { label: "Notes", block: { type: "notes", field: "clientNotes", label: "Deck notes", x: 50, y: 60, w: 34, h: 16, fontSize: 15 } },
+  { label: "Notes", block: { type: "notes", field: "clientNotes", label: "Deck notes", x: 50, y: 60, w: 34, h: 16, fontSize: 15, lineHeight: 1.35, textPadding: 0, hideIfEmpty: true } },
   { label: "Footer", block: { type: "footer", label: "Footer", x: 2, y: 94, w: 96, h: 3, fontSize: 12 } },
 ];
 
@@ -1880,9 +1895,25 @@ function BlockInspector({ block, onChange, onDuplicate, onLayer, onToggleLock, o
         <NumberSetting label="H" value={block.h} onChange={(h) => onChange({ h })} />
       </div>
       {block.type !== "imageGrid" && block.type !== "map" && (
-        <div className="grid grid-cols-2 gap-2">
-          <NumberSetting label="Font" value={block.fontSize ?? 14} onChange={(fontSize) => onChange({ fontSize })} />
-          <NumberSetting label="Weight" value={block.fontWeight ?? 400} onChange={(fontWeight) => onChange({ fontWeight })} />
+        <div className="space-y-2 rounded-md border border-gray-100 bg-gray-50 p-2">
+          <div className="grid grid-cols-2 gap-2">
+            <NumberSetting label="Font" value={block.fontSize ?? 14} onChange={(fontSize) => onChange({ fontSize })} />
+            <NumberSetting label="Weight" value={block.fontWeight ?? 400} onChange={(fontWeight) => onChange({ fontWeight })} />
+            <NumberSetting label="Line height" value={block.lineHeight ?? 1.2} step={0.05} onChange={(lineHeight) => onChange({ lineHeight })} />
+            <NumberSetting label="Letter space" value={block.letterSpacing ?? 0} step={0.1} onChange={(letterSpacing) => onChange({ letterSpacing })} />
+            <NumberSetting label="Padding" value={block.textPadding ?? 0} onChange={(textPadding) => onChange({ textPadding })} />
+            <NumberSetting label="Max lines" value={block.textMaxLines ?? 0} onChange={(textMaxLines) => onChange({ textMaxLines: textMaxLines > 0 ? textMaxLines : undefined })} />
+          </div>
+          <label className="block text-gray-500">Text colour
+            <input type="color" value={block.textColor ?? "#1a1a1f"} onChange={(event) => onChange({ textColor: event.target.value })} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-1" />
+          </label>
+          <label className="block text-gray-500">Vertical align
+            <select value={block.verticalAlign ?? "top"} onChange={(event) => onChange({ verticalAlign: event.target.value as DeckVerticalAlign })} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-gray-900">
+              <option value="top">Top</option>
+              <option value="middle">Middle</option>
+              <option value="bottom">Bottom</option>
+            </select>
+          </label>
         </div>
       )}
       {block.type === "imageGrid" && (
@@ -1903,11 +1934,26 @@ function BlockInspector({ block, onChange, onDuplicate, onLayer, onToggleLock, o
               <option value="natural">Natural height</option>
             </select>
           </label>
+          <label className="block text-gray-500">Position
+            <select value={block.imagePosition ?? "bottom"} onChange={(event) => onChange({ imagePosition: event.target.value as DeckImagePosition })} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-gray-900">
+              <option value="top">Top</option>
+              <option value="center">Center</option>
+              <option value="bottom">Bottom</option>
+            </select>
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <NumberSetting label="Radius" value={block.imageRadius ?? 0} onChange={(imageRadius) => onChange({ imageRadius })} />
+            <label className="block text-gray-500">Background
+              <input type="color" value={block.imageBackground ?? "#ffffff"} onChange={(event) => onChange({ imageBackground: event.target.value })} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-1" />
+            </label>
+          </div>
+          <label className="flex items-center gap-2 text-gray-500"><input type="checkbox" checked={Boolean(block.imageBorder)} onChange={(event) => onChange({ imageBorder: event.target.checked })} /> Image cell border</label>
           <label className="flex items-center gap-2 text-gray-500"><input type="checkbox" checked={Boolean(block.imageAllowRows)} onChange={(event) => onChange({ imageAllowRows: event.target.checked })} /> Allow multiple rows</label>
           <label className="flex items-center gap-2 text-gray-500"><input type="checkbox" checked={Boolean(block.imageHideEmptySlots)} onChange={(event) => onChange({ imageHideEmptySlots: event.target.checked })} /> Hide empty slots</label>
         </div>
       )}
       <label className="flex items-center gap-2 text-gray-500"><input type="checkbox" checked={Boolean(block.uppercase)} onChange={(event) => onChange({ uppercase: event.target.checked })} /> Uppercase</label>
+      <label className="flex items-center gap-2 text-gray-500"><input type="checkbox" checked={Boolean(block.hideIfEmpty)} onChange={(event) => onChange({ hideIfEmpty: event.target.checked })} /> Hide if empty</label>
       <label className="block text-gray-500">Align
         <select value={block.align ?? "left"} onChange={(event) => onChange({ align: event.target.value as DeckTemplateBlock["align"] })} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-gray-900">
           <option value="left">Left</option>
@@ -1920,10 +1966,10 @@ function BlockInspector({ block, onChange, onDuplicate, onLayer, onToggleLock, o
   );
 }
 
-function NumberSetting({ label: labelText, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function NumberSetting({ label: labelText, value, onChange, step = 1 }: { label: string; value: number; onChange: (value: number) => void; step?: number }) {
   return (
     <label className="block text-gray-500">{labelText}
-      <input type="number" value={Math.round(value * 10) / 10} onChange={(event) => onChange(Number(event.target.value) || 0)} className="mt-1 h-8 w-full rounded border border-gray-200 px-2 text-gray-900" />
+      <input type="number" step={step} value={Math.round(value * 100) / 100} onChange={(event) => onChange(Number(event.target.value) || 0)} className="mt-1 h-8 w-full rounded border border-gray-200 px-2 text-gray-900" />
     </label>
   );
 }
@@ -2030,19 +2076,35 @@ function DeckBlockContent({ matrix, group, dates, candidate, block }: {
   candidate: OptionCandidate;
   block: DeckTemplateBlock;
 }) {
+  const verticalAlign = block.verticalAlign === "bottom" ? "flex-end" : block.verticalAlign === "middle" ? "center" : "flex-start";
   const textStyle = {
     fontSize: block.fontSize,
     fontWeight: block.fontWeight,
     textAlign: block.align,
+    color: block.textColor ?? "#1a1a1f",
+    lineHeight: block.lineHeight ?? 1.2,
+    letterSpacing: block.letterSpacing,
+    padding: block.textPadding ?? 0,
     textTransform: block.uppercase ? "uppercase" : "none",
+    display: "flex",
+    alignItems: verticalAlign,
   } as React.CSSProperties;
+  const textInnerStyle = block.textMaxLines && block.textMaxLines > 0 ? {
+    display: "-webkit-box",
+    WebkitLineClamp: block.textMaxLines,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
+  } as React.CSSProperties : undefined;
 
   if (block.type === "field" || block.type === "notes") {
-    return <div className="h-full whitespace-pre-line p-1 leading-tight text-black" style={textStyle}>{candidateFieldValue(candidate, block.field ?? "name", matrix) || block.label}</div>;
+    const value = candidateFieldValue(candidate, block.field ?? "name", matrix);
+    if (block.hideIfEmpty && !value.trim()) return null;
+    return <div className="h-full whitespace-pre-line text-black" style={textStyle}><span style={textInnerStyle}>{value || block.label}</span></div>;
   }
   if (block.type === "links") {
     const links = candidateLinks(candidate);
-    return <div className="flex h-full items-start gap-3 p-1 text-black" style={textStyle}>{links.length ? links.map((link) => <span key={link.label} className="underline">{link.label}</span>) : "Book  social  website  pdf"}</div>;
+    if (block.hideIfEmpty && links.length === 0) return null;
+    return <div className="flex h-full gap-3 text-black" style={textStyle}>{links.length ? links.map((link) => <span key={link.label} className="underline">{link.label}</span>) : "Book  social  website  pdf"}</div>;
   }
   if (block.type === "dateStatus") {
     const statuses = dates.map((date) => ({ date, status: statusFor(candidate, date.id)?.status })).filter((item) => item.status && item.status !== "NA");
@@ -2063,6 +2125,8 @@ function DeckBlockContent({ matrix, group, dates, candidate, block }: {
     const gap = Math.max(0, Math.min(80, block.imageGap ?? block.imagePadding ?? 8));
     const slots = block.imageHideEmptySlots ? allPhotos.slice(0, count) : Array.from({ length: count }).map((_, index) => allPhotos[index] ?? null);
     const fit = block.imageFit ?? (block.imageLayout === "justify" ? "natural" : "contain");
+    const imagePosition = block.imagePosition ?? "bottom";
+    const objectPosition = `center ${imagePosition === "center" ? "center" : imagePosition}`;
     const imageClass = fit === "cover"
       ? "h-full w-full object-cover object-bottom"
       : fit === "natural"
@@ -2073,8 +2137,14 @@ function DeckBlockContent({ matrix, group, dates, candidate, block }: {
         <div
           key={photo?.id ?? index}
           className="flex h-full min-h-0 min-w-0 items-end justify-center overflow-hidden bg-white"
+          style={{
+            alignItems: imagePosition === "top" ? "flex-start" : imagePosition === "center" ? "center" : "flex-end",
+            background: block.imageBackground ?? "#ffffff",
+            border: block.imageBorder ? "1px solid #e1e1dc" : undefined,
+            borderRadius: block.imageRadius ?? 0,
+          }}
         >
-          {photo ? <img src={photo.url} className={imageClass} /> : <div className="grid h-full w-full place-items-center border border-gray-200 text-gray-300"><ImageIcon size={22} /></div>}
+          {photo ? <img src={photo.url} className={imageClass} style={{ objectPosition }} /> : <div className="grid h-full w-full place-items-center border border-gray-200 text-gray-300"><ImageIcon size={22} /></div>}
         </div>
       );
     });

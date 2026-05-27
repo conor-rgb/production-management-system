@@ -552,11 +552,17 @@ const DECK_FIELDS = new Set(["name", "subtitle", "location", "address", "clientN
 const DECK_ALIGNS = new Set(["left", "center", "right"]);
 const DECK_IMAGE_LAYOUTS = new Set(["grid", "justify"]);
 const DECK_IMAGE_FITS = new Set(["contain", "cover", "natural"]);
+const DECK_VERTICAL_ALIGNS = new Set(["top", "middle", "bottom"]);
+const DECK_IMAGE_POSITIONS = new Set(["top", "center", "bottom"]);
 
 function templateNumber(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, parsed));
+}
+
+function templateColor(value: unknown): string | undefined {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : undefined;
 }
 
 function sanitizeDeckBlocks(value: unknown): DeckTemplateBlock[] {
@@ -576,19 +582,32 @@ function sanitizeDeckBlocks(value: unknown): DeckTemplateBlock[] {
       h: templateNumber(record.h, 10, 1, 100),
       fontSize: templateNumber(record.fontSize, 16, 4, 160),
       fontWeight: templateNumber(record.fontWeight, 400, 100, 1000),
+      lineHeight: templateNumber(record.lineHeight, 1.2, 0.7, 3),
+      letterSpacing: templateNumber(record.letterSpacing, 0, -5, 20),
+      textPadding: templateNumber(record.textPadding, 0, 0, 120),
+      textMaxLines: templateNumber(record.textMaxLines, 0, 0, 40),
       uppercase: record.uppercase === true,
+      hideIfEmpty: record.hideIfEmpty === true,
       imageCount: templateNumber(record.imageCount, 4, 1, 12),
       imagePadding: templateNumber(record.imagePadding, 8, 0, 80),
       imageGap: templateNumber(record.imageGap, templateNumber(record.imagePadding, 8, 0, 80), 0, 80),
+      imageRadius: templateNumber(record.imageRadius, 0, 0, 120),
+      imageBorder: record.imageBorder === true,
       imageAllowRows: record.imageAllowRows === true,
       imageHideEmptySlots: record.imageHideEmptySlots === true,
       hidden: record.hidden === true,
       locked: record.locked === true,
     };
+    const textColor = templateColor(record.textColor);
+    const imageBackground = templateColor(record.imageBackground);
+    if (textColor) block.textColor = textColor;
+    if (imageBackground) block.imageBackground = imageBackground;
     if (typeof record.field === "string" && DECK_FIELDS.has(record.field)) block.field = record.field as DeckTemplateBlock["field"];
     if (typeof record.align === "string" && DECK_ALIGNS.has(record.align)) block.align = record.align as DeckTemplateBlock["align"];
+    if (typeof record.verticalAlign === "string" && DECK_VERTICAL_ALIGNS.has(record.verticalAlign)) block.verticalAlign = record.verticalAlign as DeckTemplateBlock["verticalAlign"];
     if (typeof record.imageLayout === "string" && DECK_IMAGE_LAYOUTS.has(record.imageLayout)) block.imageLayout = record.imageLayout as DeckTemplateBlock["imageLayout"];
     if (typeof record.imageFit === "string" && DECK_IMAGE_FITS.has(record.imageFit)) block.imageFit = record.imageFit as DeckTemplateBlock["imageFit"];
+    if (typeof record.imagePosition === "string" && DECK_IMAGE_POSITIONS.has(record.imagePosition)) block.imagePosition = record.imagePosition as DeckTemplateBlock["imagePosition"];
     return [block];
   });
 }

@@ -1,3 +1,78 @@
+# HANDOVER - 2026-05-27 - Options Deck Text and Image Styling Controls
+
+## Built This Session
+- Added more text and image styling controls to the options deck designer.
+- Text blocks now support:
+  - line height,
+  - letter spacing,
+  - text colour,
+  - internal padding,
+  - max lines / clamp,
+  - vertical alignment,
+  - hide if empty.
+- Image blocks now support:
+  - image position: top / center / bottom,
+  - background colour,
+  - optional cell border,
+  - border radius.
+- Added stronger image presets:
+  - Full bleed image,
+  - Contained hero.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Extended deck block JSON with:
+  - `verticalAlign`
+  - `lineHeight`
+  - `letterSpacing`
+  - `textColor`
+  - `textPadding`
+  - `textMaxLines`
+  - `hideIfEmpty`
+  - `imagePosition`
+  - `imageBackground`
+  - `imageBorder`
+  - `imageRadius`
+- Inspector now exposes these controls in compact form.
+
+## Backend
+- Updated `backend/src/services/optionsDeckPdf.ts`.
+- Updated `backend/src/routes/options.ts`.
+- Export sanitizer now preserves and clamps the new settings.
+- HTML/PDF export now renders the new text and image styling controls.
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK.
+- Chromium export smoke test passed with:
+  - line height,
+  - text padding,
+  - text colour,
+  - vertical text alignment,
+  - justified images,
+  - image border and radius.
+  - PDF buffer: 11,116,469 bytes.
+
+## Current State
+- The deck editor has enough typography and image styling controls for useful layout iteration without needing code changes.
+- Edit and export both use the same saved JSON fields.
+
+## Known Gaps / Technical Debt
+- No per-image focal point yet.
+- Text colour is a simple colour input, not a brand palette picker.
+- Full bleed and hero are presets using existing image block behaviour, not a separate asymmetric layout engine.
+
+## Exact Next Steps
+1. Add per-image crop/focal-point controls.
+2. Add a brand palette picker for text/background colours.
+3. Add true asymmetric presets like `Hero + thumbnails`.
+
+---
+
 # HANDOVER - 2026-05-27 - Options Deck Edit/Final Canvas Sync
 
 ## Built This Session

@@ -34,6 +34,8 @@ export type DeckBlockType = "field" | "links" | "dateStatus" | "imageGrid" | "no
 export type DeckField = "name" | "subtitle" | "location" | "address" | "clientNotes" | "internalNotes" | "project";
 export type DeckImageLayout = "grid" | "justify";
 export type DeckImageFit = "contain" | "cover" | "natural";
+export type DeckVerticalAlign = "top" | "middle" | "bottom";
+export type DeckImagePosition = "top" | "center" | "bottom";
 
 export interface DeckTemplateBlock {
   id: string;
@@ -47,12 +49,23 @@ export interface DeckTemplateBlock {
   fontSize?: number;
   fontWeight?: number;
   align?: "left" | "center" | "right";
+  verticalAlign?: DeckVerticalAlign;
+  lineHeight?: number;
+  letterSpacing?: number;
+  textColor?: string;
+  textPadding?: number;
+  textMaxLines?: number;
   uppercase?: boolean;
+  hideIfEmpty?: boolean;
   imageCount?: number;
   imagePadding?: number;
   imageGap?: number;
   imageLayout?: DeckImageLayout;
   imageFit?: DeckImageFit;
+  imagePosition?: DeckImagePosition;
+  imageBackground?: string;
+  imageBorder?: boolean;
+  imageRadius?: number;
   imageAllowRows?: boolean;
   imageHideEmptySlots?: boolean;
   hidden?: boolean;
@@ -241,17 +254,46 @@ function blockStyle(block: DeckTemplateBlock): string {
   ].join(";");
 }
 
+function safeColor(value: string | null | undefined, fallback: string): string {
+  return value && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+}
+
+function textBlockStyle(block: DeckTemplateBlock): string {
+  const alignItems = block.verticalAlign === "bottom" ? "flex-end" : block.verticalAlign === "middle" ? "center" : "flex-start";
+  return [
+    blockStyle(block),
+    `color:${safeColor(block.textColor, TEXT)}`,
+    `line-height:${block.lineHeight ?? 1.2}`,
+    `letter-spacing:${block.letterSpacing ?? 0}px`,
+    `padding:${block.textPadding ?? 0}px`,
+    `display:flex`,
+    `align-items:${alignItems}`,
+  ].join(";");
+}
+
+function textInnerStyle(block: DeckTemplateBlock): string {
+  if (!block.textMaxLines || block.textMaxLines <= 0) return "";
+  return [
+    `display:-webkit-box`,
+    `-webkit-line-clamp:${block.textMaxLines}`,
+    `-webkit-box-orient:vertical`,
+    `overflow:hidden`,
+  ].join(";");
+}
+
 function renderTextBlock(group: OptionsDeckGroup, candidate: DeckCandidate, block: DeckTemplateBlock): string {
   const value = fieldValue(group, candidate, block.field ?? "name") || block.label;
-  return `<div class="block text-block" style="${blockStyle(block)}">${escapeHtml(value).replace(/\n/g, "<br>")}</div>`;
+  if (block.hideIfEmpty && !fieldValue(group, candidate, block.field ?? "name").trim()) return "";
+  return `<div class="block text-block" style="${textBlockStyle(block)}"><span style="${textInnerStyle(block)}">${escapeHtml(value).replace(/\n/g, "<br>")}</span></div>`;
 }
 
 function renderLinksBlock(candidate: DeckCandidate, block: DeckTemplateBlock): string {
   const links = candidateLinks(candidate);
+  if (block.hideIfEmpty && links.length === 0) return "";
   const content = links.length
     ? links.map((link) => `<a href="${escapeAttr(link.url)}">${escapeHtml(link.label)}</a>`).join("")
     : `<span>Book</span><span>social</span><span>website</span><span>pdf</span>`;
-  return `<div class="block links-block" style="${blockStyle(block)}">${content}</div>`;
+  return `<div class="block links-block" style="${textBlockStyle(block)}">${content}</div>`;
 }
 
 function renderDateStatusBlock(candidate: DeckCandidate, block: DeckTemplateBlock): string {
@@ -272,12 +314,21 @@ function renderImageGridBlock(candidate: DeckCandidate, block: DeckTemplateBlock
   const padding = Math.max(0, Math.min(80, block.imagePadding ?? 8));
   const gap = Math.max(0, Math.min(80, block.imageGap ?? block.imagePadding ?? 8));
   const fit = block.imageFit ?? (block.imageLayout === "justify" ? "natural" : "contain");
+  const position = block.imagePosition ?? "bottom";
+  const objectPosition = `center ${position === "center" ? "center" : position}`;
+  const alignItems = position === "top" ? "flex-start" : position === "center" ? "center" : "flex-end";
+  const cellStyle = [
+    `align-items:${alignItems}`,
+    `background:${safeColor(block.imageBackground, "#ffffff")}`,
+    block.imageBorder ? `border:1px solid #e1e1dc` : "",
+    `border-radius:${Math.max(0, Math.min(120, block.imageRadius ?? 0))}px`,
+  ].filter(Boolean).join(";");
   const slots: Array<DeckPhoto | undefined> = block.imageHideEmptySlots ? selected.slice(0, count) : Array.from({ length: count }).map((_, index) => selected[index]);
   const cells = slots.map((photo, index) => {
     const src = imageDataUrl(photo?.storedPath);
     const ratio = photo?.width && photo.height ? Math.max(0.2, Math.min(8, photo.width / photo.height)) : 1.4;
-    const style = block.imageLayout === "justify" ? ` style="--image-ratio:${ratio};"` : "";
-    return `<div class="image-cell"${style}>${src ? `<img class="image-fit-${fit}" src="${src}" alt="">` : `<div class="image-placeholder">No image</div>`}</div>`;
+    const style = block.imageLayout === "justify" ? ` style="--image-ratio:${ratio};${cellStyle}"` : ` style="${cellStyle}"`;
+    return `<div class="image-cell"${style}>${src ? `<img class="image-fit-${fit}" style="object-position:${objectPosition};" src="${src}" alt="">` : `<div class="image-placeholder">No image</div>`}</div>`;
   }).join("");
   if (block.imageLayout === "justify") {
     return `<div class="block image-grid-block image-grid-block--justify ${block.imageAllowRows ? "image-grid-block--wrap" : ""}" style="${blockStyle(block)};--image-padding:${padding}px;--image-gap:${gap}px;">${cells}</div>`;
