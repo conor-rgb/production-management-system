@@ -32,6 +32,7 @@ type LinkItem = {
 
 export type DeckBlockType = "field" | "links" | "dateStatus" | "imageGrid" | "notes" | "map" | "footer";
 export type DeckField = "name" | "subtitle" | "location" | "address" | "clientNotes" | "internalNotes" | "project";
+export type DeckImageLayout = "grid" | "justify";
 
 export interface DeckTemplateBlock {
   id: string;
@@ -47,6 +48,10 @@ export interface DeckTemplateBlock {
   align?: "left" | "center" | "right";
   uppercase?: boolean;
   imageCount?: number;
+  imagePadding?: number;
+  imageLayout?: DeckImageLayout;
+  hidden?: boolean;
+  locked?: boolean;
 }
 
 const PAGE_WIDTH = 1920;
@@ -195,7 +200,7 @@ function baseTalentTemplate(group: OptionsDeckGroup): DeckTemplateBlock[] {
     { id: "project", type: "field", field: "project", label: "Project", x: 66, y: 5, w: 32, h: 4, fontSize: 16, align: "right" },
     { id: "links", type: "links", label: "Links", x: 2, y: 13, w: 42, h: 4, fontSize: 18, fontWeight: 800 },
     { id: "date-status", type: "dateStatus", label: "Date status", x: 67, y: 12, w: 31, h: 16, fontSize: 12, fontWeight: 800 },
-    { id: "images", type: "imageGrid", label: "Images", x: 2, y: 22, w: 96, h: 56, imageCount: group.type === "LOCATION" ? 4 : 6 },
+    { id: "images", type: "imageGrid", label: "Images", x: 2, y: 22, w: 96, h: 56, imageCount: group.type === "LOCATION" ? 4 : 6, imagePadding: 12, imageLayout: "grid" },
     { id: "notes", type: "notes", field: "clientNotes", label: "Deck notes", x: 2, y: 81, w: 52, h: 10, fontSize: 18 },
     { id: "footer", type: "footer", label: "Footer", x: 2, y: 94, w: 96, h: 3, fontSize: 12 },
   ];
@@ -207,7 +212,7 @@ function baseLocationTemplate(): DeckTemplateBlock[] {
     { id: "location", type: "field", field: "location", label: "City / country", x: 80, y: 5, w: 17, h: 4, fontSize: 14, align: "right" },
     { id: "links", type: "links", label: "Links", x: 2, y: 13, w: 36, h: 4, fontSize: 18, fontWeight: 800 },
     { id: "date-status", type: "dateStatus", label: "Date status", x: 2, y: 17, w: 34, h: 5, fontSize: 16, fontWeight: 800 },
-    { id: "images", type: "imageGrid", label: "Images", x: 2, y: 24, w: 96, h: 31, imageCount: 4 },
+    { id: "images", type: "imageGrid", label: "Images", x: 2, y: 24, w: 96, h: 31, imageCount: 4, imagePadding: 12, imageLayout: "grid" },
     { id: "map", type: "map", label: "Map", x: 2, y: 57, w: 46, h: 33 },
     { id: "notes", type: "notes", field: "clientNotes", label: "Notes", x: 50, y: 59, w: 34, h: 18, fontSize: 15 },
     { id: "footer", type: "footer", label: "Footer", x: 2, y: 93, w: 96, h: 4, fontSize: 12 },
@@ -259,12 +264,16 @@ function renderImageGridBlock(candidate: DeckCandidate, block: DeckTemplateBlock
   const selected = selectedPhotos(candidate);
   const count = Math.max(1, Math.min(12, block.imageCount ?? 4));
   const columns = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(count))));
+  const padding = Math.max(0, Math.min(80, block.imagePadding ?? 8));
   const cells = Array.from({ length: count }).map((_, index) => {
     const photo = selected[index];
     const src = imageDataUrl(photo?.storedPath);
     return `<div class="image-cell">${src ? `<img src="${src}" alt="">` : `<div class="image-placeholder">No image</div>`}</div>`;
   }).join("");
-  return `<div class="block image-grid-block" style="${blockStyle(block)};grid-template-columns:repeat(${columns},minmax(0,1fr));">${cells}</div>`;
+  if (block.imageLayout === "justify") {
+    return `<div class="block image-grid-block image-grid-block--justify" style="${blockStyle(block)};--image-padding:${padding}px;--image-gap:${padding}px;">${cells}</div>`;
+  }
+  return `<div class="block image-grid-block" style="${blockStyle(block)};--image-padding:${padding}px;--image-gap:${padding}px;grid-template-columns:repeat(${columns},minmax(0,1fr));">${cells}</div>`;
 }
 
 function renderMapBlock(candidate: DeckCandidate, block: DeckTemplateBlock): string {
@@ -279,6 +288,7 @@ function renderFooterBlock(group: OptionsDeckGroup, block: DeckTemplateBlock, pa
 }
 
 function renderBlock(group: OptionsDeckGroup, candidate: DeckCandidate, block: DeckTemplateBlock, pageNumber: number): string {
+  if (block.hidden) return "";
   if (block.type === "field" || block.type === "notes") return renderTextBlock(group, candidate, block);
   if (block.type === "links") return renderLinksBlock(candidate, block);
   if (block.type === "dateStatus") return renderDateStatusBlock(candidate, block);
@@ -288,7 +298,7 @@ function renderBlock(group: OptionsDeckGroup, candidate: DeckCandidate, block: D
 }
 
 export function renderOptionsDeckHtml(group: OptionsDeckGroup, templateBlocks?: DeckTemplateBlock[] | null): string {
-  const blocks = templateBlocks?.length ? templateBlocks : defaultTemplateBlocks(group);
+  const blocks = templateBlocks?.length ? templateBlocks.filter((block) => !block.hidden) : defaultTemplateBlocks(group);
   const candidates = drawableCandidates(group);
   const body = candidates.length
     ? candidates.map((candidate, index) => (
@@ -314,7 +324,9 @@ export function renderOptionsDeckHtml(group: OptionsDeckGroup, templateBlocks?: 
     .links-block a, .links-block span { color: ${TEXT}; text-decoration: underline; text-underline-offset: 3px; }
     .date-status-block { display: flex; flex-direction: column; gap: 7px; border: 0; }
     .date-status-row { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; border: 1px solid; border-radius: 2px; padding: 0 10px; font-weight: 700; letter-spacing: 0; white-space: nowrap; }
-    .image-grid-block { display: grid; gap: 18px; padding: 8px; }
+    .image-grid-block { display: grid; gap: var(--image-gap, 18px); padding: var(--image-padding, 8px); }
+    .image-grid-block--justify { display: flex; align-items: flex-end; }
+    .image-grid-block--justify .image-cell { flex: 1 1 0; height: 100%; }
     .image-cell { min-width: 0; min-height: 0; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; background: #fff; }
     .image-cell img { max-width: 100%; max-height: 100%; object-fit: contain; object-position: center bottom; display: block; }
     .image-placeholder { width: 100%; height: 100%; display: grid; place-items: end center; padding-bottom: 24px; color: #b8b8b2; background: #f0f0ee; border: 1px solid #e1e1dc; font-size: 24px; }

@@ -16,6 +16,7 @@ type SortDirection = "asc" | "desc";
 type BlackbookAddressType = "WORK" | "BILLING" | "PERSONAL" | "CUSTOM";
 type DeckBlockType = "field" | "links" | "dateStatus" | "imageGrid" | "notes" | "map" | "footer";
 type DeckField = "name" | "subtitle" | "location" | "address" | "clientNotes" | "internalNotes" | "project";
+type DeckImageLayout = "grid" | "justify";
 
 interface DeckTemplateBlock {
   id: string;
@@ -31,6 +32,10 @@ interface DeckTemplateBlock {
   align?: "left" | "center" | "right";
   uppercase?: boolean;
   imageCount?: number;
+  imagePadding?: number;
+  imageLayout?: DeckImageLayout;
+  hidden?: boolean;
+  locked?: boolean;
 }
 
 interface DeckTemplate {
@@ -337,6 +342,20 @@ const DECK_FIELD_OPTIONS: Array<{ value: DeckField; label: string }> = [
   { value: "project", label: "Project" },
 ];
 
+const DECK_BLOCK_PRESETS: Array<{ label: string; block: Omit<DeckTemplateBlock, "id"> }> = [
+  { label: "Large title", block: { type: "field", field: "name", label: "Title", x: 2, y: 4, w: 60, h: 8, fontSize: 52, fontWeight: 900, uppercase: true } },
+  { label: "Subtitle", block: { type: "field", field: "subtitle", label: "Subtitle", x: 2, y: 12, w: 38, h: 4, fontSize: 18, fontWeight: 500 } },
+  { label: "Project tag", block: { type: "field", field: "project", label: "Project", x: 66, y: 5, w: 32, h: 4, fontSize: 16, align: "right" } },
+  { label: "Links row", block: { type: "links", label: "Links", x: 2, y: 14, w: 40, h: 4, fontSize: 18, fontWeight: 800 } },
+  { label: "Date status", block: { type: "dateStatus", label: "Date status", x: 68, y: 12, w: 30, h: 14, fontSize: 12, fontWeight: 800, align: "center" } },
+  { label: "Image grid 4", block: { type: "imageGrid", label: "Image grid", x: 2, y: 24, w: 96, h: 31, imageCount: 4, imagePadding: 12, imageLayout: "grid" } },
+  { label: "Image grid 6", block: { type: "imageGrid", label: "Image grid", x: 2, y: 22, w: 96, h: 48, imageCount: 6, imagePadding: 12, imageLayout: "grid" } },
+  { label: "Justified image row", block: { type: "imageGrid", label: "Justified images", x: 2, y: 28, w: 96, h: 24, imageCount: 5, imagePadding: 10, imageLayout: "justify" } },
+  { label: "Map", block: { type: "map", label: "Map", x: 2, y: 58, w: 46, h: 32 } },
+  { label: "Notes", block: { type: "notes", field: "clientNotes", label: "Deck notes", x: 50, y: 60, w: 34, h: 16, fontSize: 15 } },
+  { label: "Footer", block: { type: "footer", label: "Footer", x: 2, y: 94, w: 96, h: 3, fontSize: 12 } },
+];
+
 function baseTalentTemplate(group: OptionGroup): DeckTemplate {
   return {
     id: "editorial-grid",
@@ -345,7 +364,7 @@ function baseTalentTemplate(group: OptionGroup): DeckTemplate {
       { id: "name", type: "field", field: "name", label: "Name", x: 2, y: 3, w: 74, h: 9, fontSize: 72, fontWeight: 900, uppercase: true },
       { id: "links", type: "links", label: "Links", x: 2, y: 13, w: 36, h: 4, fontSize: 20, fontWeight: 500 },
       { id: "date-status", type: "dateStatus", label: "Date status", x: 82, y: 7, w: 16, h: 15, fontSize: 13, fontWeight: 700, align: "center" },
-      { id: "images", type: "imageGrid", label: "Image grid", x: 2, y: 21, w: 76, h: 55, imageCount: 8 },
+      { id: "images", type: "imageGrid", label: "Image grid", x: 2, y: 21, w: 76, h: 55, imageCount: 8, imagePadding: 12, imageLayout: "grid" },
       { id: "notes", type: "notes", field: "clientNotes", label: "Deck notes", x: 2, y: 80, w: 74, h: 14, fontSize: 18 },
       { id: "footer", type: "footer", label: "Footer", x: 82, y: 88, w: 15, h: 8, fontSize: 15, align: "right" },
     ],
@@ -361,7 +380,7 @@ function baseLocationTemplate(): DeckTemplate {
       { id: "location", type: "field", field: "location", label: "City / country", x: 80, y: 5, w: 17, h: 4, fontSize: 14, align: "right" },
       { id: "links", type: "links", label: "Links", x: 2, y: 13, w: 36, h: 4, fontSize: 18, fontWeight: 800 },
       { id: "date-status", type: "dateStatus", label: "Date status", x: 2, y: 17, w: 34, h: 5, fontSize: 16, fontWeight: 800 },
-      { id: "images", type: "imageGrid", label: "Images", x: 2, y: 24, w: 96, h: 31, imageCount: 4 },
+      { id: "images", type: "imageGrid", label: "Images", x: 2, y: 24, w: 96, h: 31, imageCount: 4, imagePadding: 12, imageLayout: "grid" },
       { id: "map", type: "map", label: "Map", x: 2, y: 57, w: 46, h: 33 },
       { id: "notes", type: "notes", field: "clientNotes", label: "Notes", x: 50, y: 59, w: 34, h: 18, fontSize: 15 },
       { id: "footer", type: "footer", label: "Footer", x: 2, y: 93, w: 96, h: 4, fontSize: 12 },
@@ -1546,6 +1565,26 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
     };
   }, [drag]);
 
+  useEffect(() => {
+    function keyDown(event: globalThis.KeyboardEvent) {
+      if (viewMode !== "edit" || !selectedBlock) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      if (selectedBlock.locked) return;
+      const step = event.shiftKey ? 2.5 : snapEnabled && !event.altKey ? DECK_SNAP_PERCENT : 0.25;
+      const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
+      const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
+      updateBlock(selectedBlock.id, {
+        x: constrainDeckValue(selectedBlock.x + dx, 0, 100 - selectedBlock.w, snapEnabled && !event.altKey),
+        y: constrainDeckValue(selectedBlock.y + dy, 0, 100 - selectedBlock.h, snapEnabled && !event.altKey),
+      });
+    }
+    document.addEventListener("keydown", keyDown);
+    return () => document.removeEventListener("keydown", keyDown);
+  }, [selectedBlock, snapEnabled, viewMode]);
+
   function updateBlock(blockId: string, patch: Partial<DeckTemplateBlock>) {
     setTemplate((current) => ({
       ...current,
@@ -1553,23 +1592,39 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
     }));
   }
 
-  function addBlock(type: DeckBlockType) {
-    const id = `${type}-${Date.now()}`;
-    const block: DeckTemplateBlock = {
-      id,
-      type,
-      label: type === "field" ? "Field" : label(type),
-      field: type === "field" || type === "notes" ? "clientNotes" : undefined,
-      x: 8,
-      y: 8,
-      w: type === "imageGrid" ? 34 : 24,
-      h: type === "imageGrid" ? 28 : 8,
-      fontSize: 18,
-      fontWeight: type === "field" ? 700 : 400,
-      imageCount: type === "imageGrid" ? 4 : undefined,
-    };
+  function addPreset(preset: Omit<DeckTemplateBlock, "id">) {
+    const id = `${preset.type}-${Date.now()}`;
+    const block: DeckTemplateBlock = { id, ...preset };
     setTemplate((current) => ({ ...current, blocks: [...current.blocks, block] }));
     setSelectedBlockId(id);
+  }
+
+  function duplicateBlock(block: DeckTemplateBlock) {
+    const id = `${block.type}-${Date.now()}`;
+    const duplicate: DeckTemplateBlock = {
+      ...block,
+      id,
+      label: `${block.label} copy`,
+      x: constrainDeckValue(block.x + 2, 0, 100 - block.w, false),
+      y: constrainDeckValue(block.y + 2, 0, 100 - block.h, false),
+      hidden: false,
+      locked: false,
+    };
+    setTemplate((current) => ({ ...current, blocks: [...current.blocks, duplicate] }));
+    setSelectedBlockId(id);
+  }
+
+  function moveBlockLayer(blockId: string, direction: "back" | "forward") {
+    setTemplate((current) => {
+      const index = current.blocks.findIndex((block) => block.id === blockId);
+      if (index < 0) return current;
+      const nextIndex = direction === "forward" ? Math.min(current.blocks.length - 1, index + 1) : Math.max(0, index - 1);
+      if (nextIndex === index) return current;
+      const blocks = current.blocks.slice();
+      const [block] = blocks.splice(index, 1);
+      blocks.splice(nextIndex, 0, block);
+      return { ...current, blocks };
+    });
   }
 
   function resetTemplate(next: "editorial" | "location") {
@@ -1644,19 +1699,19 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
 
         <div className="grid min-h-0 flex-1 grid-cols-[190px_1fr_260px]">
           <aside className="border-r border-gray-300 bg-white p-3">
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400">Place fields</div>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400">Blocks</div>
             <div className="grid gap-1">
-              {(["field", "links", "dateStatus", "imageGrid", "notes", "map", "footer"] as const).map((type) => (
-                <button key={type} onClick={() => addBlock(type)} className="rounded-md border border-gray-200 px-2 py-2 text-left text-xs text-gray-700 hover:border-gray-400 hover:bg-gray-50">
-                  + {type === "dateStatus" ? "Date status" : type === "imageGrid" ? "Image grid" : label(type)}
+              {DECK_BLOCK_PRESETS.map((preset) => (
+                <button key={preset.label} onClick={() => addPreset(preset.block)} className="rounded-md border border-gray-200 px-2 py-2 text-left text-xs text-gray-700 hover:border-gray-400 hover:bg-gray-50">
+                  + {preset.label}
                 </button>
               ))}
             </div>
-            <div className="mt-5 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400">Blocks</div>
+            <div className="mt-5 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400">Layer stack</div>
             <div className="mt-2 max-h-[50vh] overflow-auto">
               {template.blocks.map((block) => (
                 <button key={block.id} onClick={() => setSelectedBlockId(block.id)} className={`mb-1 block w-full rounded px-2 py-1.5 text-left text-[11px] ${selectedBlockId === block.id ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-50"}`}>
-                  {block.label}
+                  <span className={block.hidden ? "opacity-40" : ""}>{block.locked ? "🔒 " : ""}{block.hidden ? "Hidden · " : ""}{block.label}</span>
                 </button>
               ))}
             </div>
@@ -1677,6 +1732,7 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
                   onSelectBlock={setSelectedBlockId}
                   onDragStart={(block, event) => {
                     setSelectedBlockId(block.id);
+                    if (block.locked) return;
                     setDrag({
                       kind: "move",
                       blockId: block.id,
@@ -1687,6 +1743,7 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
                   }}
                   onResizeStart={(block, handle, event) => {
                     setSelectedBlockId(block.id);
+                    if (block.locked) return;
                     setDrag({
                       kind: "resize",
                       blockId: block.id,
@@ -1709,6 +1766,10 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
               <BlockInspector
                 block={selectedBlock}
                 onChange={(patch) => updateBlock(selectedBlock.id, patch)}
+                onDuplicate={() => duplicateBlock(selectedBlock)}
+                onLayer={(direction) => moveBlockLayer(selectedBlock.id, direction)}
+                onToggleLock={() => updateBlock(selectedBlock.id, { locked: !selectedBlock.locked })}
+                onToggleHidden={() => updateBlock(selectedBlock.id, { hidden: !selectedBlock.hidden })}
                 onDelete={() => {
                   setTemplate((current) => ({ ...current, blocks: current.blocks.filter((block) => block.id !== selectedBlock.id) }));
                   setSelectedBlockId(template.blocks.find((block) => block.id !== selectedBlock.id)?.id ?? "");
@@ -1772,9 +1833,24 @@ function resizeDeckRect(drag: Extract<DeckDragState, { kind: "resize" }>, dx: nu
   return { x, y, w, h };
 }
 
-function BlockInspector({ block, onChange, onDelete }: { block: DeckTemplateBlock; onChange: (patch: Partial<DeckTemplateBlock>) => void; onDelete: () => void }) {
+function BlockInspector({ block, onChange, onDuplicate, onLayer, onToggleLock, onToggleHidden, onDelete }: {
+  block: DeckTemplateBlock;
+  onChange: (patch: Partial<DeckTemplateBlock>) => void;
+  onDuplicate: () => void;
+  onLayer: (direction: "back" | "forward") => void;
+  onToggleLock: () => void;
+  onToggleHidden: () => void;
+  onDelete: () => void;
+}) {
   return (
     <div className="space-y-3 text-xs">
+      <div className="grid grid-cols-2 gap-1">
+        <button onClick={onDuplicate} className="rounded-md border border-gray-200 px-2 py-1.5 text-gray-600 hover:bg-gray-50">Duplicate</button>
+        <button onClick={onToggleLock} className="rounded-md border border-gray-200 px-2 py-1.5 text-gray-600 hover:bg-gray-50">{block.locked ? "Unlock" : "Lock"}</button>
+        <button onClick={() => onLayer("back")} className="rounded-md border border-gray-200 px-2 py-1.5 text-gray-600 hover:bg-gray-50">Send back</button>
+        <button onClick={() => onLayer("forward")} className="rounded-md border border-gray-200 px-2 py-1.5 text-gray-600 hover:bg-gray-50">Bring front</button>
+        <button onClick={onToggleHidden} className="col-span-2 rounded-md border border-gray-200 px-2 py-1.5 text-gray-600 hover:bg-gray-50">{block.hidden ? "Show in export" : "Hide from export"}</button>
+      </div>
       <label className="block text-gray-500">Label<input value={block.label} onChange={(event) => onChange({ label: event.target.value })} className="mt-1 h-8 w-full rounded border border-gray-200 px-2 text-gray-900" /></label>
       {(block.type === "field" || block.type === "notes") && (
         <label className="block text-gray-500">Field
@@ -1795,7 +1871,18 @@ function BlockInspector({ block, onChange, onDelete }: { block: DeckTemplateBloc
           <NumberSetting label="Weight" value={block.fontWeight ?? 400} onChange={(fontWeight) => onChange({ fontWeight })} />
         </div>
       )}
-      {block.type === "imageGrid" && <NumberSetting label="Image count" value={block.imageCount ?? 4} onChange={(imageCount) => onChange({ imageCount })} />}
+      {block.type === "imageGrid" && (
+        <div className="space-y-2 rounded-md border border-gray-100 bg-gray-50 p-2">
+          <NumberSetting label="Image count" value={block.imageCount ?? 4} onChange={(imageCount) => onChange({ imageCount })} />
+          <NumberSetting label="Padding" value={block.imagePadding ?? 8} onChange={(imagePadding) => onChange({ imagePadding })} />
+          <label className="block text-gray-500">Layout
+            <select value={block.imageLayout ?? "grid"} onChange={(event) => onChange({ imageLayout: event.target.value as DeckImageLayout })} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-gray-900">
+              <option value="grid">Tiled boxes</option>
+              <option value="justify">Justified row</option>
+            </select>
+          </label>
+        </div>
+      )}
       <label className="flex items-center gap-2 text-gray-500"><input type="checkbox" checked={Boolean(block.uppercase)} onChange={(event) => onChange({ uppercase: event.target.checked })} /> Uppercase</label>
       <label className="block text-gray-500">Align
         <select value={block.align ?? "left"} onChange={(event) => onChange({ align: event.target.value as DeckTemplateBlock["align"] })} className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-gray-900">
@@ -1841,17 +1928,19 @@ function DeckPagePreview({ matrix, group, dates, candidate, template, selectedBl
           key={block.id}
           onMouseDown={(event) => {
             if ((event.target as HTMLElement).dataset.resizeHandle) return;
+            if (block.locked) return;
             onDragStart(block, event);
           }}
           onClick={(event) => {
             event.stopPropagation();
             onSelectBlock(block.id);
           }}
-          className={`absolute cursor-move overflow-hidden border-2 border-dotted border-red-500 ${selectedBlockId === block.id ? "bg-red-50/20 ring-2 ring-red-500/30" : ""}`}
+          className={`absolute overflow-hidden border-2 border-dotted ${block.locked ? "cursor-default border-gray-400" : "cursor-move border-red-500"} ${block.hidden ? "opacity-30" : ""} ${selectedBlockId === block.id ? "bg-red-50/20 ring-2 ring-red-500/30" : ""}`}
           style={{ left: `${block.x}%`, top: `${block.y}%`, width: `${block.w}%`, height: `${block.h}%` }}
         >
           <DeckBlockContent matrix={matrix} group={group} dates={dates} candidate={candidate} block={block} />
-          {selectedBlockId === block.id && (
+          {block.hidden && <div className="absolute left-1 top-1 rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-500">Hidden</div>}
+          {selectedBlockId === block.id && !block.locked && (
             <DeckResizeHandles block={block} onResizeStart={onResizeStart} />
           )}
         </div>
@@ -1941,16 +2030,26 @@ function DeckBlockContent({ matrix, group, dates, candidate, block }: {
   }
   if (block.type === "imageGrid") {
     const photos = candidate.photos.filter((photo) => photo.exportSelected).concat(candidate.photos.filter((photo) => !photo.exportSelected)).slice(0, block.imageCount ?? 4);
+    const count = block.imageCount ?? 4;
+    const padding = Math.max(0, Math.min(80, block.imagePadding ?? 8));
+    const cells = Array.from({ length: count }).map((_, index) => {
+      const photo = photos[index];
+      return (
+        <div key={photo?.id ?? index} className="flex min-h-0 min-w-0 items-end justify-center overflow-hidden bg-white">
+          {photo ? <img src={photo.url} className="max-h-full max-w-full object-contain object-bottom" /> : <div className="grid h-full w-full place-items-center border border-gray-200 text-gray-300"><ImageIcon size={22} /></div>}
+        </div>
+      );
+    });
+    if (block.imageLayout === "justify") {
+      return (
+        <div className="flex h-full w-full items-end" style={{ gap: padding, padding }}>
+          {cells.map((cell, index) => <div key={index} className="h-full min-w-0 flex-1">{cell}</div>)}
+        </div>
+      );
+    }
     return (
-      <div className="grid h-full w-full gap-4 p-2" style={{ gridTemplateColumns: `repeat(${Math.min(4, Math.max(1, Math.ceil(Math.sqrt(block.imageCount ?? 4))))}, minmax(0, 1fr))` }}>
-        {Array.from({ length: block.imageCount ?? 4 }).map((_, index) => {
-          const photo = photos[index];
-          return (
-            <div key={photo?.id ?? index} className="flex items-end justify-center overflow-hidden bg-white">
-              {photo ? <img src={photo.url} className="max-h-full max-w-full object-contain object-bottom" /> : <div className="grid h-full w-full place-items-center border border-gray-200 text-gray-300"><ImageIcon size={22} /></div>}
-            </div>
-          );
-        })}
+      <div className="grid h-full w-full" style={{ gap: padding, padding, gridTemplateColumns: `repeat(${Math.min(4, Math.max(1, Math.ceil(Math.sqrt(count))))}, minmax(0, 1fr))` }}>
+        {cells}
       </div>
     );
   }

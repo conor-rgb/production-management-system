@@ -1,3 +1,88 @@
+# HANDOVER - 2026-05-27 - Options Deck Editor Layers and Image Layouts
+
+## Built This Session
+- Added richer controls to the options PDF deck designer.
+- Image blocks now support:
+  - `Tiled boxes` layout,
+  - `Justified row` layout,
+  - editable image count,
+  - editable padding/gap.
+- Added branded block presets in the left rail:
+  - Large title,
+  - Subtitle,
+  - Project tag,
+  - Links row,
+  - Date status,
+  - Image grid 4,
+  - Image grid 6,
+  - Justified image row,
+  - Map,
+  - Notes,
+  - Footer.
+- Added layer controls in the inspector:
+  - Duplicate,
+  - Lock / unlock,
+  - Send back,
+  - Bring front,
+  - Hide / show in export.
+- Added keyboard nudging for selected blocks:
+  - Arrow keys move a block.
+  - Shift + arrow moves further.
+  - Alt temporarily bypasses snap.
+- Locked blocks can still be selected but cannot be dragged or resized.
+- Hidden blocks remain visible as faint placeholders in Edit mode but are excluded from Final preview and PDF export.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Extended deck block JSON with:
+  - `imagePadding`
+  - `imageLayout`
+  - `hidden`
+  - `locked`
+- The editor preview renders image grids and justified rows the same way the export renderer does:
+  - images stay contained,
+  - horizontally centered,
+  - bottom aligned inside their cells.
+
+## Backend
+- Updated `backend/src/services/optionsDeckPdf.ts`.
+- Updated `backend/src/routes/options.ts`.
+- The deck template sanitizer now preserves the new block settings.
+- HTML/PDF export now respects:
+  - hidden blocks,
+  - image padding,
+  - image layout mode.
+- No Prisma migration was needed because deck templates are saved as JSON.
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK.
+- Chromium export smoke test passed with a custom justified image row template:
+  - generated PDF buffer: 10,644,144 bytes.
+
+## Current State
+- The deck designer now has the core layer and image layout controls needed to start making client-facing option pages without editing code.
+- The user can choose between square/tiled image blocks and a justified image row, and tune image padding directly in the inspector.
+- Final preview and exported PDF use the same backend renderer, so saved image settings carry through to output.
+
+## Known Gaps / Technical Debt
+- Layer controls move blocks one step at a time rather than “send fully to back/front”.
+- There is no reusable global template library yet.
+- The editor still uses a fixed 1280px canvas scale; a responsive canvas scale would make laptop editing easier.
+- No per-image crop/focal-point controls yet.
+
+## Exact Next Steps
+1. Add a saved global template library with “duplicate template” and “apply to group”.
+2. Add per-image crop/focal-point controls for exported decks.
+3. Add template thumbnails so base layouts are visually selectable.
+4. Start the dedicated PDF template designer plan once the user provides/approves the final deck layout rules.
+
+---
+
 # HANDOVER - 2026-05-27 - Options PDF Editor Resize and Final Preview
 
 ## Built This Session

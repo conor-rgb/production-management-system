@@ -550,6 +550,7 @@ function publicCandidatePdfUrl(token: string): string {
 const DECK_BLOCK_TYPES = new Set(["field", "links", "dateStatus", "imageGrid", "notes", "map", "footer"]);
 const DECK_FIELDS = new Set(["name", "subtitle", "location", "address", "clientNotes", "internalNotes", "project"]);
 const DECK_ALIGNS = new Set(["left", "center", "right"]);
+const DECK_IMAGE_LAYOUTS = new Set(["grid", "justify"]);
 
 function templateNumber(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value);
@@ -576,9 +577,13 @@ function sanitizeDeckBlocks(value: unknown): DeckTemplateBlock[] {
       fontWeight: templateNumber(record.fontWeight, 400, 100, 1000),
       uppercase: record.uppercase === true,
       imageCount: templateNumber(record.imageCount, 4, 1, 12),
+      imagePadding: templateNumber(record.imagePadding, 8, 0, 80),
+      hidden: record.hidden === true,
+      locked: record.locked === true,
     };
     if (typeof record.field === "string" && DECK_FIELDS.has(record.field)) block.field = record.field as DeckTemplateBlock["field"];
     if (typeof record.align === "string" && DECK_ALIGNS.has(record.align)) block.align = record.align as DeckTemplateBlock["align"];
+    if (typeof record.imageLayout === "string" && DECK_IMAGE_LAYOUTS.has(record.imageLayout)) block.imageLayout = record.imageLayout as DeckTemplateBlock["imageLayout"];
     return [block];
   });
 }
