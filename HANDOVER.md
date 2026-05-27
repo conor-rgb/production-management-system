@@ -1,3 +1,30 @@
+# HANDOVER - 2026-05-27 - Justified Image Editor Preview Fix
+
+## Built This Session
+- Fixed the options deck editor preview for justified image rows.
+- Export/PDF rendering was already correct; the bug was only in the React editor preview.
+- Moved aspect-ratio sizing onto the justified item wrapper so the preview constrains images to the block height instead of letting them render at intrinsic size.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Justified image preview now:
+  - keeps each image at block-height,
+  - preserves natural image aspect ratio,
+  - bottom-aligns images,
+  - matches the backend export behaviour more closely.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK.
+
+## Current State
+- Justified image mode should no longer show huge/full-size images in the editor.
+
+---
+
 # HANDOVER - 2026-05-27 - Options Image Grid Fit Controls
 
 ## Built This Session

@@ -2056,12 +2056,10 @@ function DeckBlockContent({ matrix, group, dates, candidate, block }: {
         ? "h-full w-auto max-w-none object-contain object-bottom"
         : "max-h-full max-w-full object-contain object-bottom";
     const cells = slots.map((photo, index) => {
-      const ratio = photo?.width && photo.height ? photo.width / photo.height : 1.4;
       return (
         <div
           key={photo?.id ?? index}
-          className="flex min-h-0 min-w-0 items-end justify-center overflow-hidden bg-white"
-          style={block.imageLayout === "justify" ? { aspectRatio: ratio } : undefined}
+          className="flex h-full min-h-0 min-w-0 items-end justify-center overflow-hidden bg-white"
         >
           {photo ? <img src={photo.url} className={imageClass} /> : <div className="grid h-full w-full place-items-center border border-gray-200 text-gray-300"><ImageIcon size={22} /></div>}
         </div>
@@ -2073,7 +2071,19 @@ function DeckBlockContent({ matrix, group, dates, candidate, block }: {
           className={`flex h-full w-full items-end content-end overflow-hidden ${block.imageAllowRows ? "flex-wrap" : "flex-nowrap"}`}
           style={{ gap, padding }}
         >
-          {cells.map((cell, index) => <div key={index} className={block.imageAllowRows ? "min-w-0" : "h-full min-w-0 shrink-0"} style={block.imageAllowRows ? { height: `calc((100% - ${gap}px) / 2)` } : { height: "100%" }}>{cell}</div>)}
+          {cells.map((cell, index) => {
+            const photo = slots[index];
+            const ratio = photo?.width && photo.height ? Math.max(0.2, Math.min(8, photo.width / photo.height)) : 1.4;
+            return (
+              <div
+                key={photo?.id ?? index}
+                className={block.imageAllowRows ? "min-w-0 shrink-0" : "h-full min-w-0 shrink-0"}
+                style={block.imageAllowRows ? { height: `calc((100% - ${gap}px) / 2)`, aspectRatio: ratio } : { height: "100%", aspectRatio: ratio }}
+              >
+                {cell}
+              </div>
+            );
+          })}
         </div>
       );
     }
