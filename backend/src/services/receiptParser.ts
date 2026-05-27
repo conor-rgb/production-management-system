@@ -1,5 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+export interface ParsedReceiptLineItem {
+  description: string | null;
+  amountNet: number | null;
+  amountGross: number | null;
+  vatAmount: number | null;
+}
+
 export interface ParsedReceipt {
   vendor: string | null;
   invoiceNumber: string | null;
@@ -14,6 +21,7 @@ export interface ParsedReceipt {
   suggestedAicpSectionName: string | null;
   confidence: "high" | "medium" | "low";
   rawText: string | null;
+  lineItems: ParsedReceiptLineItem[];
 }
 
 type ReceiptJson = {
@@ -30,6 +38,7 @@ type ReceiptJson = {
   suggestedAicpSectionName?: unknown;
   confidence?: unknown;
   rawText?: unknown;
+  lineItems?: unknown;
 };
 
 const RECEIPT_MODEL = "claude-haiku-4-5-20251001";
@@ -49,7 +58,15 @@ const RECEIPT_ANALYSIS_PROMPT = `Analyse this document carefully. It may be a re
   "suggestedAicpSection": "single letter AICP section code this expense most likely belongs to based on the description",
   "suggestedAicpSectionName": "name of that AICP section",
   "confidence": "high if all key fields are clearly readable, medium if some fields needed inference, low if image is unclear or key fields are missing",
-  "rawText": "the most important text extracted — vendor name, total amount, date as they appear in the document"
+  "rawText": "the most important text extracted — vendor name, total amount, date as they appear in the document",
+  "lineItems": [
+    {
+      "description": "the invoice line item description exactly as shown, or a concise readable summary",
+      "amountNet": line item amount excluding VAT as a number, or null,
+      "amountGross": line item amount including VAT as a number, or null,
+      "vatAmount": line item VAT amount as a number, or null
+    }
+  ]
 }
 
 AICP sections: A=Pre-Production & Wrap Labor, B=Shooting Crew Labor, C=Pre-Production Expenses, D=Location & Travel, E=Makeup/Wardrobe/Animals, F=Studio & Stage, G=Art Department Labor, H=Art Department Expenses, I=Equipment, J=Film & Digital Media, K=Miscellaneous, L=Director/Creative Fees, M=Talent Labor, N=Talent Expenses, O=Post Production Labor, P=Editorial & Finishing
@@ -65,6 +82,8 @@ Important rules:
 - If only one total is shown with no VAT breakdown: use it as amountGross and set amountNet and vatAmount to null
 - UK standard VAT rate is 20% — if VAT is mentioned but no breakdown shown, you may calculate: net = gross / 1.20
 - Some suppliers are not VAT registered — in that case amountGross = amountNet and vatAmount = 0
+- Extract invoice line items where visible. If no individual line items are visible, return an empty lineItems array
+- Do not include summary totals as lineItems unless they are the only visible payable item
 - If a field is genuinely not present or unreadable: use null
 - Amount must always be a plain number, never a string`;
 
@@ -88,6 +107,20 @@ function percentageValue(value: unknown): number | null {
   return Number.isFinite(percentage) ? percentage : null;
 }
 
+function receiptLineItems(value: unknown): ParsedReceiptLineItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): ParsedReceiptLineItem[] => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as { description?: unknown; amountNet?: unknown; amountGross?: unknown; vatAmount?: unknown };
+    const description = cleanText(record.description);
+    const amountNet = amountToPence(record.amountNet);
+    const amountGross = amountToPence(record.amountGross);
+    const vatAmount = amountToPence(record.vatAmount);
+    if (!description && amountNet === null && amountGross === null) return [];
+    return [{ description, amountNet, amountGross, vatAmount }];
+  });
+}
+
 function fallback(rawText: string | null = null): ParsedReceipt {
   return {
     vendor: null,
@@ -103,6 +136,7 @@ function fallback(rawText: string | null = null): ParsedReceipt {
     suggestedAicpSectionName: null,
     confidence: "low",
     rawText,
+    lineItems: [],
   };
 }
 
@@ -123,6 +157,7 @@ function parseReceiptResponse(text: string): ParsedReceipt {
       suggestedAicpSectionName: cleanText(parsed.suggestedAicpSectionName),
       confidence: confidenceValue(parsed.confidence),
       rawText: cleanText(parsed.rawText),
+      lineItems: receiptLineItems(parsed.lineItems),
     };
   } catch {
     return fallback(text || null);

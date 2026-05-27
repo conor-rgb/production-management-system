@@ -19,7 +19,7 @@ import {
 } from "../services/budgetService";
 import { exportRevisionPdf } from "../services/budgetPdf";
 import { autoFileDocument } from "../services/fileStorage";
-import { parseReceiptImage } from "../services/receiptParser";
+import { ParsedReceiptLineItem, parseReceiptImage } from "../services/receiptParser";
 
 const router = Router();
 const invoiceUpload = multer({
@@ -141,23 +141,65 @@ function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+function textTokens(value: string): Set<string> {
+  const stopWords = new Set(["the", "and", "for", "with", "cost", "line", "item", "fee", "fees", "day", "days", "kit"]);
+  return new Set(value.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((token) => token.length > 2 && !stopWords.has(token)));
+}
+
+function tokenScore(left: string, right: string): number {
+  const leftTokens = textTokens(left);
+  const rightTokens = textTokens(right);
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  let overlap = 0;
+  leftTokens.forEach((token) => {
+    if (rightTokens.has(token)) overlap += 1;
+  });
+  return overlap / Math.max(leftTokens.size, rightTokens.size);
+}
+
 function suggestBillAllocations(
-  allocations: Array<{ id: string; amount: number }>,
-  parsedNetAmount: number | null
-): Array<{ id: string; amount: number }> {
+  allocations: Array<{ id: string; amount: number; label: string }>,
+  parsedNetAmount: number | null,
+  lineItems: ParsedReceiptLineItem[] = []
+): Array<{ id: string; amount: number; matchedLineItems: string[] }> {
+  const matchedTotals = new Map<string, { amount: number; labels: string[] }>();
+  for (const lineItem of lineItems) {
+    const lineAmount = lineItem.amountNet ?? lineItem.amountGross;
+    if (!lineItem.description || !lineAmount || lineAmount <= 0) continue;
+    const best = allocations
+      .map((allocation) => ({ allocation, score: tokenScore(lineItem.description ?? "", allocation.label) }))
+      .sort((a, b) => b.score - a.score)[0];
+    if (!best || best.score < 0.16) continue;
+    const current = matchedTotals.get(best.allocation.id) ?? { amount: 0, labels: [] };
+    current.amount += lineAmount / 100;
+    current.labels.push(lineItem.description);
+    matchedTotals.set(best.allocation.id, current);
+  }
+
+  if (matchedTotals.size) {
+    return allocations.map((allocation) => {
+      const matched = matchedTotals.get(allocation.id);
+      return {
+        id: allocation.id,
+        amount: roundMoney(matched?.amount ?? 0),
+        matchedLineItems: matched?.labels ?? [],
+      };
+    });
+  }
+
   const currentTotal = allocations.reduce((sum, allocation) => sum + Number(allocation.amount ?? 0), 0);
   if (!parsedNetAmount || parsedNetAmount <= 0 || currentTotal <= 0) {
-    return allocations.map((allocation) => ({ id: allocation.id, amount: roundMoney(Number(allocation.amount ?? 0)) }));
+    return allocations.map((allocation) => ({ id: allocation.id, amount: roundMoney(Number(allocation.amount ?? 0)), matchedLineItems: [] }));
   }
 
   let running = 0;
   return allocations.map((allocation, index) => {
     if (index === allocations.length - 1) {
-      return { id: allocation.id, amount: roundMoney(parsedNetAmount - running) };
+      return { id: allocation.id, amount: roundMoney(parsedNetAmount - running), matchedLineItems: [] };
     }
     const amount = roundMoney((Number(allocation.amount ?? 0) / currentTotal) * parsedNetAmount);
     running += amount;
-    return { id: allocation.id, amount };
+    return { id: allocation.id, amount, matchedLineItems: [] };
   });
 }
 
@@ -748,7 +790,21 @@ router.post("/purchase-orders/:purchaseOrderId/parse-bill", async (req: Request,
 
       const po = await prisma.purchaseOrderGroup.findUnique({
         where: { id: req.params.purchaseOrderId },
-        include: { allocations: true },
+        include: {
+          allocations: {
+            include: {
+              lineItem: {
+                select: {
+                  lineCode: true,
+                  description: true,
+                  clientNotes: true,
+                  internalNotes: true,
+                  section: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
       });
       if (!po) {
         res.status(404).json({ error: "PO not found" });
@@ -760,8 +816,20 @@ router.post("/purchase-orders/:purchaseOrderId/parse-bill", async (req: Request,
       const parsedGrossAmount = parsed.amountGross ? parsed.amountGross / 100 : null;
       const suggestedAmount = parsedNetAmount ?? parsedGrossAmount;
       const suggestedAllocations = suggestBillAllocations(
-        po.allocations.map((allocation) => ({ id: allocation.id, amount: Number(allocation.amount ?? 0) })),
-        suggestedAmount
+        po.allocations.map((allocation) => ({
+          id: allocation.id,
+          amount: Number(allocation.amount ?? 0),
+          label: [
+            allocation.description,
+            allocation.lineItem.lineCode,
+            allocation.lineItem.description,
+            allocation.lineItem.clientNotes,
+            allocation.lineItem.internalNotes,
+            allocation.lineItem.section.name,
+          ].filter(Boolean).join(" "),
+        })),
+        suggestedAmount,
+        parsed.lineItems
       );
 
       res.json({
@@ -776,6 +844,12 @@ router.post("/purchase-orders/:purchaseOrderId/parse-bill", async (req: Request,
         description: parsed.description,
         confidence: parsed.confidence,
         rawText: parsed.rawText,
+        lineItems: parsed.lineItems.map((lineItem) => ({
+          description: lineItem.description,
+          amountNet: lineItem.amountNet ? lineItem.amountNet / 100 : null,
+          amountGross: lineItem.amountGross ? lineItem.amountGross / 100 : null,
+          vatAmount: lineItem.vatAmount ? lineItem.vatAmount / 100 : null,
+        })),
         allocations: suggestedAllocations,
       });
     } catch (caught) {

@@ -1,3 +1,58 @@
+# HANDOVER - 2026-05-27 - Semantic Bill Line Matching for Grouped POs
+
+## Built This Session
+- Extended AI bill parsing so it extracts invoice line items, not just invoice-level totals.
+- Grouped PO bill parsing now tries to match extracted invoice line items to each PO allocation using the allocation/budget line text.
+- The bill drawer shows matched invoice line item descriptions beneath the relevant allocation row.
+- If no line-item match is confident enough, the system falls back to proportional allocation from the parsed invoice total.
+
+## Backend
+- Updated `backend/src/services/receiptParser.ts`.
+- `ParsedReceipt` now includes:
+  - `lineItems[]`,
+  - each with description, net amount, gross amount, and VAT amount.
+- Updated the AI extraction prompt to ask for visible invoice line items.
+- Updated `backend/src/routes/budgets.ts`.
+- `POST /api/budgets/purchase-orders/:purchaseOrderId/parse-bill` now:
+  - fetches allocation line item context,
+  - builds a matching label from PO allocation description, line code, line description, notes, and section name,
+  - scores extracted invoice line descriptions against those labels,
+  - applies matched invoice line totals to the best allocation,
+  - returns matched line item labels to the frontend.
+
+## Frontend
+- Updated `frontend/src/pages/Productions.tsx`.
+- AI parse summary now reports how many invoice line items were extracted.
+- Allocation rows show `Matched: ...` when an invoice line item was semantically matched.
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
+
+## Current State
+- The grouped PO bill flow now has three levels of intelligence:
+  1. invoice metadata extraction,
+  2. invoice line item extraction,
+  3. allocation matching by budget-line context with proportional fallback.
+- This should handle agency invoices covering several PO lines more cleanly than the first proportional-only pass.
+
+## Known Gaps / Technical Debt
+- Matching is still deterministic token scoring after AI extraction, not a second Claude call with explicit PO context.
+- If invoice language is very different from budget line naming, it may still fall back or match imperfectly.
+- The drawer does not yet expose manual "assign this invoice line to this allocation" controls.
+
+## Exact Next Steps
+1. Add manual invoice-line-to-allocation review controls in the bill drawer.
+2. Add PO PDF generation and email send.
+3. Add secure supplier onboarding links for new Blackbook suppliers.
+4. Add grouped bill paid/unpaid controls once FreeAgent matching is ready.
+
+---
+
 # HANDOVER - 2026-05-27 - AI Bill Parsing for Grouped POs
 
 ## Built This Session

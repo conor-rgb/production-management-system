@@ -64,7 +64,8 @@ type ParsedBill = {
   description: string | null;
   confidence: "high" | "medium" | "low";
   rawText: string | null;
-  allocations: Array<{ id: string; amount: number }>;
+  lineItems: Array<{ description: string | null; amountNet: number | null; amountGross: number | null; vatAmount: number | null }>;
+  allocations: Array<{ id: string; amount: number; matchedLineItems?: string[] }>;
 };
 const PO_STATUS_LABELS: Record<PurchaseOrderStatus, string> = {
   DRAFT: "Draft",
@@ -681,6 +682,9 @@ function PurchaseOrderBillPanel({ po, onClose, onSaved }: {
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
+                {parsedBill.lineItems.length > 0 && (
+                  <p className="mt-1 text-blue-700">{parsedBill.lineItems.length} invoice line item{parsedBill.lineItems.length === 1 ? "" : "s"} matched where possible</p>
+                )}
                 {parsedBill.description && <p className="mt-1 text-blue-700">{parsedBill.description}</p>}
               </div>
             )}
@@ -697,6 +701,11 @@ function PurchaseOrderBillPanel({ po, onClose, onSaved }: {
                   <p className="truncate font-medium text-gray-900">{allocation.lineItem.lineCode} {allocation.lineItem.description}</p>
                   <p className="mt-0.5 text-[11px] text-gray-400">{allocation.lineItem.section.code} {allocation.lineItem.section.name}</p>
                   {allocation.invoiceFile && <p className="mt-0.5 truncate text-[11px] text-blue-600">{allocation.invoiceFile.originalFilename}</p>}
+                  {parsedBill?.allocations.find((item) => item.id === allocation.id)?.matchedLineItems?.length ? (
+                    <p className="mt-0.5 truncate text-[11px] text-blue-600">
+                      Matched: {parsedBill.allocations.find((item) => item.id === allocation.id)?.matchedLineItems?.join(", ")}
+                    </p>
+                  ) : null}
                 </div>
                 <input
                   type="number"
