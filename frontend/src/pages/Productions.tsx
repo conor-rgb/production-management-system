@@ -20,6 +20,9 @@ import type {
   Production,
   ProductionDate,
   ProductionDateType,
+  PurchaseOrderContext,
+  PurchaseOrderGroup,
+  PurchaseOrderStatus,
   ProductionStatus,
 } from "../lib/types";
 import {
@@ -46,8 +49,18 @@ const JOB_TYPES: PmsJobType[] = ["STILLS", "MOTION", "EVENTS"];
 const DATE_TYPES: ProductionDateType[] = ["PPM", "RECCE", "FITTING", "MEETING", "SHOOT_DAY", "POST_DELIVERY", "OTHER"];
 const CREW_STATUSES: CrewStatus[] = ["REQUESTED", "FIRST_OPTION", "SECOND_OPTION", "CONFIRMED", "RELEASED"];
 const INVOICE_STATUSES: FreeAgentInvoiceStatus[] = ["NOT_RAISED", "DRAFT", "SENT", "VIEWED", "PAID", "OVERDUE"];
-const TABS = ["Overview", "Dates", "Crew", "Comms", "Files", "Budget", "Options"] as const;
+const TABS = ["Overview", "Dates", "Crew", "Options", "Budget", "POs", "Comms", "Files"] as const;
 type Tab = typeof TABS[number];
+const PO_STATUSES: PurchaseOrderStatus[] = ["DRAFT", "SENT", "ACCEPTED", "PART_BILLED", "BILLED", "PAID", "CANCELLED"];
+const PO_STATUS_LABELS: Record<PurchaseOrderStatus, string> = {
+  DRAFT: "Draft",
+  SENT: "Sent",
+  ACCEPTED: "Accepted",
+  PART_BILLED: "Part-billed",
+  BILLED: "Billed",
+  PAID: "Paid",
+  CANCELLED: "Cancelled",
+};
 
 function tabFromQuery(value: string | null): Tab {
   const normalized = value?.toLowerCase();
@@ -57,6 +70,7 @@ function tabFromQuery(value: string | null): Tab {
   if (normalized === "files") return "Files";
   if (normalized === "budget") return "Budget";
   if (normalized === "options") return "Options";
+  if (normalized === "pos" || normalized === "purchase-orders") return "POs";
   return "Overview";
 }
 
@@ -393,6 +407,291 @@ function ProductionDetail({ productionId, onClose, onSaved, onInvoicePrompt, ini
         {tab === "Files" && <FileBrowser productionId={production.id} />}
         {tab === "Budget" && <ProductionBudgetSummary production={production} onOpenBudget={onOpenBudget} />}
         {tab === "Options" && <OptionsBoardView productionId={production.id} onBack={() => setTab("Overview")} />}
+        {tab === "POs" && <PurchaseOrdersTab production={production} />}
+      </div>
+    </div>
+  );
+}
+
+function poStatusClass(status: PurchaseOrderStatus) {
+  if (status === "PAID") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "BILLED" || status === "PART_BILLED") return "border-blue-200 bg-blue-50 text-blue-700";
+  if (status === "SENT" || status === "ACCEPTED") return "border-violet-200 bg-violet-50 text-violet-700";
+  if (status === "CANCELLED") return "border-gray-200 bg-gray-50 text-gray-400";
+  return "border-amber-200 bg-amber-50 text-amber-700";
+}
+
+function PurchaseOrdersTab({ production }: { production: Production }) {
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderGroup[]>([]);
+  const [context, setContext] = useState<PurchaseOrderContext | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [orders, nextContext] = await Promise.all([
+        api.get<PurchaseOrderGroup[]>(`/api/budgets/production/${production.id}/purchase-orders`),
+        api.get<PurchaseOrderContext>(`/api/budgets/production/${production.id}/purchase-order-context`),
+      ]);
+      setPurchaseOrders(orders);
+      setContext(nextContext);
+    } finally {
+      setLoading(false);
+    }
+  }, [production.id]);
+
+  useEffect(() => { load().catch(console.error); }, [load]);
+
+  async function updateStatus(po: PurchaseOrderGroup, status: PurchaseOrderStatus) {
+    const updated = await api.patch<PurchaseOrderGroup>(`/api/budgets/purchase-orders/${po.id}`, { status });
+    setPurchaseOrders((items) => items.map((item) => item.id === updated.id ? updated : item));
+  }
+
+  async function deletePo(po: PurchaseOrderGroup) {
+    if (!window.confirm(`Delete ${po.poNumber} and its budget allocations?`)) return;
+    await api.delete(`/api/budgets/purchase-orders/${po.id}`);
+    await load();
+  }
+
+  const totals = purchaseOrders.reduce((sum, po) => sum + po.total, 0);
+  const openCount = purchaseOrders.filter((po) => !["PAID", "CANCELLED"].includes(po.status)).length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Purchase orders</h3>
+          <p className="mt-1 text-xs text-gray-500">Manage supplier commitments across budget lines.</p>
+        </div>
+        <button onClick={() => setCreating(true)} className="min-h-10 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white">
+          + Multi-line PO
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <Metric label="PO total" value={formatCurrency(totals)} />
+        <Metric label="Open POs" value={String(openCount)} />
+        <Metric label="PO count" value={String(purchaseOrders.length)} />
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div className="grid grid-cols-[110px_1.2fr_1.4fr_100px_130px_80px_40px] items-center border-b border-gray-200 bg-[#f8f8f6] px-3 py-2 text-[10px] uppercase tracking-[0.05em] text-gray-400">
+          <div>PO</div>
+          <div>Supplier</div>
+          <div>Lines</div>
+          <div className="text-right">Total</div>
+          <div>Status</div>
+          <div>Files</div>
+          <div />
+        </div>
+        {loading ? (
+          <div className="p-6 text-center text-sm text-gray-400">Loading POs...</div>
+        ) : purchaseOrders.length === 0 ? (
+          <div className="p-8 text-center">
+            <p className="text-sm font-medium text-gray-900">No purchase orders yet.</p>
+            <p className="mt-1 text-xs text-gray-500">Create one PO across multiple budget lines while keeping each line clear.</p>
+            <button onClick={() => setCreating(true)} className="mt-4 min-h-10 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white">+ Create PO</button>
+          </div>
+        ) : purchaseOrders.map((po) => (
+          <div key={po.id} className="grid grid-cols-[110px_1.2fr_1.4fr_100px_130px_80px_40px] items-start border-b border-gray-100 px-3 py-3 text-xs last:border-b-0 hover:bg-gray-50">
+            <div className="font-mono font-semibold text-gray-900">{po.poNumber}</div>
+            <div className="min-w-0">
+              <p className="truncate font-medium text-gray-900">{po.supplierName}</p>
+              <p className="mt-0.5 truncate text-[11px] text-gray-400">{[po.supplierEmail, po.blackbookEntry ? "Blackbook" : null, po.optionCandidate ? po.optionCandidate.group?.name : null].filter(Boolean).join(" · ")}</p>
+            </div>
+            <div className="space-y-1">
+              {po.allocations.map((allocation) => (
+                <div key={allocation.id} className="grid grid-cols-[1fr_78px] gap-2 text-[11px]">
+                  <span className="truncate text-gray-600">{allocation.lineItem.lineCode} {allocation.lineItem.description}</span>
+                  <span className="text-right tabular-nums text-gray-900">{formatCurrency(allocation.amount)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="text-right font-semibold tabular-nums text-gray-900">{formatCurrency(po.total)}</div>
+            <div>
+              <select value={po.status} onChange={(event) => updateStatus(po, event.target.value as PurchaseOrderStatus).catch(console.error)} className={`h-8 rounded-md border px-2 text-[11px] font-medium outline-none ${poStatusClass(po.status)}`}>
+                {PO_STATUSES.map((status) => <option key={status} value={status}>{PO_STATUS_LABELS[status]}</option>)}
+              </select>
+            </div>
+            <div className="text-[11px] text-gray-400">{po.allocations.some((allocation) => allocation.invoiceFileId) ? "Invoice" : "—"}</div>
+            <button onClick={() => deletePo(po).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-gray-300 hover:bg-red-50 hover:text-red-600" title="Delete PO"><Trash2 size={13} /></button>
+          </div>
+        ))}
+      </div>
+
+      {creating && context && (
+        <PurchaseOrderCreatePanel
+          production={production}
+          context={context}
+          onClose={() => setCreating(false)}
+          onCreated={() => { setCreating(false); load().catch(console.error); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function PurchaseOrderCreatePanel({ production, context, onClose, onCreated }: {
+  production: Production;
+  context: PurchaseOrderContext;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [supplierName, setSupplierName] = useState("");
+  const [supplierEmail, setSupplierEmail] = useState("");
+  const [supplierPhone, setSupplierPhone] = useState("");
+  const [blackbookEntryId, setBlackbookEntryId] = useState<string | null>(null);
+  const [optionCandidateId, setOptionCandidateId] = useState("");
+  const [createBlackbook, setCreateBlackbook] = useState(true);
+  const [query, setQuery] = useState("");
+  const [blackbookResults, setBlackbookResults] = useState<Array<{ id: string; displayName: string; email?: string | null; phone?: string | null }>>([]);
+  const [allocations, setAllocations] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (query.trim().length < 2) {
+      setBlackbookResults([]);
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      const params = new URLSearchParams({ q: query.trim(), limit: "8" });
+      api.get<Array<{ id: string; displayName: string; email?: string | null; phone?: string | null }>>(`/api/options/blackbook?${params.toString()}`)
+        .then(setBlackbookResults)
+        .catch(() => setBlackbookResults([]));
+    }, 180);
+    return () => window.clearTimeout(timeout);
+  }, [query]);
+
+  function selectCandidate(candidateId: string) {
+    setOptionCandidateId(candidateId);
+    const candidate = context.optionCandidates.find((item) => item.id === candidateId);
+    if (!candidate) return;
+    setSupplierName(candidate.blackbookEntry?.displayName ?? candidate.name);
+    setSupplierEmail(candidate.contactEmail ?? candidate.blackbookEntry?.email ?? "");
+    setSupplierPhone(candidate.contactPhone ?? candidate.blackbookEntry?.phone ?? "");
+    setBlackbookEntryId(candidate.blackbookEntryId ?? null);
+    if (candidate.blackbookEntryId) setCreateBlackbook(false);
+  }
+
+  function selectedAllocations() {
+    return Object.entries(allocations)
+      .map(([lineItemId, amount]) => ({ lineItemId, amount: Number(amount || 0) }))
+      .filter((allocation) => allocation.amount > 0);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.post<PurchaseOrderGroup>(`/api/budgets/production/${production.id}/purchase-orders`, {
+        supplierName,
+        supplierEmail: supplierEmail || null,
+        supplierPhone: supplierPhone || null,
+        blackbookEntryId,
+        optionCandidateId: optionCandidateId || null,
+        createBlackbook: createBlackbook && !blackbookEntryId,
+        allocations: selectedAllocations(),
+      });
+      onCreated();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const allocationTotal = selectedAllocations().reduce((sum, allocation) => sum + allocation.amount, 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/10" onMouseDown={onClose}>
+      <div className="h-full w-full max-w-3xl overflow-auto bg-white shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">New multi-line PO</h3>
+            <p className="text-xs text-gray-500">{production.jobCode ?? "Job"} · {production.title}</p>
+          </div>
+          <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg text-gray-500 hover:bg-gray-50"><X size={16} /></button>
+        </div>
+
+        <div className="space-y-5 p-4">
+          <section className="rounded-lg border border-gray-200 p-3">
+            <h4 className="text-xs font-semibold uppercase tracking-[0.05em] text-gray-400">Supplier</h4>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <label className="text-xs text-gray-500">From job options
+                <select value={optionCandidateId} onChange={(event) => selectCandidate(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900">
+                  <option value="">No option candidate</option>
+                  {context.optionCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.group.name} · {candidate.name}</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-gray-500">Search Blackbook
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search supplier..." className="mt-1 h-10 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900" />
+              </label>
+            </div>
+            {blackbookResults.length > 0 && (
+              <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-gray-100">
+                {blackbookResults.map((entry) => (
+                  <button
+                    key={entry.id}
+                    onClick={() => {
+                      setBlackbookEntryId(entry.id);
+                      setSupplierName(entry.displayName);
+                      setSupplierEmail(entry.email ?? "");
+                      setSupplierPhone(entry.phone ?? "");
+                      setCreateBlackbook(false);
+                      setBlackbookResults([]);
+                      setQuery(entry.displayName);
+                    }}
+                    className="block w-full border-b border-gray-50 px-3 py-2 text-left text-xs hover:bg-gray-50 last:border-b-0"
+                  >
+                    <span className="font-medium text-gray-900">{entry.displayName}</span>
+                    <span className="ml-2 text-gray-400">{entry.email}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <Input label="Supplier name" value={supplierName} onChange={setSupplierName} />
+              <Input label="Email" value={supplierEmail} onChange={setSupplierEmail} />
+              <Input label="Phone" value={supplierPhone} onChange={setSupplierPhone} />
+            </div>
+            {!blackbookEntryId && (
+              <label className="mt-3 flex items-center gap-2 text-xs text-gray-600">
+                <input type="checkbox" checked={createBlackbook} onChange={(event) => setCreateBlackbook(event.target.checked)} />
+                Create a Blackbook supplier record when saving
+              </label>
+            )}
+          </section>
+
+          <section className="rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.05em] text-gray-400">Budget allocations</h4>
+              <span className="text-xs font-medium tabular-nums text-gray-900">Total {formatCurrency(allocationTotal)}</span>
+            </div>
+            <div className="max-h-[460px] overflow-auto">
+              {context.lines.map((line) => (
+                <div key={line.id} className="grid grid-cols-[1fr_120px] items-center gap-3 border-b border-gray-50 px-3 py-2 text-xs last:border-b-0">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-gray-900">{line.lineCode} {line.description}</p>
+                    <p className="mt-0.5 text-[11px] text-gray-400">{line.section.code} {line.section.name} · estimate {formatCurrency(line.estimatedTotal)}</p>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={allocations[line.id] ?? ""}
+                    onChange={(event) => setAllocations((current) => ({ ...current, [line.id]: event.target.value }))}
+                    placeholder="£"
+                    className="h-9 rounded-lg border border-gray-200 px-2 text-right text-sm tabular-nums text-gray-900 outline-none focus:border-gray-500"
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <div className="flex justify-end gap-2">
+            <button onClick={onClose} className="min-h-10 rounded-lg px-4 text-sm text-gray-500 hover:bg-gray-50">Cancel</button>
+            <button onClick={save} disabled={saving || !supplierName.trim() || selectedAllocations().length === 0} className="min-h-10 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-40">
+              {saving ? "Creating..." : "Create PO"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

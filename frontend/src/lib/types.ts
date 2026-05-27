@@ -14,6 +14,7 @@ export type BudgetStatus = "DRAFT" | "SENT" | "CONFIRMED" | "IN_PRODUCTION" | "W
 export type BudgetRevisionStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED" | "SUPERSEDED";
 export type SubCostStatus = "PENDING" | "AGREED" | "INVOICED" | "PAID";
 export type SubCostLineType = "PO" | "BILL" | "RECEIPT";
+export type PurchaseOrderStatus = "DRAFT" | "SENT" | "ACCEPTED" | "PART_BILLED" | "BILLED" | "PAID" | "CANCELLED";
 export type AdvanceCalcType = "PERCENT_OF_TOTAL" | "PERCENT_OF_PRODUCTION" | "FIXED_AMOUNT";
 export type ReceiptCaptureStatus = "PENDING" | "PARSING" | "PARSED" | "ASSIGNED" | "FAILED";
 export type EmailProvider = "GOOGLE" | "IMAP";
@@ -488,6 +489,7 @@ export interface BudgetTotals {
 export interface SubCost {
   id: string;
   lineItemId: string;
+  purchaseOrderGroupId?: string | null;
   lineType: SubCostLineType;
   poNumber?: string | null;
   description: string;
@@ -510,6 +512,46 @@ export interface SubCost {
   receiptCaptureId?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PurchaseOrderGroup {
+  id: string;
+  productionId: string;
+  budgetId?: string | null;
+  poNumber: string;
+  supplierName: string;
+  supplierEmail?: string | null;
+  supplierPhone?: string | null;
+  blackbookEntryId?: string | null;
+  optionCandidateId?: string | null;
+  status: PurchaseOrderStatus;
+  notes?: string | null;
+  total: number;
+  createdAt: string;
+  updatedAt: string;
+  blackbookEntry?: { id: string; displayName: string; email?: string | null; phone?: string | null; category?: string; entryType?: string } | null;
+  optionCandidate?: { id: string; name: string; group?: { id: string; name: string; type: string } | null } | null;
+  allocations: Array<SubCost & {
+    lineItem: Pick<BudgetLineItem, "id" | "lineCode" | "description" | "estimatedTotal" | "actualTotal" | "variance"> & {
+      section: { id: string; code: string; name: string };
+    };
+  }>;
+}
+
+export interface PurchaseOrderContext {
+  budgetId: string | null;
+  lines: Array<Pick<BudgetLineItem, "id" | "lineCode" | "description" | "estimatedTotal" | "actualTotal" | "variance"> & {
+    section: { id: string; code: string; name: string };
+  }>;
+  optionCandidates: Array<{
+    id: string;
+    name: string;
+    contactEmail?: string | null;
+    contactPhone?: string | null;
+    blackbookEntryId?: string | null;
+    blackbookEntry?: { id: string; displayName: string; email?: string | null; phone?: string | null } | null;
+    group: { id: string; name: string; type: string };
+  }>;
 }
 
 export interface BudgetLineItem {

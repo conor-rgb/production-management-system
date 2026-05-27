@@ -1,3 +1,107 @@
+# HANDOVER - 2026-05-27 - Project Purchase Orders Foundation
+
+## Built This Session
+- Added a real grouped purchase order system for production budgets.
+- Added a production-level `POs` tab.
+- POs can now represent one supplier commitment spread across multiple budget lines.
+- Creating a PO creates one `PurchaseOrderGroup` and multiple linked PO `SubCost` allocations.
+- Each allocation remains under its parent budget line, preserving line-level actuals and remaining budget.
+- Supplier source workflow in the PO creation panel:
+  - choose from job option candidates,
+  - search/select Blackbook entries,
+  - or create a new Blackbook supplier record inline while creating the PO.
+- New suppliers default to Blackbook supplier lifecycle so they become reusable immediately.
+- PO status can be managed from the project PO sheet:
+  - Draft,
+  - Sent,
+  - Accepted,
+  - Part-billed,
+  - Billed,
+  - Paid,
+  - Cancelled.
+
+## Backend
+- Updated `backend/prisma/schema.prisma`.
+- Added migration:
+  - `backend/prisma/migrations/20260527072000_purchase_order_groups/migration.sql`
+- New enum:
+  - `PurchaseOrderStatus`
+- New model:
+  - `PurchaseOrderGroup`
+- Added `purchaseOrderGroupId` to `SubCost`.
+- Added relations from:
+  - `Production` -> `purchaseOrders`
+  - `Budget` -> `purchaseOrders`
+  - `BlackbookEntry` -> `purchaseOrders`
+  - `OptionCandidate` -> `purchaseOrders`
+- Updated existing single-line subcost creation to optionally attach to a PO group and inherit its PO number/supplier.
+- PO group status sync runs after subcost create/update/delete/status changes:
+  - all paid -> `PAID`
+  - mixed PO/Bill -> `PART_BILLED`
+  - all billed but unpaid -> `BILLED`
+
+## API
+- Added under existing `/api/budgets` route:
+  - `GET /api/budgets/production/:productionId/purchase-orders`
+  - `GET /api/budgets/production/:productionId/purchase-order-context`
+  - `POST /api/budgets/production/:productionId/purchase-orders`
+  - `PATCH /api/budgets/purchase-orders/:purchaseOrderId`
+  - `DELETE /api/budgets/purchase-orders/:purchaseOrderId`
+- `purchase-order-context` returns:
+  - current budget line items,
+  - active option candidates,
+  - linked Blackbook details where available.
+
+## Frontend
+- Updated `frontend/src/pages/Productions.tsx`.
+- Added `POs` tab to production detail.
+- Added clean PO sheet:
+  - PO number,
+  - supplier,
+  - allocated budget lines,
+  - total,
+  - status,
+  - file indicator,
+  - delete action.
+- Added multi-line PO creation drawer:
+  - supplier from job options,
+  - supplier from Blackbook search,
+  - new supplier quick-create,
+  - allocation amount per budget line.
+- Updated `frontend/src/lib/types.ts` with purchase order types.
+
+## Deployment / Verification
+- Prisma migration deployed.
+- Prisma client generated.
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned `{"status":"ok"}`.
+- PM2 logs after reload show no new PO/server errors. Existing Gmail 404 sync noise remains unrelated.
+
+## Current State
+- The app now has the data model needed for agency/supplier POs that span several estimate lines.
+- For Polomi NYC-style photography agency commitments, create one PO and allocate amounts to Photographer, Camera Kit, Lighting Kit, and Photo Assistant.
+- Each allocation appears as a normal PO cost line in the budget, while the new POs tab gives the grouped management view.
+
+## Known Gaps / Technical Debt
+- Supplier onboarding public form is not built yet.
+- PO PDF/export/email is not built yet.
+- PO status is partly manual and partly synced from allocation state; we may want clearer rules once Bill conversion is expanded.
+- Converting an entire grouped PO to one Bill is not yet a single action.
+- Existing legacy single-line POs are not backfilled into `PurchaseOrderGroup` records.
+- The PO sheet has a file indicator only; full invoice/PO document management should come in the next pass.
+
+## Exact Next Steps
+1. Add "Convert PO to Bill" at group level with optional invoice upload.
+2. Add PO PDF generation/email send.
+3. Add secure supplier onboarding links for draft Blackbook suppliers.
+4. Optionally backfill legacy PO subcosts into grouped PO records.
+
+---
+
 # HANDOVER - 2026-05-27 - Budget Estimate Actuals Display
 
 ## Built This Session

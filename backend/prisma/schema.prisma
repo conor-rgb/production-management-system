@@ -211,6 +211,18 @@ enum SubCostLineType {
   @@map("pms_sub_cost_line_type")
 }
 
+enum PurchaseOrderStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  PART_BILLED
+  BILLED
+  PAID
+  CANCELLED
+
+  @@map("pms_purchase_order_status")
+}
+
 enum AdvanceCalcType {
   PERCENT_OF_TOTAL
   PERCENT_OF_PRODUCTION
@@ -436,6 +448,7 @@ model BlackbookEntry {
 
   addresses        BlackbookAddress[]
   optionCandidates OptionCandidate[]
+  purchaseOrders   PurchaseOrderGroup[]
   contactId        String?
   contact          Contact?                   @relation(fields: [contactId], references: [id], onDelete: SetNull)
   categoryConfig   BlackbookConfigCategory?   @relation(fields: [categoryConfigId], references: [id], onDelete: SetNull)
@@ -578,6 +591,7 @@ model Production {
   optionGroups           OptionGroup[]
   optionRequirements     OptionRequirement[]
   optionCandidates       OptionCandidate[]
+  purchaseOrders         PurchaseOrderGroup[]
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 
@@ -692,6 +706,7 @@ model OptionCandidate {
   dateStatuses      CandidateDateStatusRecord[]
   assignments       OptionSlotAssignment[]
   photos            OptionCandidatePhoto[]
+  purchaseOrders    PurchaseOrderGroup[]
   createdAt         DateTime                    @default(now())
   updatedAt         DateTime                    @updatedAt
 
@@ -1007,6 +1022,7 @@ model Budget {
   currentRevision      BudgetRevision?  @relation("CurrentBudgetRevision", fields: [currentRevisionId], references: [id])
   revisions            BudgetRevision[] @relation("BudgetRevisions")
   advanceInvoices      AdvanceInvoice[]
+  purchaseOrders       PurchaseOrderGroup[]
   production           Production?      @relation(fields: [productionId], references: [id], onDelete: SetNull)
   opportunity          Opportunity?     @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
   createdAt            DateTime         @default(now())
@@ -1088,6 +1104,7 @@ model BudgetLineItem {
 model SubCost {
   id                     String          @id @default(uuid())
   lineItemId             String
+  purchaseOrderGroupId   String?
   lineType               SubCostLineType @default(PO)
   poNumber               String?
   description            String
@@ -1109,15 +1126,49 @@ model SubCost {
   freeAgentTransactionId String?
   receiptCaptureId       String?
   lineItem               BudgetLineItem  @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+  purchaseOrderGroup     PurchaseOrderGroup? @relation(fields: [purchaseOrderGroupId], references: [id], onDelete: SetNull)
   invoiceFile            JobFile?        @relation("InvoiceFile", fields: [invoiceFileId], references: [id])
   popFile                JobFile?        @relation("POPFile", fields: [proofOfPayment], references: [id])
   createdAt              DateTime        @default(now())
   updatedAt              DateTime        @updatedAt
 
   @@index([lineItemId])
+  @@index([purchaseOrderGroupId])
   @@index([invoiceFileId])
   @@index([proofOfPayment])
   @@map("pms_sub_costs")
+}
+
+model PurchaseOrderGroup {
+  id                String              @id @default(uuid())
+  productionId      String
+  budgetId          String?
+  poNumber          String
+  supplierName      String
+  supplierEmail     String?
+  supplierPhone     String?
+  blackbookEntryId  String?
+  optionCandidateId String?
+  status            PurchaseOrderStatus @default(DRAFT)
+  notes             String?
+  onboardingToken   String?             @unique
+  onboardingSentAt  DateTime?
+  sentAt            DateTime?
+  acceptedAt        DateTime?
+  cancelledAt       DateTime?
+  allocations       SubCost[]
+  production        Production          @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  budget            Budget?             @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  blackbookEntry    BlackbookEntry?      @relation(fields: [blackbookEntryId], references: [id], onDelete: SetNull)
+  optionCandidate   OptionCandidate?     @relation(fields: [optionCandidateId], references: [id], onDelete: SetNull)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@unique([productionId, poNumber])
+  @@index([productionId, status])
+  @@index([blackbookEntryId])
+  @@index([optionCandidateId])
+  @@map("pms_purchase_order_groups")
 }
 
 model AdvanceInvoice {

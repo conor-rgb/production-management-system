@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { AdvanceCalcType, Prisma, RevisionStatus, SubCostLineType, SubCostStatus } from "@prisma/client";
+import { AdvanceCalcType, BlackbookCategory, BlackbookEntryType, BlackbookLifecycleStatus, Prisma, PurchaseOrderStatus, RevisionStatus, SubCostLineType, SubCostStatus } from "@prisma/client";
 import prisma from "../prisma";
 import {
   applyTemplate,
@@ -52,6 +52,68 @@ function lineTypeLifecycle(lineType: SubCostLineType): Pick<Prisma.SubCostUnchec
   return { status: SubCostStatus.PENDING, isAgreed: false, isInvoiced: false, isPaid: false, datePaid: null };
 }
 
+const purchaseOrderInclude = {
+  blackbookEntry: { select: { id: true, displayName: true, email: true, phone: true, category: true, entryType: true } },
+  optionCandidate: { select: { id: true, name: true, group: { select: { id: true, name: true, type: true } } } },
+  allocations: {
+    orderBy: { createdAt: "asc" as const },
+    include: {
+      lineItem: {
+        select: {
+          id: true,
+          lineCode: true,
+          description: true,
+          estimatedTotal: true,
+          actualTotal: true,
+          variance: true,
+          section: { select: { id: true, code: true, name: true } },
+        },
+      },
+    },
+  },
+} satisfies Prisma.PurchaseOrderGroupInclude;
+
+type PurchaseOrderWithRelations = Prisma.PurchaseOrderGroupGetPayload<{ include: typeof purchaseOrderInclude }>;
+
+function decoratePurchaseOrder(po: PurchaseOrderWithRelations) {
+  const total = po.allocations.reduce((sum, allocation) => sum + Number(allocation.amount ?? 0), 0);
+  return { ...po, total };
+}
+
+async function purchaseOrdersForProduction(productionId: string) {
+  const purchaseOrders = await prisma.purchaseOrderGroup.findMany({
+    where: { productionId },
+    orderBy: [{ createdAt: "desc" }, { poNumber: "desc" }],
+    include: purchaseOrderInclude,
+  });
+  return purchaseOrders.map(decoratePurchaseOrder);
+}
+
+async function syncPurchaseOrderStatus(purchaseOrderGroupId: string | null | undefined): Promise<void> {
+  if (!purchaseOrderGroupId) return;
+  const po = await prisma.purchaseOrderGroup.findUnique({
+    where: { id: purchaseOrderGroupId },
+    include: { allocations: true },
+  });
+  if (!po || po.status === PurchaseOrderStatus.CANCELLED || po.allocations.length === 0) return;
+  const allPaid = po.allocations.every((allocation) => allocation.isPaid);
+  const hasBill = po.allocations.some((allocation) => allocation.lineType === SubCostLineType.BILL);
+  const hasPo = po.allocations.some((allocation) => allocation.lineType === SubCostLineType.PO);
+  const nextStatus = allPaid
+    ? PurchaseOrderStatus.PAID
+    : hasBill && hasPo
+      ? PurchaseOrderStatus.PART_BILLED
+      : hasBill
+        ? PurchaseOrderStatus.BILLED
+        : po.status;
+  if (nextStatus !== po.status) {
+    await prisma.purchaseOrderGroup.update({
+      where: { id: po.id },
+      data: { status: nextStatus },
+    });
+  }
+}
+
 function budgetPatch(body: Record<string, unknown>): Prisma.BudgetUpdateInput {
   return {
     jobName: body.jobName as string | null | undefined,
@@ -79,6 +141,7 @@ function subCostPatch(body: Record<string, unknown>): Prisma.SubCostUncheckedUpd
   const lifecycle = lineType ? lineTypeLifecycle(lineType) : {};
   return {
     description: body.description as string | undefined,
+    purchaseOrderGroupId: body.purchaseOrderGroupId as string | null | undefined,
     lineType,
     poNumber: body.poNumber as string | null | undefined,
     supplierName: body.supplierName as string | null | undefined,
@@ -326,14 +389,17 @@ router.post("/lines/:lineItemId/subcosts", async (req: Request, res: Response): 
   const body = req.body as Record<string, unknown>;
   const lineType = normalizeLineType(body.lineType);
   const lifecycle = lineTypeLifecycle(lineType);
-  const poNumber = lineType === SubCostLineType.PO ? await generatePoNumber(req.params.lineItemId) : null;
+  const purchaseOrderGroupId = body.purchaseOrderGroupId as string | null | undefined;
+  const purchaseOrder = purchaseOrderGroupId ? await prisma.purchaseOrderGroup.findUnique({ where: { id: purchaseOrderGroupId } }) : null;
+  const poNumber = purchaseOrder?.poNumber ?? (lineType === SubCostLineType.PO ? await generatePoNumber(req.params.lineItemId) : null);
   const subCost = await prisma.subCost.create({
     data: {
       lineItemId: req.params.lineItemId,
+      purchaseOrderGroupId,
       lineType,
       poNumber,
       description: body.description as string || `${lineType === SubCostLineType.PO ? "PO" : lineType === SubCostLineType.BILL ? "Bill" : "Receipt"} cost line`,
-      supplierName: body.supplierName as string | null | undefined,
+      supplierName: (body.supplierName as string | null | undefined) ?? purchaseOrder?.supplierName,
       amount: Number(body.amount ?? 0),
       amountGross: numberOrNull(body.amountGross),
       vatAmount: numberOrNull(body.vatAmount),
@@ -352,6 +418,7 @@ router.post("/lines/:lineItemId/subcosts", async (req: Request, res: Response): 
     },
   });
   await recalculateAfterSubCost(req.params.lineItemId);
+  await syncPurchaseOrderStatus(purchaseOrderGroupId);
   res.status(201).json({ subCost, revision: await lineRevision(req.params.lineItemId) });
 });
 
@@ -360,6 +427,7 @@ router.patch("/subcosts/:subCostId", async (req: Request, res: Response): Promis
   if (!existing) { res.status(404).json({ error: "Sub-cost not found" }); return; }
   const subCost = await prisma.subCost.update({ where: { id: existing.id }, data: subCostPatch(req.body as Record<string, unknown>) });
   await recalculateAfterSubCost(existing.lineItemId);
+  await syncPurchaseOrderStatus(subCost.purchaseOrderGroupId ?? existing.purchaseOrderGroupId);
   res.json({ subCost, revision: await lineRevision(existing.lineItemId) });
 });
 
@@ -368,6 +436,7 @@ router.delete("/subcosts/:subCostId", async (req: Request, res: Response): Promi
   if (!existing) { res.status(404).json({ error: "Sub-cost not found" }); return; }
   await prisma.subCost.delete({ where: { id: existing.id } });
   await recalculateAfterSubCost(existing.lineItemId);
+  await syncPurchaseOrderStatus(existing.purchaseOrderGroupId);
   res.json({ revision: await lineRevision(existing.lineItemId) });
 });
 
@@ -390,7 +459,239 @@ router.patch("/subcosts/:subCostId/status", async (req: Request, res: Response):
     },
   });
   await recalculateAfterSubCost(existing.lineItemId);
+  await syncPurchaseOrderStatus(existing.purchaseOrderGroupId);
   res.json({ subCost, revision: await lineRevision(existing.lineItemId) });
+});
+
+// Purchase orders
+router.get("/production/:productionId/purchase-orders", async (req: Request, res: Response): Promise<void> => {
+  res.json(await purchaseOrdersForProduction(req.params.productionId));
+});
+
+router.get("/production/:productionId/purchase-order-context", async (req: Request, res: Response): Promise<void> => {
+  const budget = await prisma.budget.findUnique({
+    where: { productionId: req.params.productionId },
+    include: {
+      currentRevision: {
+        include: {
+          sections: {
+            orderBy: { order: "asc" },
+            include: {
+              lineItems: {
+                where: { parentId: null },
+                orderBy: { order: "asc" },
+                select: {
+                  id: true,
+                  lineCode: true,
+                  description: true,
+                  estimatedTotal: true,
+                  actualTotal: true,
+                  variance: true,
+                  section: { select: { id: true, code: true, name: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+  const optionCandidates = await prisma.optionCandidate.findMany({
+    where: { productionId: req.params.productionId, activeState: { not: "RELEASED" } },
+    orderBy: [{ group: { order: "asc" } }, { order: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      contactEmail: true,
+      contactPhone: true,
+      blackbookEntryId: true,
+      blackbookEntry: { select: { id: true, displayName: true, email: true, phone: true } },
+      group: { select: { id: true, name: true, type: true } },
+    },
+  });
+  const lines = budget?.currentRevision?.sections.flatMap((section) => section.lineItems) ?? [];
+  res.json({ budgetId: budget?.id ?? null, lines, optionCandidates });
+});
+
+router.post("/production/:productionId/purchase-orders", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as {
+    supplierName?: string;
+    supplierEmail?: string | null;
+    supplierPhone?: string | null;
+    blackbookEntryId?: string | null;
+    optionCandidateId?: string | null;
+    createBlackbook?: boolean;
+    notes?: string | null;
+    allocations?: Array<{ lineItemId?: string; amount?: number | string | null; description?: string | null }>;
+  };
+  const allocations = (body.allocations ?? [])
+    .map((allocation) => ({
+      lineItemId: allocation.lineItemId,
+      amount: Number(allocation.amount ?? 0),
+      description: allocation.description?.trim() || null,
+    }))
+    .filter((allocation): allocation is { lineItemId: string; amount: number; description: string | null } => Boolean(allocation.lineItemId) && Number.isFinite(allocation.amount) && allocation.amount > 0);
+
+  if (!allocations.length) {
+    res.status(400).json({ error: "At least one allocation is required" });
+    return;
+  }
+
+  const production = await prisma.production.findUnique({ where: { id: req.params.productionId } });
+  if (!production) {
+    res.status(404).json({ error: "Production not found" });
+    return;
+  }
+
+  const lineItems = await prisma.budgetLineItem.findMany({
+    where: { id: { in: allocations.map((allocation) => allocation.lineItemId) } },
+    include: { section: { include: { revision: { include: { budget: true } } } } },
+  });
+  if (lineItems.length !== allocations.length || lineItems.some((line) => line.section.revision.budget.productionId !== production.id)) {
+    res.status(400).json({ error: "All allocations must belong to this production budget" });
+    return;
+  }
+
+  const candidate = body.optionCandidateId
+    ? await prisma.optionCandidate.findUnique({ where: { id: body.optionCandidateId }, include: { blackbookEntry: true } })
+    : null;
+  const supplierName = body.supplierName?.trim() || candidate?.blackbookEntry?.displayName || candidate?.name;
+  if (!supplierName) {
+    res.status(400).json({ error: "Supplier name is required" });
+    return;
+  }
+
+  const budgetId = lineItems[0]?.section.revision.budgetId ?? null;
+  const created = await prisma.$transaction(async (tx) => {
+    let blackbookEntryId = body.blackbookEntryId ?? candidate?.blackbookEntryId ?? null;
+    if (!blackbookEntryId && body.createBlackbook) {
+      const entry = await tx.blackbookEntry.create({
+        data: {
+          entryType: BlackbookEntryType.COMPANY,
+          category: BlackbookCategory.SERVICE,
+          lifecycleStatus: BlackbookLifecycleStatus.SUPPLIER,
+          displayName: supplierName,
+          companyName: supplierName,
+          email: body.supplierEmail?.trim() || candidate?.contactEmail || null,
+          phone: body.supplierPhone?.trim() || candidate?.contactPhone || null,
+        },
+      });
+      blackbookEntryId = entry.id;
+    }
+
+    const updatedProduction = await tx.production.update({
+      where: { id: production.id },
+      data: { lastPoSequence: { increment: 1 } },
+      select: { lastPoSequence: true, jobCode: true },
+    });
+    const existingPOCount = await tx.subCost.count({
+      where: {
+        lineType: SubCostLineType.PO,
+        lineItem: { section: { revision: { budget: { productionId: production.id } } } },
+      },
+    });
+    const sequence = Math.max(updatedProduction.lastPoSequence, existingPOCount + 1);
+    if (sequence !== updatedProduction.lastPoSequence) {
+      await tx.production.update({ where: { id: production.id }, data: { lastPoSequence: sequence } });
+    }
+    const poNumber = `PO-${updatedProduction.jobCode ?? "OPP"}-${String(sequence).padStart(3, "0")}`;
+    const po = await tx.purchaseOrderGroup.create({
+      data: {
+        productionId: production.id,
+        budgetId,
+        poNumber,
+        supplierName,
+        supplierEmail: body.supplierEmail?.trim() || candidate?.contactEmail || candidate?.blackbookEntry?.email || null,
+        supplierPhone: body.supplierPhone?.trim() || candidate?.contactPhone || candidate?.blackbookEntry?.phone || null,
+        blackbookEntryId,
+        optionCandidateId: candidate?.id ?? null,
+        notes: body.notes ?? null,
+      },
+    });
+
+    for (const allocation of allocations) {
+      const lineItem = lineItems.find((line) => line.id === allocation.lineItemId);
+      await tx.subCost.create({
+        data: {
+          lineItemId: allocation.lineItemId,
+          purchaseOrderGroupId: po.id,
+          lineType: SubCostLineType.PO,
+          poNumber,
+          description: allocation.description || `${supplierName} PO allocation`,
+          supplierName,
+          amount: allocation.amount,
+          currency: "GBP",
+          status: SubCostStatus.PENDING,
+          isAgreed: false,
+          isInvoiced: false,
+          isPaid: false,
+        },
+      });
+      if (lineItem) {
+        const subCosts = await tx.subCost.findMany({ where: { lineItemId: lineItem.id } });
+        const actualTotal = subCosts.reduce((sum, subCost) => sum + Number(subCost.amount ?? 0), 0);
+        await tx.budgetLineItem.update({
+          where: { id: lineItem.id },
+          data: {
+            actualTotal,
+            variance: Number(lineItem.estimatedTotal ?? 0) - actualTotal,
+          },
+        });
+      }
+    }
+    return po;
+  });
+
+  for (const allocation of allocations) {
+    await recalculateAfterSubCost(allocation.lineItemId);
+  }
+  res.status(201).json(decoratePurchaseOrder(await prisma.purchaseOrderGroup.findUniqueOrThrow({ where: { id: created.id }, include: purchaseOrderInclude })));
+});
+
+router.patch("/purchase-orders/:purchaseOrderId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as {
+    status?: PurchaseOrderStatus;
+    supplierName?: string;
+    supplierEmail?: string | null;
+    supplierPhone?: string | null;
+    notes?: string | null;
+  };
+  const status = body.status && Object.values(PurchaseOrderStatus).includes(body.status) ? body.status : undefined;
+  const updated = await prisma.purchaseOrderGroup.update({
+    where: { id: req.params.purchaseOrderId },
+    data: {
+      status,
+      supplierName: body.supplierName,
+      supplierEmail: body.supplierEmail,
+      supplierPhone: body.supplierPhone,
+      notes: body.notes,
+      sentAt: status === PurchaseOrderStatus.SENT ? new Date() : undefined,
+      acceptedAt: status === PurchaseOrderStatus.ACCEPTED ? new Date() : undefined,
+      cancelledAt: status === PurchaseOrderStatus.CANCELLED ? new Date() : undefined,
+    },
+    include: purchaseOrderInclude,
+  });
+  res.json(decoratePurchaseOrder(updated));
+});
+
+router.delete("/purchase-orders/:purchaseOrderId", async (req: Request, res: Response): Promise<void> => {
+  const po = await prisma.purchaseOrderGroup.findUnique({
+    where: { id: req.params.purchaseOrderId },
+    include: { allocations: true },
+  });
+  if (!po) {
+    res.status(404).json({ error: "PO not found" });
+    return;
+  }
+  const lineItemIds = po.allocations.map((allocation) => allocation.lineItemId);
+  await prisma.$transaction(async (tx) => {
+    await tx.subCost.deleteMany({ where: { purchaseOrderGroupId: po.id } });
+    await tx.purchaseOrderGroup.delete({ where: { id: po.id } });
+  });
+  for (const lineItemId of lineItemIds) {
+    await recalculateAfterSubCost(lineItemId);
+  }
+  res.json({ deleted: true });
 });
 
 // Advance invoices
