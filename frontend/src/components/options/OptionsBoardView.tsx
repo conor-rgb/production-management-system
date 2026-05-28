@@ -11,6 +11,7 @@ type RequirementState = "ACTIVE" | "PARKED" | "RELEASED";
 type CandidateState = "ACTIVE" | "PARKED" | "RELEASED";
 type HoldStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFIRMED" | "RELEASED" | "UNAVAILABLE" | "NA";
 type CandidateViewKey = "grid" | "active" | "needsChasing" | "confirmed" | "missingBlackbook" | "noImages";
+type CandidateDisplayMode = "grid" | "gallery";
 type LinkFilter = "all" | "linked" | "unlinked";
 type PhotoFilter = "all" | "with" | "without";
 type BlackbookLifecycleStatus = "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT" | "SUPPLIER" | "PREFERRED_SUPPLIER" | "DO_NOT_USE" | "ARCHIVED";
@@ -832,6 +833,10 @@ function compareText(a: string | null | undefined, b: string | null | undefined)
   return (a ?? "").localeCompare(b ?? "", undefined, { sensitivity: "base" });
 }
 
+function formatMoney(value: number): string {
+  return `£${value.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function sortedCandidates(candidates: OptionCandidate[], sortKey: CandidateSortKey, direction: SortDirection): OptionCandidate[] {
   const sorted = candidates.slice();
   const multiplier = direction === "asc" ? 1 : -1;
@@ -1253,6 +1258,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   const [openBlackbookEntryId, setOpenBlackbookEntryId] = useState<string | null>(null);
   const [exportingGroupId, setExportingGroupId] = useState<string | null>(null);
   const [candidateView, setCandidateView] = useState<CandidateViewKey>("grid");
+  const [candidateDisplayMode, setCandidateDisplayMode] = useState<CandidateDisplayMode>("grid");
   const [candidateFilters, setCandidateFilters] = useState<CandidateFilters>(DEFAULT_CANDIDATE_FILTERS);
   const [activeSavedViewId, setActiveSavedViewId] = useState<string | null>(null);
 
@@ -1473,6 +1479,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   function applySavedView(view: OptionSavedView) {
     setCandidateView(validCandidateView(view.baseView));
     setCandidateFilters(savedViewFilters(view.filters));
+    setCandidateDisplayMode("grid");
     setActiveSavedViewId(view.id);
   }
 
@@ -1506,11 +1513,14 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
         <OptionsViewRail
           selectedGroup={selectedGroup}
           selectedView={candidateView}
+          displayMode={candidateDisplayMode}
           activeSavedViewId={activeSavedViewId}
           onSelectView={(view) => {
             setCandidateView(view);
+            setCandidateDisplayMode("grid");
             setActiveSavedViewId(null);
           }}
+          onSelectDisplayMode={setCandidateDisplayMode}
           onSelectSavedView={applySavedView}
           onDeleteSavedView={(viewId) => deleteSavedView(viewId).catch((err: Error) => window.alert(err.message))}
           onAddCandidate={() => selectedGroup ? addCandidate(selectedGroup.id) : setShowRoleForm(true)}
@@ -1545,6 +1555,8 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
                 setActiveSavedViewId(null);
               }}
               activeSavedView={activeSavedView}
+              displayMode={candidateDisplayMode}
+              onDisplayModeChange={setCandidateDisplayMode}
               onCreateSavedView={(payload) => createSavedView(selectedGroup.id, payload)}
               onExportPdf={() => exportGroupPdf(selectedGroup.id)}
               exportingPdf={exportingGroupId === selectedGroup.id}
@@ -1687,11 +1699,13 @@ function OptionsSheetTabs({ groups, selectedGroupId, onOpenMatrix, onOpenGroup, 
   );
 }
 
-function OptionsViewRail({ selectedGroup, selectedView, activeSavedViewId, onSelectView, onSelectSavedView, onDeleteSavedView, onAddCandidate }: {
+function OptionsViewRail({ selectedGroup, selectedView, displayMode, activeSavedViewId, onSelectView, onSelectDisplayMode, onSelectSavedView, onDeleteSavedView, onAddCandidate }: {
   selectedGroup: OptionGroup | null;
   selectedView: CandidateViewKey;
+  displayMode: CandidateDisplayMode;
   activeSavedViewId: string | null;
   onSelectView: (view: CandidateViewKey) => void;
+  onSelectDisplayMode: (mode: CandidateDisplayMode) => void;
   onSelectSavedView: (view: OptionSavedView) => void;
   onDeleteSavedView: (viewId: string) => void;
   onAddCandidate: () => void;
@@ -1716,7 +1730,7 @@ function OptionsViewRail({ selectedGroup, selectedView, activeSavedViewId, onSel
             onClick={() => onSelectView(view.key)}
             disabled={!selectedGroup && view.key !== "grid"}
             className={`flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] ${
-              selectedView === view.key ? "bg-[#eeeeec] font-semibold text-gray-800" : "text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
+              displayMode === "grid" && selectedView === view.key ? "bg-[#eeeeec] font-semibold text-gray-800" : "text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
             }`}
           >
             <span className={`grid h-4 w-4 place-items-center rounded border text-[10px] ${
@@ -1726,7 +1740,13 @@ function OptionsViewRail({ selectedGroup, selectedView, activeSavedViewId, onSel
             {counts && <span className="text-[11px] font-normal text-gray-400">{counts[view.key]}</span>}
           </button>
         ))}
-        <button className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-gray-600 hover:bg-gray-100">
+        <button
+          onClick={() => onSelectDisplayMode("gallery")}
+          disabled={!selectedGroup}
+          className={`flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] ${
+            displayMode === "gallery" ? "bg-[#eeeeec] font-semibold text-gray-800" : "text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
+          }`}
+        >
           <span className="grid h-4 w-4 place-items-center rounded border border-violet-300 text-[10px] text-violet-500">▧</span>
           Gallery
         </button>
@@ -1874,7 +1894,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   );
 }
 
-function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate, onCreateColumn, onUpdateColumn, onDeleteColumn, onReorderColumns, onUpdateColumnValue, onDuplicateCandidate, selectedView, filters, onFiltersChange, activeSavedView, onCreateSavedView, onExportPdf, exportingPdf }: {
+function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate, onCreateColumn, onUpdateColumn, onDeleteColumn, onReorderColumns, onUpdateColumnValue, onDuplicateCandidate, selectedView, filters, onFiltersChange, activeSavedView, displayMode, onDisplayModeChange, onCreateSavedView, onExportPdf, exportingPdf }: {
   matrix: MatrixResponse;
   group: OptionGroup;
   dates: MatrixDate[];
@@ -1899,6 +1919,8 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   filters: CandidateFilters;
   onFiltersChange: (filters: CandidateFilters) => void;
   activeSavedView: OptionSavedView | null;
+  displayMode: CandidateDisplayMode;
+  onDisplayModeChange: (mode: CandidateDisplayMode) => void;
   onCreateSavedView: (payload: { name: string; icon?: string; baseView: CandidateViewKey; filters: CandidateFilters; sortKey: CandidateSortKey; sortDirection: SortDirection; columnState: SavedViewColumnState[] }) => Promise<void>;
   onExportPdf: () => Promise<void>;
   exportingPdf: boolean;
@@ -2067,14 +2089,17 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
             <Menu size={17} />
           </button>
           <button className="flex h-8 items-center gap-2 rounded px-2 text-[13px] font-semibold text-gray-800 hover:bg-gray-100">
-            <span className="grid h-4 w-4 place-items-center rounded border border-blue-400 text-[10px] text-blue-600">▦</span>
-            Grid view
+            <span className={`grid h-4 w-4 place-items-center rounded border text-[10px] ${displayMode === "gallery" ? "border-violet-300 text-violet-500" : "border-blue-400 text-blue-600"}`}>
+              {displayMode === "gallery" ? "▧" : "▦"}
+            </span>
+            {displayMode === "gallery" ? "Gallery" : "Grid view"}
             <ChevronDown size={14} />
           </button>
         </div>
         <div className="relative ml-auto flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-hidden">
           <ToolbarButton icon={<EyeOff size={15} />} label="Hide fields" onClick={() => setFieldManagerOpen((open) => !open)} />
           <ToolbarButton icon={<Filter size={15} />} label={filterCount ? `Filter ${filterCount}` : "Filter"} onClick={() => setFilterOpen((open) => !open)} active={filterCount > 0 || filterOpen} />
+          <ToolbarButton label={displayMode === "gallery" ? "Grid" : "Gallery"} onClick={() => onDisplayModeChange(displayMode === "gallery" ? "grid" : "gallery")} active={displayMode === "gallery"} />
           <div className="hidden 2xl:block"><ToolbarButton icon={<Layers3 size={15} />} label="Group" disabled /></div>
           <ToolbarButton label="Sort" onClick={() => setSort(sortKey === "manual" ? "name" : "manual")} />
           <div className="hidden 2xl:block"><ToolbarButton icon={<PaintBucket size={15} />} label="Color" disabled /></div>
@@ -2233,6 +2258,18 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           )}
         </div>
       </div>
+      {displayMode === "gallery" ? (
+        <CandidateGallery
+          group={group}
+          dates={dates}
+          candidates={candidates}
+          visibleColumns={visibleColumns}
+          onOpenPhotos={(candidate) => setPhotoCandidate(candidate)}
+          onExpand={(candidate) => setExpandedCandidateId(candidate.id)}
+          onAddCandidate={onAddCandidate}
+          onOpenBlackbook={onOpenBlackbook}
+        />
+      ) : (
       <div className="min-h-0 w-full flex-1 overflow-auto overscroll-contain bg-white">
         <div className="min-h-full bg-white" style={{ width: "100%", minWidth: minimumSheetWidth }}>
           <div className="sticky top-0 z-20 grid h-8 items-center gap-x-2 border-y border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
@@ -2337,6 +2374,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           </button>
         </div>
       </div>
+      )}
       {contextMenu && (
         <CandidateContextMenu
           candidate={contextMenu.candidate}
@@ -4072,6 +4110,144 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
       </div>
     </div>
   );
+}
+
+function CandidateGallery({ group, dates, candidates, visibleColumns, onOpenPhotos, onExpand, onAddCandidate, onOpenBlackbook }: {
+  group: OptionGroup;
+  dates: MatrixDate[];
+  candidates: OptionCandidate[];
+  visibleColumns: OptionColumn[];
+  onOpenPhotos: (candidate: OptionCandidate) => void;
+  onExpand: (candidate: OptionCandidate) => void;
+  onAddCandidate: () => Promise<void>;
+  onOpenBlackbook: (entryId: string) => void;
+}) {
+  const galleryFields = visibleColumns.filter((column) =>
+    !["image", "option", "date_statuses", "contact", "links", "address", "activeState"].includes(column.key)
+  ).slice(0, 4);
+  return (
+    <div className="min-h-0 flex-1 overflow-auto bg-[#f6f6f4]">
+      <div className="sticky top-0 z-20 flex h-11 items-center justify-between border-b border-gray-200 bg-white px-4">
+        <div className="flex items-center gap-2 text-[13px] font-semibold text-gray-800">
+          <span className="grid h-5 w-5 place-items-center rounded border border-violet-300 text-[11px] text-violet-500">▧</span>
+          Gallery
+          <span className="text-[11px] font-normal text-gray-400">· {candidates.length} records</span>
+        </div>
+        <button className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-[12px] text-gray-600 shadow-sm hover:bg-gray-50" title="Uses current visible fields">
+          Customize cards
+        </button>
+      </div>
+      {candidates.length ? (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-4 p-4">
+          {candidates.map((candidate) => (
+            <CandidateGalleryCard
+              key={candidate.id}
+              group={group}
+              candidate={candidate}
+              dates={dates}
+              fields={galleryFields}
+              onOpenPhotos={() => onOpenPhotos(candidate)}
+              onExpand={() => onExpand(candidate)}
+              onOpenBlackbook={onOpenBlackbook}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="grid h-64 place-items-center text-center text-sm text-gray-500">
+          <div>
+            No candidates match this view.<br />
+            <button onClick={() => { void onAddCandidate(); }} className="mt-2 text-gray-900 underline">+ Add candidate</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CandidateGalleryCard({ group, candidate, dates, fields, onOpenPhotos, onExpand, onOpenBlackbook }: {
+  group: OptionGroup;
+  candidate: OptionCandidate;
+  dates: MatrixDate[];
+  fields: OptionColumn[];
+  onOpenPhotos: () => void;
+  onExpand: () => void;
+  onOpenBlackbook: (entryId: string) => void;
+}) {
+  const cover = candidate.photos[0];
+  const dateStatuses = dates
+    .map((date) => ({ date, status: statusFor(candidate, date.id)?.status ?? null }))
+    .filter((item) => item.status && item.status !== "NA")
+    .slice(0, 3);
+  const links = candidateLinks(candidate);
+  return (
+    <article className="group overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+      <button onClick={onOpenPhotos} className="relative block aspect-[4/3] w-full overflow-hidden bg-[#eeeeec]">
+        {cover ? (
+          <img src={cover.url} alt="" className="h-full w-full object-cover transition group-hover:scale-[1.02]" />
+        ) : (
+          <div className="grid h-full place-items-center text-gray-300"><ImageIcon size={30} /></div>
+        )}
+        {candidate.photos.length > 1 && <span className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">{candidate.photos.length} photos</span>}
+      </button>
+      <div className="p-3">
+        <div className="mb-2 flex items-start justify-between gap-3">
+          <button onClick={onExpand} className="min-w-0 text-left">
+            <h3 className="truncate text-[14px] font-semibold text-gray-950">{candidate.name}</h3>
+            <p className="mt-0.5 truncate text-[11px] text-gray-400">{candidate.subtitle || group.name}</p>
+          </button>
+          <span className={`shrink-0 rounded-md border px-1.5 py-1 text-[10px] font-semibold uppercase ${candidate.activeState === "ACTIVE" ? "border-emerald-100 bg-emerald-50 text-emerald-700" : candidate.activeState === "PARKED" ? "border-amber-100 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"}`}>
+            {label(candidate.activeState)}
+          </span>
+        </div>
+        <div className="mb-2 flex flex-wrap gap-1">
+          {dateStatuses.length ? dateStatuses.map(({ date, status }) => (
+            <span key={date.id} className={`rounded-md border px-1.5 py-1 text-[10px] font-semibold uppercase ${holdClass(status)}`}>
+              {compactDateLabel(date).top} · {compactHoldLabel(status, "blank")}
+            </span>
+          )) : <span className="text-[11px] text-gray-300">No date status</span>}
+        </div>
+        <div className="space-y-1.5 border-t border-gray-100 pt-2">
+          <GalleryMeta label="Contact" value={candidate.contactEmail || candidate.blackbookEntry?.email || candidate.contactPhone || candidate.blackbookEntry?.phone || ""} />
+          {fields.map((field) => (
+            <GalleryMeta key={field.id} label={field.label} value={customColumnDisplay(customColumnValue(candidate, field.id), field.type) || fieldValueForCore(candidate, field)} />
+          ))}
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1">
+            {links.slice(0, 4).map((link) => (
+              <a key={link.label} href={link.href} target="_blank" rel="noreferrer" className="grid h-7 w-7 place-items-center rounded border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-900" title={link.label}>
+                {link.label === "website" ? <Globe size={13} /> : link.label === "book" ? <BookOpen size={13} /> : link.label === "pdf" ? <FileText size={13} /> : <ExternalLink size={13} />}
+              </a>
+            ))}
+          </div>
+          {candidate.blackbookEntryId ? (
+            <button onClick={() => onOpenBlackbook(candidate.blackbookEntryId!)} className="text-[11px] font-medium text-gray-600 underline underline-offset-2 hover:text-gray-950">Open record</button>
+          ) : (
+            <span className="text-[11px] text-gray-300">unlinked</span>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function GalleryMeta({ label: fieldLabel, value }: { label: string; value: string | number | null | undefined }) {
+  if (value === null || value === undefined || value === "") return null;
+  return (
+    <div className="grid grid-cols-[82px_1fr] gap-2 text-[11px] leading-4">
+      <span className="truncate text-gray-400">{fieldLabel}</span>
+      <span className="min-w-0 truncate text-gray-700">{value}</span>
+    </div>
+  );
+}
+
+function fieldValueForCore(candidate: OptionCandidate, column: OptionColumn): string {
+  if (column.key === "clientNotes") return candidate.clientNotes ?? "";
+  if (column.key === "internalNotes") return candidate.internalNotes ?? "";
+  if (column.key === "rate") return candidate.rate && candidate.rate > 0 ? formatMoney(candidate.rate) : "";
+  if (column.key === "address") return addressSummary(candidate);
+  if (column.key === "links") return `${linkCount(candidate)} links`;
+  return "";
 }
 
 function CandidateContactCell({ group, candidate, onUpdate, onLink, onOpenBlackbook }: {

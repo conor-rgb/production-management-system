@@ -1,3 +1,47 @@
+# HANDOVER - 2026-05-28 - Options Gallery View
+
+## Built This Session
+- Made `Gallery` in the options left rail a real Airtable-style card view.
+- Added a sheet display mode:
+  - `grid`
+  - `gallery`
+- Gallery view reuses the same candidate set as the grid:
+  - current base view,
+  - current filters,
+  - current sort,
+  - current visible fields / saved view column snapshot.
+- Gallery cards show:
+  - cover image,
+  - candidate name/subtitle,
+  - active/parked/released state,
+  - up to three date status pills,
+  - contact metadata,
+  - selected visible fields,
+  - link icons,
+  - Blackbook record shortcut.
+- Added a `Gallery` / `Grid` toggle in the candidate sheet toolbar.
+- The left rail now highlights Gallery when active.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Options sheets now have a functional visual card mode.
+- The `Customize cards` button is visible as the next control surface but not wired yet.
+- Next useful pass: card customization settings persisted in saved views.
+
+---
+
 # HANDOVER - 2026-05-28 - Persisted Options Saved Views
 
 ## Built This Session
