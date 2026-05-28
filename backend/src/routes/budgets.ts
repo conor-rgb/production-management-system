@@ -694,13 +694,26 @@ router.post("/production/:productionId/purchase-orders", async (req: Request, re
     return;
   }
 
-  const lineItems = await prisma.budgetLineItem.findMany({
+  let effectiveAllocations = allocations;
+  let lineItems = await prisma.budgetLineItem.findMany({
     where: { id: { in: allocations.map((allocation) => allocation.lineItemId) } },
     include: { section: { include: { revision: { include: { budget: true } } } } },
   });
   if (lineItems.length !== allocations.length || lineItems.some((line) => line.section.revision.budget.productionId !== production.id)) {
     res.status(400).json({ error: "All allocations must belong to this production budget" });
     return;
+  }
+  const sourceRevision = lineItems[0]?.section.revision;
+  if (sourceRevision && isRevisionImmutable(sourceRevision)) {
+    const clone = await cloneRevisionForEdit(sourceRevision.id, "Multi-line PO created");
+    effectiveAllocations = allocations.map((allocation) => ({
+      ...allocation,
+      lineItemId: clone.lineMap.get(allocation.lineItemId) ?? allocation.lineItemId,
+    }));
+    lineItems = await prisma.budgetLineItem.findMany({
+      where: { id: { in: effectiveAllocations.map((allocation) => allocation.lineItemId) } },
+      include: { section: { include: { revision: { include: { budget: true } } } } },
+    });
   }
 
   const candidate = body.optionCandidateId
@@ -760,7 +773,7 @@ router.post("/production/:productionId/purchase-orders", async (req: Request, re
       },
     });
 
-    for (const allocation of allocations) {
+    for (const allocation of effectiveAllocations) {
       const lineItem = lineItems.find((line) => line.id === allocation.lineItemId);
       await tx.subCost.create({
         data: {
@@ -793,10 +806,12 @@ router.post("/production/:productionId/purchase-orders", async (req: Request, re
     return po;
   });
 
-  for (const allocation of allocations) {
+  for (const allocation of effectiveAllocations) {
     await recalculateAfterSubCost(allocation.lineItemId);
   }
-  res.status(201).json(decoratePurchaseOrder(await prisma.purchaseOrderGroup.findUniqueOrThrow({ where: { id: created.id }, include: purchaseOrderInclude })));
+  const decorated = decoratePurchaseOrder(await prisma.purchaseOrderGroup.findUniqueOrThrow({ where: { id: created.id }, include: purchaseOrderInclude }));
+  const revision = lineItems[0]?.section.revisionId ? await getRevision(lineItems[0].section.revisionId) : null;
+  res.status(201).json({ ...decorated, revision });
 });
 
 router.patch("/purchase-orders/:purchaseOrderId", async (req: Request, res: Response): Promise<void> => {

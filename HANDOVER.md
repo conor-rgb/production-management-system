@@ -1,3 +1,76 @@
+# HANDOVER - 2026-05-28 - Budget Airtable Interaction Pass
+
+## Built This Session
+- Added the next Airtable-style interaction pass to the budget grid.
+- Budget rows now use a shared dynamic column model instead of fixed local grid strings:
+  - internal and client column definitions are centralized in `BudgetView.tsx`,
+  - visible columns drive headers, parent rows, cost lines, draft cost lines, and section totals,
+  - hidden fields are persisted in `localStorage`.
+- Added a sticky budget fields toolbar above the column headers:
+  - shows visible field count,
+  - opens a `Hide fields` menu,
+  - lets users show/hide non-essential columns.
+- Added spreadsheet-style active cell navigation:
+  - focused/clicked cells get an active outline,
+  - arrow keys move between editable budget cells,
+  - Enter activates the current cell,
+  - Escape clears selection.
+- Expanded parent-row right-click actions:
+  - Multi-line PO,
+  - + PO,
+  - + Bill,
+  - + Receipt,
+  - Duplicate,
+  - Close,
+  - Delete.
+- Added a budget version drawer:
+  - opens from the history button in the budget header,
+  - lists all versions with status, total, change summary/source, and update timestamp,
+  - selecting a version loads it.
+- Added a multi-line PO creation panel from the budget:
+  - starts from a selected budget line,
+  - can search/select Blackbook suppliers,
+  - can pull supplier details from current job option candidates,
+  - can create a new Blackbook supplier record while creating the PO,
+  - allocates one PO across multiple budget parent line items while keeping each line clear.
+
+## Backend
+- Updated `backend/src/routes/budgets.ts`.
+- Multi-line PO creation now respects immutable budget revisions:
+  - if allocations target a locked/sent revision, the backend clones it to a draft minor version before creating PO cost lines,
+  - allocation line IDs are remapped to the cloned revision,
+  - response includes the updated revision so the frontend can switch immediately.
+- No schema changes and no migrations.
+
+## Frontend
+- Updated `frontend/src/components/budgets/BudgetView.tsx`.
+- The current pass is scoped to the budget UI/workflow; other modules were not edited.
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Budget now has the first serious pass of the same interaction language as Options:
+  - softer Airtable-style surface,
+  - active cells,
+  - column visibility,
+  - richer row menus,
+  - immutable version awareness,
+  - multi-line PO workflow.
+- Useful next pass:
+  - persistent per-user budget column widths/order,
+  - drag-to-reorder budget columns,
+  - saved budget views,
+  - richer PO supplier onboarding form with file/AI extraction,
+  - dedicated project PO sheet polish.
+
+---
+
 # HANDOVER - 2026-05-28 - Budget Grid Soft Theme Pass
 
 ## Built This Session

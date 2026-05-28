@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Download, MoreHorizontal, Paperclip, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Columns3, Copy, Download, History, MoreHorizontal, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { api } from "../../lib/api";
 import type {
   AdvanceCalcType,
   AdvanceInvoice,
   Budget,
   BudgetLineItem,
+  PurchaseOrderContext,
+  PurchaseOrderGroup,
   BudgetRevision,
   BudgetRevisionSummary,
   BudgetSection,
@@ -13,7 +15,6 @@ import type {
   SubCost,
   SubCostLineType,
 } from "../../lib/types";
-import { BUDGET_GRID_CLIENT, BUDGET_GRID_INTERNAL, BUDGET_TABLE_CLIENT_WIDTH, BUDGET_TABLE_INTERNAL_WIDTH } from "./budgetLayout";
 import { COST_LINE_BACKGROUNDS, DOT_COLORS, STATE_BADGES, getDotState, type DotState } from "./budgetStatus";
 
 type Entity = { type: "production" | "opportunity"; id: string; label?: string; data?: unknown };
@@ -21,9 +22,26 @@ type ViewMode = "internal" | "client";
 type Panel = "cover" | "advances" | "templates" | null;
 type LineMutationResponse = { line: BudgetLineItem; revision: BudgetRevision | null };
 type SubCostMutationResponse = { subCost: SubCost; revision: BudgetRevision | null };
+type PurchaseOrderCreateResponse = PurchaseOrderGroup & { revision?: BudgetRevision | null };
 type EditableKind = "text" | "number" | "money" | "percent";
 type AddingCostLine = { lineId: string; lineType: SubCostLineType };
 type ParentContextMenu = { lineId: string; x: number; y: number } | null;
+type BudgetColumnKey = "dot" | "code" | "description" | "clientNotes" | "internalNotes" | "qty" | "unit" | "rate" | "agency" | "estimated" | "actuals" | "remaining" | "clo";
+type ActiveBudgetCell = { rowId: string; field: string } | null;
+
+type BudgetColumn = {
+  key: BudgetColumnKey;
+  label: string;
+  width: string;
+  align?: "left" | "right" | "center";
+  hideable?: boolean;
+  client?: boolean;
+};
+type BudgetCellHandle = {
+  cellId?: { rowId: string; field: string };
+  active?: boolean;
+  onActivate?: (cell: ActiveBudgetCell) => void;
+};
 
 const UNITS = ["Days", "Pcs", "Cars", "Drives", "Weeks", "Hours", "Flat Fee"];
 const STATUS_LABELS: Record<string, string> = {
@@ -42,6 +60,33 @@ const SHEET_HEADER_BG = "bg-[#f7f7f3]";
 const SHEET_LINE = "border-[#ededeb]";
 const SHEET_HOVER = "hover:bg-[#fbfbf8]";
 const EDIT_FOCUS = "focus:ring-[#13a18d]/25";
+const BUDGET_HIDDEN_COLUMNS_KEY = "budget.hiddenColumns.v1";
+
+const INTERNAL_COLUMNS: BudgetColumn[] = [
+  { key: "dot", label: "", width: "24px", align: "center" },
+  { key: "code", label: "Code", width: "52px" },
+  { key: "description", label: "Description", width: "minmax(360px, 1.4fr)" },
+  { key: "clientNotes", label: "Client notes", width: "150px", hideable: true },
+  { key: "internalNotes", label: "Int. notes", width: "130px", hideable: true },
+  { key: "qty", label: "Qty", width: "56px", align: "right", hideable: true },
+  { key: "unit", label: "Unit", width: "86px", hideable: true },
+  { key: "rate", label: "Rate", width: "96px", align: "right", hideable: true },
+  { key: "agency", label: "Agy%", width: "64px", align: "right", hideable: true },
+  { key: "estimated", label: "Estimated", width: "110px", align: "right" },
+  { key: "actuals", label: "Actuals", width: "96px", align: "right", hideable: true },
+  { key: "remaining", label: "Remaining", width: "110px", align: "right", hideable: true },
+  { key: "clo", label: "CLO", width: "44px", align: "center", hideable: true },
+];
+
+const CLIENT_COLUMNS: BudgetColumn[] = [
+  { key: "code", label: "Code", width: "52px" },
+  { key: "description", label: "Description", width: "minmax(360px, 1.4fr)" },
+  { key: "clientNotes", label: "Client notes", width: "150px", hideable: true, client: true },
+  { key: "qty", label: "Qty", width: "56px", align: "right", hideable: true, client: true },
+  { key: "unit", label: "Unit", width: "86px", hideable: true, client: true },
+  { key: "rate", label: "Rate", width: "96px", align: "right", hideable: true, client: true },
+  { key: "estimated", label: "Estimated", width: "110px", align: "right" },
+];
 
 function money(value: number | null | undefined) {
   return `£${Number(value ?? 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -76,8 +121,19 @@ function remainingPillClass(remaining: number, estimated: number) {
   return "bg-[#16a34a] text-white";
 }
 
-function gridStyle(mode: ViewMode): CSSProperties {
-  return { gridTemplateColumns: mode === "internal" ? BUDGET_GRID_INTERNAL : BUDGET_GRID_CLIENT };
+function budgetColumns(mode: ViewMode, hiddenColumns: Set<BudgetColumnKey>) {
+  const columns = mode === "internal" ? INTERNAL_COLUMNS : CLIENT_COLUMNS;
+  return columns.filter((column) => !hiddenColumns.has(column.key));
+}
+
+function gridStyleForColumns(columns: BudgetColumn[]): CSSProperties {
+  return { gridTemplateColumns: columns.map((column) => column.width).join(" ") };
+}
+
+function cellAlignClass(column: BudgetColumn) {
+  if (column.align === "right") return "justify-end text-right";
+  if (column.align === "center") return "justify-center text-center";
+  return "";
 }
 
 function statusSymbol(active: boolean) {
@@ -154,6 +210,7 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
   const [templates, setTemplates] = useState<SectionTemplate[]>([]);
   const [mode, setMode] = useState<ViewMode>("internal");
   const [panel, setPanel] = useState<Panel>(null);
+  const [versionPanelOpen, setVersionPanelOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [addingCostLine, setAddingCostLine] = useState<AddingCostLine | null>(null);
   const [blankStarted, setBlankStarted] = useState(false);
@@ -305,6 +362,9 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
           <button onClick={() => patchRevision({ status: revision.status === "DRAFT" ? "SENT" : revision.status }).catch(console.error)} className={`rounded-md border px-3 py-2 text-[12px] font-medium ${revisionTone(revision)}`}>
             {currentRevisionLocked ? "Locked" : STATUS_LABELS[revision.status]}
           </button>
+          <button onClick={() => setVersionPanelOpen(true)} className="grid h-9 w-9 place-items-center rounded-md border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50" title="Version history">
+            <History size={15} />
+          </button>
           <button onClick={() => exportPdf(mode).catch((err: Error) => setToast(err.message))} className="flex h-9 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-700 shadow-sm hover:bg-gray-50" title="Export PDF">
             <Download size={14} /> Export
           </button>
@@ -363,6 +423,7 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
           <BudgetTable
             revision={revision}
             mode={mode}
+            productionId={entity.type === "production" ? budget.productionId ?? entity.id : null}
             addingCostLine={addingCostLine}
             onSetAddingCostLine={setAddingCostLine}
             onSaveLine={saveLine}
@@ -379,6 +440,7 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
       {panel === "cover" && <CoverPanel budget={budget} onClose={() => setPanel(null)} onSave={patchBudget} />}
       {panel === "advances" && <AdvancesPanel budget={budget} totals={revision.totals} onClose={() => setPanel(null)} onChanged={load} />}
       {panel === "templates" && <TemplatePanel templates={templates} onClose={() => setPanel(null)} onApply={applyTemplate} />}
+      {versionPanelOpen && <VersionPanel currentRevision={revision} revisions={revisions} onClose={() => setVersionPanelOpen(false)} onOpenRevision={openRevision} />}
     </div>
   );
 }
@@ -451,6 +513,7 @@ function EditableMetric({ label, value, current, onSubmit }: { label: string; va
 function BudgetTable(props: {
   revision: BudgetRevision;
   mode: ViewMode;
+  productionId: string | null;
   addingCostLine: AddingCostLine | null;
   onSetAddingCostLine: (costLine: AddingCostLine | null) => void;
   onSaveLine: (line: BudgetLineItem, patch: Partial<BudgetLineItem>) => Promise<void>;
@@ -464,11 +527,27 @@ function BudgetTable(props: {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [toggledCostLines, setToggledCostLines] = useState<Set<string>>(new Set());
   const [parentMenu, setParentMenu] = useState<ParentContextMenu>(null);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [activeCell, setActiveCell] = useState<ActiveBudgetCell>(null);
+  const [hiddenColumns, setHiddenColumns] = useState<Set<BudgetColumnKey>>(() => {
+    try {
+      return new Set(JSON.parse(window.localStorage.getItem(BUDGET_HIDDEN_COLUMNS_KEY) ?? "[]") as BudgetColumnKey[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const [poPanelLine, setPoPanelLine] = useState<BudgetLineItem | null>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
   const internal = props.mode === "internal";
-  const tableWidth = internal ? BUDGET_TABLE_INTERNAL_WIDTH : BUDGET_TABLE_CLIENT_WIDTH;
+  const columns = budgetColumns(props.mode, hiddenColumns);
+  const gridStyle = gridStyleForColumns(columns);
   const menuLine = parentMenu
     ? props.revision.sections.flatMap((section) => section.lineItems).find((line) => line.id === parentMenu.lineId)
     : null;
+
+  useEffect(() => {
+    window.localStorage.setItem(BUDGET_HIDDEN_COLUMNS_KEY, JSON.stringify(Array.from(hiddenColumns)));
+  }, [hiddenColumns]);
 
   useEffect(() => {
     if (!parentMenu) return;
@@ -486,23 +565,80 @@ function BudgetTable(props: {
     };
   }, [parentMenu]);
 
+  function toggleColumn(key: BudgetColumnKey) {
+    const column = (internal ? INTERNAL_COLUMNS : CLIENT_COLUMNS).find((item) => item.key === key);
+    if (!column?.hideable) return;
+    const next = new Set(hiddenColumns);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    setHiddenColumns(next);
+  }
+
+  function moveActiveCell(direction: "left" | "right" | "up" | "down") {
+    const cells = Array.from(tableRef.current?.querySelectorAll<HTMLElement>("[data-budget-cell]") ?? []);
+    if (!cells.length) return;
+    const current = activeCell ? cells.find((cell) => cell.dataset.budgetCell === `${activeCell.rowId}:${activeCell.field}`) : document.activeElement as HTMLElement | null;
+    const index = current ? cells.indexOf(current) : -1;
+    const currentCell = index >= 0 ? cells[index] : cells[0];
+    const currentRow = currentCell.dataset.budgetRow ?? "";
+    const rowCells = cells.filter((cell) => cell.dataset.budgetRow === currentRow);
+    const rowIndex = rowCells.indexOf(currentCell);
+    let target: HTMLElement | undefined;
+    if (direction === "left") target = rowCells[Math.max(0, rowIndex - 1)];
+    if (direction === "right") target = rowCells[Math.min(rowCells.length - 1, rowIndex + 1)];
+    if (direction === "up" || direction === "down") {
+      const rows = Array.from(new Set(cells.map((cell) => cell.dataset.budgetRow ?? "")));
+      const nextRow = rows[Math.max(0, Math.min(rows.length - 1, rows.indexOf(currentRow) + (direction === "down" ? 1 : -1)))];
+      const nextRowCells = cells.filter((cell) => cell.dataset.budgetRow === nextRow);
+      target = nextRowCells[Math.min(rowIndex, nextRowCells.length - 1)];
+    }
+    target?.focus();
+    if (target?.dataset.budgetCell) {
+      const [rowId, field] = target.dataset.budgetCell.split(":");
+      setActiveCell({ rowId, field });
+    }
+  }
+
   return (
-    <div className="budget-table h-full w-full overflow-auto bg-[#f6f6f2]">
-      <div className="budget-table-inner min-h-full bg-white shadow-[inset_1px_0_0_#ededeb]" style={{ width: tableWidth, minWidth: tableWidth }}>
-      <div className={`sticky top-0 z-20 grid h-8 items-center border-b ${SHEET_BORDER} ${SHEET_HEADER_BG} text-[10px] font-medium uppercase tracking-[0.08em] text-[#9b9b95]`} style={gridStyle(props.mode)}>
-        {internal && <HeaderCell center />}
-        <HeaderCell>Code</HeaderCell>
-        <HeaderCell>Description</HeaderCell>
-        <HeaderCell>Client notes</HeaderCell>
-        {internal && <HeaderCell>Int. notes</HeaderCell>}
-        <HeaderCell right>Qty</HeaderCell>
-        <HeaderCell>Unit</HeaderCell>
-        <HeaderCell right>Rate</HeaderCell>
-        {internal && <HeaderCell right>Agy%</HeaderCell>}
-        <HeaderCell right>{internal ? "Estimated" : "Budget"}</HeaderCell>
-        {internal && <HeaderCell right>Actuals</HeaderCell>}
-        {internal && <HeaderCell right>Remaining</HeaderCell>}
-        {internal && <HeaderCell center title="Close this line when fully settled">CLO</HeaderCell>}
+    <div
+      ref={tableRef}
+      className="budget-table h-full w-full overflow-auto bg-[#f6f6f2]"
+      onKeyDownCapture={(event) => {
+        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "ArrowUp" || event.key === "ArrowDown") {
+          event.preventDefault();
+          moveActiveCell(event.key === "ArrowLeft" ? "left" : event.key === "ArrowRight" ? "right" : event.key === "ArrowUp" ? "up" : "down");
+        }
+        if (event.key === "Enter" && document.activeElement instanceof HTMLElement) {
+          document.activeElement.click();
+        }
+        if (event.key === "Escape") setActiveCell(null);
+      }}
+    >
+      <div className="budget-table-inner min-h-full min-w-[980px] bg-white shadow-[inset_1px_0_0_#ededeb]" style={{ width: "100%" }}>
+      <div className="sticky top-0 z-30 flex h-9 items-center justify-between border-b border-[#e6e6e1] bg-[#fbfbf8] px-3 text-[12px] text-gray-500">
+        <span>{columns.length} fields visible</span>
+        <div className="relative">
+          <button onClick={() => setColumnsOpen(!columnsOpen)} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#e1e1dc] bg-white px-2 text-[11px] font-medium text-gray-700 shadow-sm hover:bg-[#f7f7f3]">
+            <Columns3 size={13} /> Hide fields
+          </button>
+          {columnsOpen && (
+            <div className="absolute right-0 top-8 z-50 w-56 rounded-lg border border-[#e3e3dd] bg-[#fffefa] p-2 text-[12px] shadow-[0_10px_28px_rgba(20,20,20,0.12)]">
+              {(internal ? INTERNAL_COLUMNS : CLIENT_COLUMNS).filter((column) => column.hideable).map((column) => (
+                <label key={column.key} className="flex h-8 cursor-pointer items-center gap-2 rounded px-2 hover:bg-[#f2f2ed]">
+                  <input type="checkbox" checked={!hiddenColumns.has(column.key)} onChange={() => toggleColumn(column.key)} />
+                  <span>{column.label}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className={`sticky top-9 z-20 grid h-8 items-center border-b ${SHEET_BORDER} ${SHEET_HEADER_BG} text-[10px] font-medium uppercase tracking-[0.08em] text-[#9b9b95]`} style={gridStyle}>
+        {columns.map((column) => (
+          <HeaderCell key={column.key} column={column} title={column.key === "clo" ? "Close this line when fully settled" : undefined}>
+            {column.key === "estimated" && !internal ? "Budget" : column.label}
+          </HeaderCell>
+        ))}
       </div>
 
       {props.revision.sections.filter((section) => section.isVisible).map((section) => {
@@ -513,6 +649,10 @@ function BudgetTable(props: {
             section={section}
             collapsed={collapsed}
             toggledCostLines={toggledCostLines}
+            columns={columns}
+            gridStyle={gridStyle}
+            activeCell={activeCell}
+            onActivateCell={setActiveCell}
             onToggleSection={() => {
               const next = new Set(collapsedSections);
               if (next.has(section.id)) next.delete(section.id); else next.add(section.id);
@@ -524,6 +664,7 @@ function BudgetTable(props: {
               setToggledCostLines(next);
             }}
             onOpenParentMenu={(line, x, y) => setParentMenu({ lineId: line.id, x, y })}
+            onOpenPoPanel={setPoPanelLine}
             internal={internal}
             {...props}
           />
@@ -535,18 +676,39 @@ function BudgetTable(props: {
           style={{ left: parentMenu.x, top: parentMenu.y }}
           onMouseDown={(event) => event.stopPropagation()}
         >
+          {props.productionId && <button onClick={() => { setPoPanelLine(menuLine); setParentMenu(null); }} className="min-h-7 rounded border border-[#e1d7ff] bg-[#fbf8ff] px-2 text-[11px] font-medium text-[#7c3aed]">Multi-line PO</button>}
           <CostLineAddButton lineType="PO" onClick={() => { props.onSetAddingCostLine({ lineId: menuLine.id, lineType: "PO" }); setParentMenu(null); }} />
           <CostLineAddButton lineType="BILL" onClick={() => { props.onSetAddingCostLine({ lineId: menuLine.id, lineType: "BILL" }); setParentMenu(null); }} />
           <CostLineAddButton lineType="RECEIPT" onClick={() => { props.onSetAddingCostLine({ lineId: menuLine.id, lineType: "RECEIPT" }); setParentMenu(null); }} />
+          <button onClick={() => { props.onDuplicate(menuLine).catch(console.error); setParentMenu(null); }} className="min-h-7 rounded border border-[#e3e3dd] bg-white px-2 text-[11px] font-medium text-gray-600">Duplicate</button>
+          <button onClick={() => { props.onSaveLine(menuLine, { isClosed: !menuLine.isClosed }).catch(console.error); setParentMenu(null); }} className="min-h-7 rounded border border-[#e3e3dd] bg-white px-2 text-[11px] font-medium text-gray-600">Close</button>
+          <button onClick={() => { props.onDelete(menuLine).catch(console.error); setParentMenu(null); }} className="min-h-7 rounded border border-red-100 bg-red-50 px-2 text-[11px] font-medium text-red-600">Delete</button>
         </div>
+      )}
+      {poPanelLine && props.productionId && (
+        <BudgetPoPanel
+          productionId={props.productionId}
+          initialLine={poPanelLine}
+          onClose={() => setPoPanelLine(null)}
+          onCreated={(nextRevision) => {
+            setPoPanelLine(null);
+            if (nextRevision) {
+              props.onRevision(nextRevision);
+              return;
+            }
+            api.get<BudgetRevision>(`/api/budgets/revisions/${props.revision.id}`)
+              .then(props.onRevision)
+              .catch(() => props.onError("PO created. Refresh budget to see allocations."));
+          }}
+        />
       )}
       </div>
     </div>
   );
 }
 
-function HeaderCell({ children, right, center, title }: { children?: ReactNode; right?: boolean; center?: boolean; title?: string }) {
-  return <div title={title} className={`flex min-w-0 items-center truncate px-2 ${right ? "justify-end text-right" : center ? "justify-center" : ""}`}>{children}</div>;
+function HeaderCell({ children, column, title }: { children?: ReactNode; column: BudgetColumn; title?: string }) {
+  return <div title={title} className={`flex min-w-0 items-center truncate px-2 ${cellAlignClass(column)}`}>{children}</div>;
 }
 
 function sectionTint(index: number) {
@@ -558,9 +720,14 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
   section: BudgetSection;
   collapsed: boolean;
   toggledCostLines: Set<string>;
+  columns: BudgetColumn[];
+  gridStyle: CSSProperties;
+  activeCell: ActiveBudgetCell;
+  onActivateCell: (cell: ActiveBudgetCell) => void;
   onToggleSection: () => void;
   onToggleCostLines: (lineId: string) => void;
   onOpenParentMenu: (line: BudgetLineItem, x: number, y: number) => void;
+  onOpenPoPanel: (line: BudgetLineItem) => void;
   internal: boolean;
 } & Omit<Parameters<typeof BudgetTable>[0], "mode">) {
   const sectionTotal = props.revision.totals.sectionTotals.find((item) => item.sectionId === section.id);
@@ -612,24 +779,28 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
       {!collapsed && topLevelLines.map((line) => (
         <ParentLineRow
           key={line.id}
+          {...props}
           line={line}
           internal={internal}
           toggledCostLines={toggledCostLines.has(line.id)}
           onToggleCostLines={() => onToggleCostLines(line.id)}
-          {...props}
+          columns={props.columns}
+          gridStyle={props.gridStyle}
+          activeCell={props.activeCell}
+          onActivateCell={props.onActivateCell}
+          onOpenPoPanel={props.onOpenPoPanel}
         />
       ))}
 
       {internal && sectionTotal && estimated !== 0 && (
-        <div className="grid h-8 items-center border-t border-[#e0e0dc] bg-[#f8f8f4] text-[11px] text-gray-500" style={gridStyle("internal")}>
-          <div />
-          <div />
-          <div className="flex items-center px-2 italic">Section total</div>
-          <div className="col-span-6" />
-          <div className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(estimated)}</div>
-          <div className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(actual)}</div>
-          <div className={`flex items-center justify-end px-2 font-medium not-italic tabular-nums ${remainingClass(remaining, estimated)}`}>{money(remaining)}</div>
-          <div />
+        <div className="grid h-8 items-center border-t border-[#e0e0dc] bg-[#f8f8f4] text-[11px] text-gray-500" style={props.gridStyle}>
+          {props.columns.map((column) => {
+            if (column.key === "description") return <div key={column.key} className="flex items-center px-2 italic">Section total</div>;
+            if (column.key === "estimated") return <div key={column.key} className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(estimated)}</div>;
+            if (column.key === "actuals") return <div key={column.key} className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(actual)}</div>;
+            if (column.key === "remaining") return <div key={column.key} className={`flex items-center justify-end px-2 font-medium not-italic tabular-nums ${remainingClass(remaining, estimated)}`}>{money(remaining)}</div>;
+            return <div key={column.key} />;
+          })}
         </div>
       )}
     </section>
@@ -640,8 +811,13 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
   line: BudgetLineItem;
   internal: boolean;
   toggledCostLines: boolean;
+  columns: BudgetColumn[];
+  gridStyle: CSSProperties;
+  activeCell: ActiveBudgetCell;
+  onActivateCell: (cell: ActiveBudgetCell) => void;
   onToggleCostLines: () => void;
   onOpenParentMenu: (line: BudgetLineItem, x: number, y: number) => void;
+  onOpenPoPanel: (line: BudgetLineItem) => void;
 } & Omit<Parameters<typeof BudgetTable>[0], "revision" | "mode">) {
   const state = getDotState(line);
   const hasSubCosts = line.subCosts.length > 0;
@@ -651,9 +827,70 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
   const autoExpanded = state === "PURPLE" || state === "BLUE";
   const costLinesExpanded = hasSubCosts && (autoExpanded ? !toggledCostLines : toggledCostLines);
   const rowStyle = internal
-    ? { ...gridStyle("internal"), background: state === "GRAY" ? "#f3f3ef" : "#fffefa", opacity: state === "GRAY" ? 0.55 : 1 }
-    : gridStyle("client");
+    ? { ...props.gridStyle, background: state === "GRAY" ? "#f3f3ef" : "#fffefa", opacity: state === "GRAY" ? 0.55 : 1 }
+    : props.gridStyle;
   const closed = state === "GRAY";
+
+  function editableProps(field: string) {
+    return {
+      cellId: { rowId: line.id, field },
+      active: props.activeCell?.rowId === line.id && props.activeCell.field === field,
+      onActivate: props.onActivateCell,
+    };
+  }
+
+  function renderCell(column: BudgetColumn) {
+    switch (column.key) {
+      case "dot":
+        return internal ? <StatusDot state={state} /> : <div />;
+      case "code":
+        return (
+          <div className="flex items-center gap-1 px-2 text-[11px] text-[#8f8f89]">
+            {internal && (
+              <button onClick={(event) => { event.stopPropagation(); onToggleCostLines(); }} className={`grid h-6 w-4 place-items-center rounded text-[#9b9b95] hover:bg-[#f0f0eb] ${hasSubCosts ? "" : "opacity-0 group-hover:opacity-100"}`}>
+                {costLinesExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              </button>
+            )}
+            <span>{line.lineCode}</span>
+          </div>
+        );
+      case "description":
+        return <LineDescriptionCell line={line} state={state} internal={internal} readOnly={closed} onSave={(description) => props.onSaveLine(line, { description })} {...editableProps("description")} />;
+      case "clientNotes":
+        return <Cell><EditableCell value={line.clientNotes ?? ""} onSave={(value) => props.onSaveLine(line, { clientNotes: String(value) })} className="italic text-[#888]" readOnly={closed} {...editableProps("clientNotes")} /></Cell>;
+      case "internalNotes":
+        return internal ? <Cell><EditableCell value={line.internalNotes ?? ""} onSave={(value) => props.onSaveLine(line, { internalNotes: String(value) })} className="text-[#aaa]" readOnly={closed} {...editableProps("internalNotes")} /></Cell> : <div />;
+      case "qty":
+        return <NumberCell value={line.qty} onSave={(value) => props.onSaveLine(line, { qty: value ?? 0 })} readOnly={closed} {...editableProps("qty")} />;
+      case "unit":
+        return (
+          <Cell>
+            <UnitDaysCell
+              days={line.days}
+              unit={line.unit}
+              readOnly={closed}
+              onSaveDays={(days) => props.onSaveLine(line, { days })}
+              onSaveUnit={(unit) => props.onSaveLine(line, { unit, days: unit === "Flat Fee" ? 1 : line.days })}
+              {...editableProps("unit")}
+            />
+          </Cell>
+        );
+      case "rate":
+        return <MoneyCell value={line.rate} onSave={(value) => props.onSaveLine(line, { rate: value ?? 0 })} readOnly={closed} {...editableProps("rate")} />;
+      case "agency":
+        return internal ? <PercentCell value={line.agencyFeePercent} onSave={(value) => props.onSaveLine(line, { agencyFeePercent: value ?? 0 })} readOnly={closed} className={Number(line.agencyFeePercent ?? 0) > 0 ? "text-[#d97706]" : ""} {...editableProps("agency")} /> : <div />;
+      case "estimated":
+        return <EstimatedCell line={line} />;
+      case "actuals":
+        return internal ? <ReadMoney value={displayActual} className={actualClass} title={hasSubCosts ? undefined : "No cost lines yet; showing estimated value as a placeholder"} /> : <div />;
+      case "remaining":
+        return internal ? <ReadMoney value={displayRemaining} className={remainingClass(displayRemaining, line.estimatedTotal)} /> : <div />;
+      case "clo":
+        return internal ? <StatusButton active={line.isClosed} onClick={() => props.onSaveLine(line, { isClosed: !line.isClosed }).catch(console.error)} title="Close this line when fully settled" /> : <div />;
+      default:
+        return <div />;
+    }
+  }
 
   return (
     <div className="group/line">
@@ -666,36 +903,10 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
           props.onOpenParentMenu(line, event.clientX, event.clientY);
         }}
       >
-        {internal && <StatusDot state={state} />}
-        <div className="flex items-center gap-1 px-2 text-[11px] text-[#8f8f89]">
-          {internal && (
-            <button onClick={(event) => { event.stopPropagation(); onToggleCostLines(); }} className={`grid h-6 w-4 place-items-center rounded text-[#9b9b95] hover:bg-[#f0f0eb] ${hasSubCosts ? "" : "opacity-0 group-hover:opacity-100"}`}>
-              {costLinesExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-            </button>
-          )}
-          <span>{line.lineCode}</span>
-        </div>
-        <LineDescriptionCell line={line} state={state} internal={internal} readOnly={closed} onSave={(description) => props.onSaveLine(line, { description })} />
-        <Cell><EditableCell value={line.clientNotes ?? ""} onSave={(value) => props.onSaveLine(line, { clientNotes: String(value) })} className="italic text-[#888]" readOnly={closed} /></Cell>
-        {internal && <Cell><EditableCell value={line.internalNotes ?? ""} onSave={(value) => props.onSaveLine(line, { internalNotes: String(value) })} className="text-[#aaa]" readOnly={closed} /></Cell>}
-        <NumberCell value={line.qty} onSave={(value) => props.onSaveLine(line, { qty: value ?? 0 })} readOnly={closed} />
-        <Cell>
-          <UnitDaysCell
-            days={line.days}
-            unit={line.unit}
-            readOnly={closed}
-            onSaveDays={(days) => props.onSaveLine(line, { days })}
-            onSaveUnit={(unit) => props.onSaveLine(line, { unit, days: unit === "Flat Fee" ? 1 : line.days })}
-          />
-        </Cell>
-        <MoneyCell value={line.rate} onSave={(value) => props.onSaveLine(line, { rate: value ?? 0 })} readOnly={closed} />
-        {internal && <PercentCell value={line.agencyFeePercent} onSave={(value) => props.onSaveLine(line, { agencyFeePercent: value ?? 0 })} readOnly={closed} className={Number(line.agencyFeePercent ?? 0) > 0 ? "text-[#d97706]" : ""} />}
-        <EstimatedCell line={line} />
-        {internal && <ReadMoney value={displayActual} className={actualClass} title={hasSubCosts ? undefined : "No cost lines yet; showing estimated value as a placeholder"} />}
-        {internal && <ReadMoney value={displayRemaining} className={remainingClass(displayRemaining, line.estimatedTotal)} />}
-        {internal && <StatusButton active={line.isClosed} onClick={() => props.onSaveLine(line, { isClosed: !line.isClosed }).catch(console.error)} title="Close this line when fully settled" />}
+        {props.columns.map((column) => <div key={column.key} className="min-w-0">{renderCell(column)}</div>)}
         {internal && (
           <div className="absolute inset-y-0 right-0 flex items-center justify-end gap-1 bg-[#fffefa]/95 px-2 opacity-0 shadow-[-16px_0_18px_rgba(255,254,250,0.95)] transition group-hover:opacity-100">
+            {props.productionId && <button onClick={() => props.onOpenPoPanel(line)} className="h-7 rounded px-2 text-[11px] font-medium text-[#7c3aed] hover:bg-[#fbf8ff]" title="Create multi-line PO">PO</button>}
             <button onClick={() => props.onDuplicate(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#8f8f89] hover:bg-[#f2f2ed] hover:text-[#1a1a1f]" title="Duplicate"><Copy size={13} /></button>
             <button onClick={() => props.onDelete(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#b2b2ac] hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 size={13} /></button>
           </div>
@@ -703,10 +914,10 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
       </div>
 
       {internal && costLinesExpanded && line.subCosts.map((subCost) => (
-        <SubCostRow key={subCost.id} subCost={subCost} closed={closed} onRevision={props.onRevision} onError={props.onError} />
+        <SubCostRow key={subCost.id} subCost={subCost} closed={closed} columns={props.columns} gridStyle={props.gridStyle} onRevision={props.onRevision} onError={props.onError} />
       ))}
       {internal && props.addingCostLine?.lineId === line.id && (
-        <SubCostDraftRow lineId={line.id} initialLineType={props.addingCostLine.lineType} onCancel={() => props.onSetAddingCostLine(null)} onRevision={(next) => { props.onRevision(next); props.onSetAddingCostLine(null); }} onError={props.onError} />
+        <SubCostDraftRow lineId={line.id} initialLineType={props.addingCostLine.lineType} columns={props.columns} gridStyle={props.gridStyle} onCancel={() => props.onSetAddingCostLine(null)} onRevision={(next) => { props.onRevision(next); props.onSetAddingCostLine(null); }} onError={props.onError} />
       )}
     </div>
   );
@@ -728,7 +939,7 @@ function StatusDot({ state }: { state: DotState }) {
   );
 }
 
-function LineDescriptionCell({ line, state, internal, readOnly, onSave }: { line: BudgetLineItem; state: DotState; internal: boolean; readOnly: boolean; onSave: (value: string) => Promise<void> }) {
+function LineDescriptionCell({ line, state, internal, readOnly, onSave, cellId, active, onActivate }: { line: BudgetLineItem; state: DotState; internal: boolean; readOnly: boolean; onSave: (value: string) => Promise<void> } & BudgetCellHandle) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(line.description);
   useEffect(() => setDraft(line.description), [line.description]);
@@ -760,7 +971,14 @@ function LineDescriptionCell({ line, state, internal, readOnly, onSave }: { line
 
   return (
     <Cell>
-      <button disabled={readOnly} onClick={() => setEditing(true)} className={`flex min-w-0 items-center rounded px-1 py-1 text-left text-[12px] font-semibold hover:bg-[#f7f7f3] disabled:hover:bg-transparent ${textClass}`}>
+      <button
+        disabled={readOnly}
+        data-budget-cell={cellId ? `${cellId.rowId}:${cellId.field}` : undefined}
+        data-budget-row={cellId?.rowId}
+        onFocus={() => cellId && onActivate?.(cellId)}
+        onClick={() => { cellId && onActivate?.(cellId); setEditing(true); }}
+        className={`flex min-w-0 items-center rounded px-1 py-1 text-left text-[12px] font-semibold hover:bg-[#f7f7f3] focus:outline-none ${active ? "ring-2 ring-[#13a18d]" : ""} disabled:hover:bg-transparent ${textClass}`}
+      >
         <span className="truncate">{line.description || "—"}</span>
         {internal && (
           <span
@@ -775,7 +993,7 @@ function LineDescriptionCell({ line, state, internal, readOnly, onSave }: { line
   );
 }
 
-function EditableCell({ value, onSave, className = "", kind = "text", readOnly = false }: { value: string | number | null | undefined; onSave: (value: string | number | null) => Promise<void>; className?: string; kind?: EditableKind; readOnly?: boolean }) {
+function EditableCell({ value, onSave, className = "", kind = "text", readOnly = false, cellId, active, onActivate }: { value: string | number | null | undefined; onSave: (value: string | number | null) => Promise<void>; className?: string; kind?: EditableKind; readOnly?: boolean } & BudgetCellHandle) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value === null || value === undefined ? "" : String(value));
   const [flash, setFlash] = useState(false);
@@ -838,33 +1056,36 @@ function EditableCell({ value, onSave, className = "", kind = "text", readOnly =
   return (
     <button
       data-budget-editable="true"
+      data-budget-cell={cellId ? `${cellId.rowId}:${cellId.field}` : undefined}
+      data-budget-row={cellId?.rowId}
+      onFocus={() => cellId && onActivate?.(cellId)}
       onClick={() => setEditing(true)}
-      className={`min-h-[30px] w-full truncate rounded px-1 text-left transition hover:bg-[#f7f7f3] focus:outline-none focus:ring-2 ${EDIT_FOCUS} ${kind !== "text" ? "text-right tabular-nums" : ""} ${flash ? "bg-[#e8f4f1]" : ""} ${Number(value ?? 1) === 0 && kind !== "text" ? "text-[#c8c8c4]" : ""} ${className}`}
+      className={`min-h-[30px] w-full truncate rounded px-1 text-left transition hover:bg-[#f7f7f3] focus:outline-none focus:ring-2 ${active ? "ring-[#13a18d]" : EDIT_FOCUS} ${kind !== "text" ? "text-right tabular-nums" : ""} ${flash ? "bg-[#e8f4f1]" : ""} ${Number(value ?? 1) === 0 && kind !== "text" ? "text-[#c8c8c4]" : ""} ${className}`}
     >
       {display || (kind === "text" ? "—" : "")}
     </button>
   );
 }
 
-function NumberCell({ value, onSave, readOnly = false }: { value?: number | null; onSave: (value: number | null) => Promise<void>; readOnly?: boolean }) {
-  return <Cell><EditableCell value={value ?? ""} onSave={(next) => onSave(typeof next === "number" ? next : null)} kind="number" readOnly={readOnly} /></Cell>;
+function NumberCell({ value, onSave, readOnly = false, ...cellHandle }: { value?: number | null; onSave: (value: number | null) => Promise<void>; readOnly?: boolean } & BudgetCellHandle) {
+  return <Cell><EditableCell value={value ?? ""} onSave={(next) => onSave(typeof next === "number" ? next : null)} kind="number" readOnly={readOnly} {...cellHandle} /></Cell>;
 }
 
-function MoneyCell({ value, onSave, readOnly = false }: { value?: number | null; onSave: (value: number | null) => Promise<void>; readOnly?: boolean }) {
-  return <Cell><EditableCell value={value ?? ""} onSave={(next) => onSave(typeof next === "number" ? next : null)} kind="money" readOnly={readOnly} /></Cell>;
+function MoneyCell({ value, onSave, readOnly = false, ...cellHandle }: { value?: number | null; onSave: (value: number | null) => Promise<void>; readOnly?: boolean } & BudgetCellHandle) {
+  return <Cell><EditableCell value={value ?? ""} onSave={(next) => onSave(typeof next === "number" ? next : null)} kind="money" readOnly={readOnly} {...cellHandle} /></Cell>;
 }
 
-function PercentCell({ value, onSave, readOnly = false, className = "" }: { value?: number | null; onSave: (value: number | null) => Promise<void>; readOnly?: boolean; className?: string }) {
-  return <Cell><EditableCell value={value ?? ""} onSave={(next) => onSave(typeof next === "number" ? next : null)} kind="percent" readOnly={readOnly} className={className} /></Cell>;
+function PercentCell({ value, onSave, readOnly = false, className = "", ...cellHandle }: { value?: number | null; onSave: (value: number | null) => Promise<void>; readOnly?: boolean; className?: string } & BudgetCellHandle) {
+  return <Cell><EditableCell value={value ?? ""} onSave={(next) => onSave(typeof next === "number" ? next : null)} kind="percent" readOnly={readOnly} className={className} {...cellHandle} /></Cell>;
 }
 
-function UnitDaysCell({ days, unit, onSaveDays, onSaveUnit, readOnly = false }: {
+function UnitDaysCell({ days, unit, onSaveDays, onSaveUnit, readOnly = false, cellId, active, onActivate }: {
   days: number;
   unit: string;
   onSaveDays: (value: number) => Promise<void>;
   onSaveUnit: (value: string) => Promise<void>;
   readOnly?: boolean;
-}) {
+} & BudgetCellHandle) {
   const [open, setOpen] = useState(false);
   const [editingDays, setEditingDays] = useState(false);
   const [draftDays, setDraftDays] = useState(String(days ?? 1));
@@ -904,7 +1125,7 @@ function UnitDaysCell({ days, unit, onSaveDays, onSaveUnit, readOnly = false }: 
             className="h-7 w-9 rounded border-0 bg-[#f7f7f3] px-1 text-right text-xs outline-none ring-2 ring-[#13a18d]/25"
           />
         ) : (
-          <button disabled={readOnly} data-budget-editable="true" onClick={() => setEditingDays(true)} className={`rounded px-1 hover:bg-[#f7f7f3] ${Number(days ?? 0) === 0 ? "text-[#c8c8c4]" : ""}`}>
+          <button disabled={readOnly} data-budget-editable="true" data-budget-cell={cellId ? `${cellId.rowId}:${cellId.field}` : undefined} data-budget-row={cellId?.rowId} onFocus={() => cellId && onActivate?.(cellId)} onClick={() => setEditingDays(true)} className={`rounded px-1 hover:bg-[#f7f7f3] ${active ? "ring-2 ring-[#13a18d]" : ""} ${Number(days ?? 0) === 0 ? "text-[#c8c8c4]" : ""}`}>
             {numeric(days) || "0"}
           </button>
         )
@@ -1001,7 +1222,7 @@ function CostLineTypePill({ lineType, onChange }: { lineType: SubCostLineType; o
   );
 }
 
-function SubCostRow({ subCost, closed, onRevision, onError }: { subCost: SubCost; closed: boolean; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
+function SubCostRow({ subCost, closed, columns, gridStyle, onRevision, onError }: { subCost: SubCost; closed: boolean; columns: BudgetColumn[]; gridStyle: CSSProperties; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
   const background = subCost.lineType === "BILL" && subCost.isPaid
     ? "#f0fdf4"
     : subCost.lineType === "RECEIPT" && subCost.freeAgentTransactionId
@@ -1035,27 +1256,41 @@ function SubCostRow({ subCost, closed, onRevision, onError }: { subCost: SubCost
     if (response.revision) onRevision(response.revision);
   }
 
+  function renderCell(column: BudgetColumn) {
+    if (column.key === "description") {
+      return (
+        <div className="flex min-h-[34px] min-w-0 items-center gap-2 overflow-hidden pl-12 pr-2">
+          <span className="shrink-0 text-[#b8b8b4]">{subCost.receiptCaptureId ? <Camera size={12} /> : "└─"}</span>
+          <CostLineTypePill lineType={subCost.lineType} onChange={(lineType) => patch({ lineType }).catch(console.error)} />
+          {reference && <span className="shrink-0 whitespace-nowrap text-xs font-medium" style={{ color: DOT_COLORS[subCost.lineType === "PO" ? "PURPLE" : "BLUE" ] }}>{reference}</span>}
+          <EditableCell value={subCost.description} onSave={(value) => patch({ description: String(value) })} className="min-w-0 text-[#555]" />
+          {subCost.supplierName && <span className="shrink-0 truncate text-[11px] italic text-[#888]">{subCost.supplierName}</span>}
+        </div>
+      );
+    }
+    if (column.key === "actuals") {
+      return (
+        <div className="flex min-h-[34px] items-center justify-end gap-1 px-2 text-right tabular-nums">
+          <EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={amountClass} />
+        </div>
+      );
+    }
+    if (column.key === "remaining") return <CostLineLifecycleCell subCost={subCost} onPatch={patch} />;
+    if (column.key === "clo") {
+      return (
+        <div className="flex min-h-[34px] items-center justify-end gap-1 px-1">
+          <Paperclip size={14} className={subCost.invoiceFileId ? "text-[#1a1a1f]" : "text-[#888]"} />
+          {subCost.proofOfPayment ? <Check size={14} className="text-green-600" /> : <span className="text-[#aaa]">✓</span>}
+          <button onClick={remove} className="grid h-7 w-7 place-items-center text-[#aaa] hover:text-red-600"><X size={12} /></button>
+        </div>
+      );
+    }
+    return <div />;
+  }
+
   return (
-    <div className="grid min-h-[34px] border-b border-[#f0f0ed] text-[12px]" style={{ ...gridStyle("internal"), background, opacity: closed ? 0.55 : 1 }}>
-      <div />
-      <div />
-      <div className="flex min-h-[34px] min-w-0 items-center gap-2 overflow-hidden pl-12 pr-2">
-        <span className="shrink-0 text-[#b8b8b4]">{subCost.receiptCaptureId ? <Camera size={12} /> : "└─"}</span>
-        <CostLineTypePill lineType={subCost.lineType} onChange={(lineType) => patch({ lineType }).catch(console.error)} />
-        {reference && <span className="shrink-0 whitespace-nowrap text-xs font-medium" style={{ color: DOT_COLORS[subCost.lineType === "PO" ? "PURPLE" : "BLUE" ] }}>{reference}</span>}
-        <EditableCell value={subCost.description} onSave={(value) => patch({ description: String(value) })} className="min-w-0 text-[#555]" />
-        {subCost.supplierName && <span className="shrink-0 truncate text-[11px] italic text-[#888]">{subCost.supplierName}</span>}
-      </div>
-      <div className="col-span-7" />
-      <div className="flex min-h-[34px] items-center justify-end gap-1 px-2 text-right tabular-nums">
-        <EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={amountClass} />
-      </div>
-      <CostLineLifecycleCell subCost={subCost} onPatch={patch} />
-      <div className="flex min-h-[34px] items-center justify-end gap-1 px-1">
-        <Paperclip size={14} className={subCost.invoiceFileId ? "text-[#1a1a1f]" : "text-[#888]"} />
-        {subCost.proofOfPayment ? <Check size={14} className="text-green-600" /> : <span className="text-[#aaa]">✓</span>}
-        <button onClick={remove} className="grid h-7 w-7 place-items-center text-[#aaa] hover:text-red-600"><X size={12} /></button>
-      </div>
+    <div className="grid min-h-[34px] border-b border-[#f0f0ed] text-[12px]" style={{ ...gridStyle, background, opacity: closed ? 0.55 : 1 }}>
+      {columns.map((column) => <div key={column.key} className="min-w-0">{renderCell(column)}</div>)}
     </div>
   );
 }
@@ -1094,7 +1329,7 @@ function CostLineLifecycleCell({ subCost, onPatch }: { subCost: SubCost; onPatch
   );
 }
 
-function SubCostDraftRow({ lineId, initialLineType, onCancel, onRevision, onError }: { lineId: string; initialLineType: SubCostLineType; onCancel: () => void; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
+function SubCostDraftRow({ lineId, initialLineType, columns, gridStyle, onCancel, onRevision, onError }: { lineId: string; initialLineType: SubCostLineType; columns: BudgetColumn[]; gridStyle: CSSProperties; onCancel: () => void; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
   const [lineType, setLineType] = useState<SubCostLineType>(initialLineType);
   const [description, setDescription] = useState("");
   const [supplierName, setSupplierName] = useState("");
@@ -1114,24 +1349,32 @@ function SubCostDraftRow({ lineId, initialLineType, onCancel, onRevision, onErro
     }
   }
 
+  function renderCell(column: BudgetColumn) {
+    if (column.key === "description") {
+      return (
+        <div className="flex min-h-[34px] items-center gap-2 pl-12 pr-2">
+          <span className="shrink-0 text-[#b8b8b4]">└─</span>
+          <CostLineTypePill lineType={lineType} onChange={setLineType} />
+          <input autoFocus value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description..." className="h-7 min-w-0 flex-1 rounded border-0 bg-white/70 px-1 text-xs outline-none focus:ring-2 focus:ring-[#13a18d]/25" />
+          <input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="Supplier..." className="h-7 w-28 rounded border-0 bg-white/70 px-1 text-[11px] italic text-[#888] outline-none focus:ring-2 focus:ring-[#13a18d]/25" />
+        </div>
+      );
+    }
+    if (column.key === "actuals") return <Cell><input value={amount} onChange={(event) => setAmount(event.target.value)} type="number" placeholder="£" className="h-7 w-full rounded border-0 bg-white/70 px-1 text-right text-xs tabular-nums outline-none focus:ring-2 focus:ring-[#13a18d]/25" /></Cell>;
+    if (column.key === "clo") {
+      return (
+        <div className="flex min-h-[34px] items-center justify-end gap-2 px-2">
+          <button onClick={save} className="min-h-[28px] rounded bg-[#1a1a1f] px-2 text-[11px] font-medium text-white">Save</button>
+          <button onClick={onCancel} className="grid min-h-[28px] w-7 place-items-center text-red-600"><X size={12} /></button>
+        </div>
+      );
+    }
+    return <div />;
+  }
+
   return (
-    <div className="grid min-h-[34px] border-b border-[#f0f0ed] bg-[#fbfbf8] text-[12px]" style={gridStyle("internal")}>
-      <div />
-      <div className="flex min-h-[30px] items-center gap-1 overflow-hidden px-1">
-      </div>
-      <div className="flex min-h-[34px] items-center gap-2 pl-12 pr-2">
-        <span className="shrink-0 text-[#b8b8b4]">└─</span>
-        <CostLineTypePill lineType={lineType} onChange={setLineType} />
-        <input autoFocus value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description..." className="h-7 min-w-0 flex-1 rounded border-0 bg-white/70 px-1 text-xs outline-none focus:ring-2 focus:ring-[#13a18d]/25" />
-        <input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="Supplier..." className="h-7 w-28 rounded border-0 bg-white/70 px-1 text-[11px] italic text-[#888] outline-none focus:ring-2 focus:ring-[#13a18d]/25" />
-      </div>
-      <div className="col-span-7" />
-      <Cell><input value={amount} onChange={(event) => setAmount(event.target.value)} type="number" placeholder="£" className="h-7 w-full rounded border-0 bg-white/70 px-1 text-right text-xs tabular-nums outline-none focus:ring-2 focus:ring-[#13a18d]/25" /></Cell>
-      <div />
-      <div className="flex items-center justify-end gap-2 px-2">
-        <button onClick={save} className="min-h-[28px] rounded bg-[#1a1a1f] px-2 text-[11px] font-medium text-white">Save</button>
-        <button onClick={onCancel} className="grid min-h-[28px] w-7 place-items-center text-red-600"><X size={12} /></button>
-      </div>
+    <div className="grid min-h-[34px] border-b border-[#f0f0ed] bg-[#fbfbf8] text-[12px]" style={gridStyle}>
+      {columns.map((column) => <div key={column.key} className="min-w-0">{renderCell(column)}</div>)}
     </div>
   );
 }
@@ -1170,6 +1413,212 @@ function TemplatePanel({ templates, onClose, onApply }: { templates: SectionTemp
         ))}
       </div>
     </SidePanel>
+  );
+}
+
+function VersionPanel({ currentRevision, revisions, onClose, onOpenRevision }: { currentRevision: BudgetRevision; revisions: BudgetRevisionSummary[]; onClose: () => void; onOpenRevision: (revisionId: string) => Promise<void> }) {
+  return (
+    <SidePanel title="Budget versions" onClose={onClose} width="380px">
+      <div className="space-y-2">
+        {revisions.map((revisionItem) => {
+          const active = revisionItem.id === currentRevision.id;
+          const source = revisionItem.sourceRevisionId ? revisions.find((item) => item.id === revisionItem.sourceRevisionId) : null;
+          return (
+            <button
+              key={revisionItem.id}
+              onClick={() => onOpenRevision(revisionItem.id).then(onClose).catch(console.error)}
+              className={`w-full rounded-lg border p-3 text-left transition ${active ? "border-[#13a18d] bg-[#e9fbf8]" : "border-[#e6e6e1] bg-white hover:bg-[#fbfbf8]"}`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-[#1a1a1f]">{budgetVersionLabel(revisionItem)}</span>
+                  <span className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase ${revisionTone(revisionItem)}`}>{STATUS_LABELS[revisionItem.status]}</span>
+                </div>
+                <span className="text-xs font-medium tabular-nums text-gray-500">{money(revisionItem.grandTotal)}</span>
+              </div>
+              <p className="mt-2 text-xs text-gray-500">{revisionItem.changeSummary || (source ? `Created from ${budgetVersionLabel(source)}` : "Major version")}</p>
+              <p className="mt-1 text-[11px] text-gray-400">{new Date(revisionItem.updatedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+            </button>
+          );
+        })}
+      </div>
+    </SidePanel>
+  );
+}
+
+function BudgetPoPanel({ productionId, initialLine, onClose, onCreated }: { productionId: string; initialLine: BudgetLineItem; onClose: () => void; onCreated: (revision?: BudgetRevision | null) => void }) {
+  const [context, setContext] = useState<PurchaseOrderContext | null>(null);
+  const [supplierName, setSupplierName] = useState("");
+  const [supplierEmail, setSupplierEmail] = useState("");
+  const [supplierPhone, setSupplierPhone] = useState("");
+  const [blackbookEntryId, setBlackbookEntryId] = useState<string | null>(null);
+  const [optionCandidateId, setOptionCandidateId] = useState("");
+  const [createBlackbook, setCreateBlackbook] = useState(true);
+  const [query, setQuery] = useState("");
+  const [blackbookResults, setBlackbookResults] = useState<Array<{ id: string; displayName: string; email?: string | null; phone?: string | null }>>([]);
+  const [allocations, setAllocations] = useState<Record<string, string>>({ [initialLine.id]: String(initialLine.estimatedTotal ?? 0) });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get<PurchaseOrderContext>(`/api/budgets/production/${productionId}/purchase-order-context`)
+      .then((nextContext) => {
+        setContext(nextContext);
+        setAllocations((current) => current[initialLine.id] !== undefined ? current : { ...current, [initialLine.id]: String(initialLine.estimatedTotal ?? 0) });
+      })
+      .catch(console.error);
+  }, [productionId, initialLine.id, initialLine.estimatedTotal]);
+
+  useEffect(() => {
+    if (query.trim().length < 2) {
+      setBlackbookResults([]);
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      api.get<Array<{ id: string; displayName: string; email?: string | null; phone?: string | null }>>(`/api/options/blackbook?${new URLSearchParams({ q: query.trim(), limit: "8" }).toString()}`)
+        .then(setBlackbookResults)
+        .catch(() => setBlackbookResults([]));
+    }, 180);
+    return () => window.clearTimeout(timeout);
+  }, [query]);
+
+  function selectCandidate(candidateId: string) {
+    setOptionCandidateId(candidateId);
+    const candidate = context?.optionCandidates.find((item) => item.id === candidateId);
+    if (!candidate) return;
+    setSupplierName(candidate.blackbookEntry?.displayName ?? candidate.name);
+    setSupplierEmail(candidate.contactEmail ?? candidate.blackbookEntry?.email ?? "");
+    setSupplierPhone(candidate.contactPhone ?? candidate.blackbookEntry?.phone ?? "");
+    setBlackbookEntryId(candidate.blackbookEntryId ?? null);
+    if (candidate.blackbookEntryId) setCreateBlackbook(false);
+  }
+
+  function selectedAllocations() {
+    return Object.entries(allocations)
+      .map(([lineItemId, amount]) => ({ lineItemId, amount: Number(amount || 0) }))
+      .filter((allocation) => allocation.amount > 0);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const created = await api.post<PurchaseOrderCreateResponse>(`/api/budgets/production/${productionId}/purchase-orders`, {
+        supplierName,
+        supplierEmail: supplierEmail || null,
+        supplierPhone: supplierPhone || null,
+        blackbookEntryId,
+        optionCandidateId: optionCandidateId || null,
+        createBlackbook: createBlackbook && !blackbookEntryId,
+        allocations: selectedAllocations(),
+      });
+      onCreated(created.revision ?? null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const allocationTotal = selectedAllocations().reduce((sum, allocation) => sum + allocation.amount, 0);
+
+  return (
+    <SidePanel title="Create multi-line PO" onClose={onClose} width="760px">
+      {!context ? (
+        <div className="p-6 text-center text-sm text-gray-400">Loading PO context...</div>
+      ) : (
+        <div className="space-y-5">
+          <section className="rounded-lg border border-[#e6e6e1] bg-[#fbfbf8] p-3">
+            <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-gray-400">Supplier</h4>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <label className="text-xs text-gray-500">From job options
+                <select value={optionCandidateId} onChange={(event) => selectCandidate(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#e1e1dc] bg-white px-3 text-sm text-gray-900">
+                  <option value="">No option candidate</option>
+                  {context.optionCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.group.name} · {candidate.name}</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-gray-500">Search Blackbook
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search supplier..." className="mt-1 h-10 w-full rounded-lg border border-[#e1e1dc] px-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-[#13a18d]/25" />
+              </label>
+            </div>
+            {blackbookResults.length > 0 && (
+              <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-[#e6e6e1] bg-white">
+                {blackbookResults.map((entry) => (
+                  <button
+                    key={entry.id}
+                    onClick={() => {
+                      setBlackbookEntryId(entry.id);
+                      setSupplierName(entry.displayName);
+                      setSupplierEmail(entry.email ?? "");
+                      setSupplierPhone(entry.phone ?? "");
+                      setCreateBlackbook(false);
+                      setBlackbookResults([]);
+                      setQuery(entry.displayName);
+                    }}
+                    className="block w-full border-b border-[#f0f0ed] px-3 py-2 text-left text-xs hover:bg-[#fbfbf8] last:border-b-0"
+                  >
+                    <span className="font-medium text-gray-900">{entry.displayName}</span>
+                    <span className="ml-2 text-gray-400">{entry.email}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <BudgetPanelInput label="Supplier name" value={supplierName} onChange={setSupplierName} />
+              <BudgetPanelInput label="Email" value={supplierEmail} onChange={setSupplierEmail} />
+              <BudgetPanelInput label="Phone" value={supplierPhone} onChange={setSupplierPhone} />
+            </div>
+            {!blackbookEntryId && (
+              <label className="mt-3 flex items-center gap-2 text-xs text-gray-600">
+                <input type="checkbox" checked={createBlackbook} onChange={(event) => setCreateBlackbook(event.target.checked)} />
+                Create a Blackbook supplier record when saving
+              </label>
+            )}
+          </section>
+
+          <section className="rounded-lg border border-[#e6e6e1]">
+            <div className="flex items-center justify-between border-b border-[#ededeb] px-3 py-2">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-gray-400">Budget allocations</h4>
+              <span className="text-xs font-semibold tabular-nums text-gray-900">Total {money(allocationTotal)}</span>
+            </div>
+            <div className="max-h-[430px] overflow-auto">
+              {context.lines.map((line) => (
+                <div key={line.id} className="grid grid-cols-[1fr_128px] items-center gap-3 border-b border-[#f0f0ed] px-3 py-2 text-xs last:border-b-0">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-gray-900">{line.lineCode} {line.description}</p>
+                    <p className="mt-0.5 text-[11px] text-gray-400">{line.section.code} {line.section.name} · estimate {money(line.estimatedTotal)}</p>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={allocations[line.id] ?? ""}
+                    onChange={(event) => setAllocations((current) => ({ ...current, [line.id]: event.target.value }))}
+                    placeholder="£"
+                    className="h-9 rounded-lg border border-[#e1e1dc] px-2 text-right text-sm tabular-nums text-gray-900 outline-none focus:ring-2 focus:ring-[#13a18d]/25"
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <div className="rounded-lg bg-[#e9fbf8] px-3 py-2 text-xs leading-5 text-[#166f64]">
+            One PO will be created for the supplier, with a linked PO cost line under each selected budget pot. This keeps the estimate lines clear while giving the supplier one PO number.
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button onClick={onClose} className="min-h-10 rounded-lg px-4 text-sm text-gray-500 hover:bg-gray-50">Cancel</button>
+            <button onClick={() => save().catch((err: unknown) => window.alert(err instanceof Error ? err.message : "Failed to create PO"))} disabled={saving || !supplierName.trim() || selectedAllocations().length === 0} className="min-h-10 rounded-lg bg-[#1a1a1f] px-4 text-sm font-medium text-white disabled:opacity-40">
+              {saving ? "Creating..." : "Create PO"}
+            </button>
+          </div>
+        </div>
+      )}
+    </SidePanel>
+  );
+}
+
+function BudgetPanelInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="text-xs text-gray-500">
+      {label}
+      <input value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#e1e1dc] px-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-[#13a18d]/25" />
+    </label>
   );
 }
 
