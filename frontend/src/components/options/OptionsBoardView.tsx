@@ -10,6 +10,9 @@ type RequirementType = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" 
 type RequirementState = "ACTIVE" | "PARKED" | "RELEASED";
 type CandidateState = "ACTIVE" | "PARKED" | "RELEASED";
 type HoldStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFIRMED" | "RELEASED" | "UNAVAILABLE" | "NA";
+type CandidateViewKey = "grid" | "active" | "needsChasing" | "confirmed" | "missingBlackbook" | "noImages";
+type LinkFilter = "all" | "linked" | "unlinked";
+type PhotoFilter = "all" | "with" | "without";
 type BlackbookLifecycleStatus = "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT" | "SUPPLIER" | "PREFERRED_SUPPLIER" | "DO_NOT_USE" | "ARCHIVED";
 type CandidateSortKey = "manual" | "name" | "notes" | "links" | "rate" | "state" | `date:${string}`;
 type SortDirection = "asc" | "desc";
@@ -356,6 +359,13 @@ interface MatrixResponse {
   groups: OptionGroup[];
 }
 
+interface CandidateFilters {
+  activeStates: CandidateState[];
+  dateStatus: HoldStatus | "BLANK" | "any";
+  link: LinkFilter;
+  photo: PhotoFilter;
+}
+
 const REQUIREMENT_TYPES: RequirementType[] = ["CREW", "SERVICE", "LOCATION", "EQUIPMENT", "TALENT", "TRANSPORT", "POST", "OTHER"];
 const DATE_TYPES: ProductionDateType[] = ["MEETING", "RECCE", "PPM", "FITTING", "SHOOT_DAY", "POST_DELIVERY", "OTHER"];
 const DATE_STATUSES: ProductionDateStatus[] = ["PROPOSED", "OPTIONED", "CONFIRMED", "RELEASED", "CANCELLED"];
@@ -609,6 +619,58 @@ function candidateSummary(group: OptionGroup, dateId: string): string {
 
 function linkCount(candidate: OptionCandidate): number {
   return [candidate.website, candidate.bookUrl, candidate.socialUrl, candidate.modelsComUrl, candidate.pdfUrl].filter(Boolean).length;
+}
+
+const DEFAULT_CANDIDATE_FILTERS: CandidateFilters = {
+  activeStates: ["ACTIVE", "PARKED"],
+  dateStatus: "any",
+  link: "all",
+  photo: "all",
+};
+
+const SAVED_CANDIDATE_VIEWS: Array<{ key: CandidateViewKey; label: string; icon: string }> = [
+  { key: "grid", label: "Grid view", icon: "▦" },
+  { key: "active", label: "Active only", icon: "●" },
+  { key: "needsChasing", label: "Needs chasing", icon: "!" },
+  { key: "confirmed", label: "Confirmed", icon: "✓" },
+  { key: "missingBlackbook", label: "Missing Blackbook", icon: "◇" },
+  { key: "noImages", label: "No images", icon: "□" },
+];
+
+function candidateMatchesView(candidate: OptionCandidate, view: CandidateViewKey): boolean {
+  if (view === "active") return candidate.activeState === "ACTIVE";
+  if (view === "needsChasing") {
+    return candidate.activeState === "ACTIVE" && candidate.dateStatuses.some((status) => status.status === "REQUESTED" || status.status === "SECOND_OPTION");
+  }
+  if (view === "confirmed") return candidate.dateStatuses.some((status) => status.status === "CONFIRMED");
+  if (view === "missingBlackbook") return !candidate.blackbookEntryId;
+  if (view === "noImages") return candidate.photos.length === 0;
+  return true;
+}
+
+function candidateMatchesFilters(candidate: OptionCandidate, filters: CandidateFilters): boolean {
+  if (!filters.activeStates.includes(candidate.activeState)) return false;
+  if (filters.link === "linked" && !candidate.blackbookEntryId) return false;
+  if (filters.link === "unlinked" && candidate.blackbookEntryId) return false;
+  if (filters.photo === "with" && candidate.photos.length === 0) return false;
+  if (filters.photo === "without" && candidate.photos.length > 0) return false;
+  if (filters.dateStatus !== "any") {
+    if (filters.dateStatus === "BLANK") {
+      if (candidate.dateStatuses.length > 0) return false;
+    } else if (!candidate.dateStatuses.some((status) => status.status === filters.dateStatus)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function activeFilterCount(filters: CandidateFilters): number {
+  let count = 0;
+  if (filters.activeStates.length !== DEFAULT_CANDIDATE_FILTERS.activeStates.length || filters.activeStates.some((state) => !DEFAULT_CANDIDATE_FILTERS.activeStates.includes(state))) count += 1;
+  if (filters.dateStatus !== "any") count += 1;
+  if (filters.link !== "all") count += 1;
+  if (filters.photo !== "all") count += 1;
+  return count;
 }
 
 type AddressLike = Pick<OptionCandidate, "addressLine1" | "addressLine2" | "city" | "region" | "postcode" | "country">;
@@ -1089,6 +1151,8 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   const [showDateForm, setShowDateForm] = useState(false);
   const [openBlackbookEntryId, setOpenBlackbookEntryId] = useState<string | null>(null);
   const [exportingGroupId, setExportingGroupId] = useState<string | null>(null);
+  const [candidateView, setCandidateView] = useState<CandidateViewKey>("grid");
+  const [candidateFilters, setCandidateFilters] = useState<CandidateFilters>(DEFAULT_CANDIDATE_FILTERS);
 
   async function load() {
     setLoading(true);
@@ -1312,7 +1376,12 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
         onAddRole={() => setShowRoleForm(true)}
       />
       <div className="flex min-h-0 flex-1 bg-white">
-        <OptionsViewRail selectedGroup={selectedGroup} onAddCandidate={() => selectedGroup ? addCandidate(selectedGroup.id) : setShowRoleForm(true)} />
+        <OptionsViewRail
+          selectedGroup={selectedGroup}
+          selectedView={candidateView}
+          onSelectView={setCandidateView}
+          onAddCandidate={() => selectedGroup ? addCandidate(selectedGroup.id) : setShowRoleForm(true)}
+        />
         <div className="min-w-0 flex-1 overflow-hidden">
           {selectedGroup ? (
             <CandidateSheet
@@ -1336,6 +1405,9 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
               onReorderColumns={(orderedIds) => reorderColumns(selectedGroup.id, orderedIds)}
               onUpdateColumnValue={updateColumnValue}
               onDuplicateCandidate={duplicateCandidate}
+              selectedView={candidateView}
+              filters={candidateFilters}
+              onFiltersChange={setCandidateFilters}
             />
           ) : (
             <MatrixTable
@@ -1475,7 +1547,15 @@ function OptionsSheetTabs({ groups, selectedGroupId, onOpenMatrix, onOpenGroup, 
   );
 }
 
-function OptionsViewRail({ selectedGroup, onAddCandidate }: { selectedGroup: OptionGroup | null; onAddCandidate: () => void }) {
+function OptionsViewRail({ selectedGroup, selectedView, onSelectView, onAddCandidate }: {
+  selectedGroup: OptionGroup | null;
+  selectedView: CandidateViewKey;
+  onSelectView: (view: CandidateViewKey) => void;
+  onAddCandidate: () => void;
+}) {
+  const counts = selectedGroup
+    ? Object.fromEntries(SAVED_CANDIDATE_VIEWS.map((view) => [view.key, selectedGroup.candidates.filter((candidate) => candidateMatchesView(candidate, view.key)).length])) as Record<CandidateViewKey, number>
+    : null;
   return (
     <aside className="hidden w-[260px] shrink-0 border-r border-gray-200 bg-[#fbfbfa] lg:flex lg:flex-col">
       <div className="border-b border-gray-200 p-3">
@@ -1487,10 +1567,22 @@ function OptionsViewRail({ selectedGroup, onAddCandidate }: { selectedGroup: Opt
         </button>
       </div>
       <div className="space-y-1 p-3">
-        <button className="flex h-9 w-full items-center gap-2 rounded-md bg-[#eeeeec] px-2 text-left text-[14px] font-semibold text-gray-800">
-          <span className="grid h-4 w-4 place-items-center rounded border border-blue-400 text-[10px] text-blue-600">▦</span>
-          Grid view
-        </button>
+        {SAVED_CANDIDATE_VIEWS.map((view) => (
+          <button
+            key={view.key}
+            onClick={() => onSelectView(view.key)}
+            disabled={!selectedGroup && view.key !== "grid"}
+            className={`flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] ${
+              selectedView === view.key ? "bg-[#eeeeec] font-semibold text-gray-800" : "text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
+            }`}
+          >
+            <span className={`grid h-4 w-4 place-items-center rounded border text-[10px] ${
+              view.key === "grid" ? "border-blue-400 text-blue-600" : "border-gray-300 text-gray-500"
+            }`}>{view.icon}</span>
+            <span className="min-w-0 flex-1 truncate">{view.label}</span>
+            {counts && <span className="text-[11px] font-normal text-gray-400">{counts[view.key]}</span>}
+          </button>
+        ))}
         <button className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-gray-600 hover:bg-gray-100">
           <span className="grid h-4 w-4 place-items-center rounded border border-violet-300 text-[10px] text-violet-500">▧</span>
           Gallery
@@ -1614,7 +1706,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   );
 }
 
-function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate, onCreateColumn, onUpdateColumn, onDeleteColumn, onReorderColumns, onUpdateColumnValue, onDuplicateCandidate }: {
+function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate, onCreateColumn, onUpdateColumn, onDeleteColumn, onReorderColumns, onUpdateColumnValue, onDuplicateCandidate, selectedView, filters, onFiltersChange }: {
   matrix: MatrixResponse;
   group: OptionGroup;
   dates: MatrixDate[];
@@ -1635,6 +1727,9 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   onReorderColumns: (orderedIds: string[]) => Promise<void>;
   onUpdateColumnValue: (candidateId: string, columnId: string, value: unknown) => Promise<void>;
   onDuplicateCandidate: (candidateId: string) => Promise<void>;
+  selectedView: CandidateViewKey;
+  filters: CandidateFilters;
+  onFiltersChange: (filters: CandidateFilters) => void;
 }) {
   const [photoCandidate, setPhotoCandidate] = useState<OptionCandidate | null>(null);
   const [sortKey, setSortKey] = useState<CandidateSortKey>("manual");
@@ -1647,6 +1742,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   const [dragColumnId, setDragColumnId] = useState<string | null>(null);
   const [dropColumnId, setDropColumnId] = useState<string | null>(null);
   const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [designerOpen, setDesignerOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ candidate: OptionCandidate; x: number; y: number } | null>(null);
   const [expandedCandidateId, setExpandedCandidateId] = useState<string | null>(null);
@@ -1656,7 +1752,14 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   const rowControlWidth = 58;
   const rowActionWidth = 34;
   const gridColumns = `${rowControlWidth}px ${visibleColumns.flatMap((column) => column.key === "date_statuses" ? dates.map(() => `${column.width}px`) : [`${column.width}px`]).join(" ")} ${rowActionWidth}px`;
-  const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
+  const candidates = sortedCandidates(
+    group.candidates
+      .filter((candidate) => candidateMatchesView(candidate, selectedView))
+      .filter((candidate) => candidateMatchesFilters(candidate, filters)),
+    sortKey,
+    sortDirection,
+  );
+  const filterCount = activeFilterCount(filters);
   const minimumSheetWidth = rowControlWidth + rowActionWidth + visibleColumns.reduce((sum, column) => sum + (column.key === "date_statuses" ? Math.max(1, dates.length) * column.width : column.width), 0);
 
   useEffect(() => {
@@ -1733,7 +1836,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
         </div>
         <div className="relative flex items-center gap-2">
           <ToolbarButton icon={<EyeOff size={15} />} label="Hide fields" onClick={() => setFieldManagerOpen((open) => !open)} />
-          <ToolbarButton icon={<Filter size={15} />} label="Filter" disabled />
+          <ToolbarButton icon={<Filter size={15} />} label={filterCount ? `Filter ${filterCount}` : "Filter"} onClick={() => setFilterOpen((open) => !open)} active={filterCount > 0 || filterOpen} />
           <ToolbarButton icon={<Layers3 size={15} />} label="Group" disabled />
           <ToolbarButton label="Sort" onClick={() => setSort(sortKey === "manual" ? "name" : "manual")} />
           <ToolbarButton icon={<PaintBucket size={15} />} label="Color" disabled />
@@ -1801,6 +1904,13 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
                 ))}
               </div>
             </div>
+          )}
+          {filterOpen && (
+            <CandidateFilterPopover
+              filters={filters}
+              onChange={onFiltersChange}
+              onClose={() => setFilterOpen(false)}
+            />
           )}
         </div>
       </div>
@@ -2886,24 +2996,131 @@ function CustomColumnCell({ column, candidate, onSave }: {
   );
 }
 
-function ToolbarButton({ icon, label, onClick, disabled = false }: {
+function ToolbarButton({ icon, label, onClick, disabled = false, active = false }: {
   icon?: ReactNode;
   label: string;
   onClick?: () => void;
   disabled?: boolean;
+  active?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       className={`flex h-8 items-center gap-1.5 rounded px-2 text-[13px] font-medium ${
-        disabled ? "cursor-not-allowed text-gray-300" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+        disabled ? "cursor-not-allowed text-gray-300" : active ? "bg-gray-100 text-gray-900" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
       }`}
       title={disabled ? `${label} coming soon` : label}
     >
       {icon}
       {label}
     </button>
+  );
+}
+
+function CandidateFilterPopover({ filters, onChange, onClose }: {
+  filters: CandidateFilters;
+  onChange: (filters: CandidateFilters) => void;
+  onClose: () => void;
+}) {
+  function toggleState(state: CandidateState) {
+    const activeStates = filters.activeStates.includes(state)
+      ? filters.activeStates.filter((item) => item !== state)
+      : [...filters.activeStates, state];
+    onChange({ ...filters, activeStates: activeStates.length ? activeStates : [state] });
+  }
+
+  return (
+    <div className="absolute right-0 top-full z-40 mt-2 w-[330px] rounded-xl border border-gray-200 bg-white p-3 shadow-xl">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Filters</div>
+        <button onClick={onClose} className="text-[11px] text-gray-400 hover:text-gray-800">Done</button>
+      </div>
+
+      <FilterGroup label="State">
+        <div className="flex flex-wrap gap-1.5">
+          {(["ACTIVE", "PARKED", "RELEASED"] as CandidateState[]).map((state) => (
+            <button
+              key={state}
+              onClick={() => toggleState(state)}
+              className={`rounded-full border px-2 py-1 text-[11px] font-medium ${
+                filters.activeStates.includes(state) ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-500 hover:border-gray-400"
+              }`}
+            >
+              {label(state)}
+            </button>
+          ))}
+        </div>
+      </FilterGroup>
+
+      <FilterGroup label="Date status">
+        <select value={filters.dateStatus} onChange={(event) => onChange({ ...filters, dateStatus: event.target.value as CandidateFilters["dateStatus"] })} className="h-8 w-full rounded border border-gray-200 bg-white px-2 text-[12px] text-gray-700 outline-none focus:border-gray-500">
+          <option value="any">Any date status</option>
+          <option value="BLANK">Blank only</option>
+          {HOLD_STATUSES.map((status) => <option key={status} value={status}>{label(status)}</option>)}
+        </select>
+      </FilterGroup>
+
+      <FilterGroup label="Blackbook">
+        <SegmentedFilter
+          value={filters.link}
+          options={[
+            { value: "all", label: "All" },
+            { value: "linked", label: "Linked" },
+            { value: "unlinked", label: "Unlinked" },
+          ]}
+          onChange={(link) => onChange({ ...filters, link })}
+        />
+      </FilterGroup>
+
+      <FilterGroup label="Images">
+        <SegmentedFilter
+          value={filters.photo}
+          options={[
+            { value: "all", label: "All" },
+            { value: "with", label: "With" },
+            { value: "without", label: "Without" },
+          ]}
+          onChange={(photo) => onChange({ ...filters, photo })}
+        />
+      </FilterGroup>
+
+      <div className="mt-3 flex justify-between border-t border-gray-100 pt-3">
+        <button onClick={() => onChange(DEFAULT_CANDIDATE_FILTERS)} className="text-[11px] font-medium text-gray-500 hover:text-gray-900">Reset filters</button>
+        <div className="text-[11px] text-gray-400">{activeFilterCount(filters)} active</div>
+      </div>
+    </div>
+  );
+}
+
+function FilterGroup({ label: groupLabel, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="mb-3">
+      <div className="mb-1.5 text-[11px] font-medium text-gray-500">{groupLabel}</div>
+      {children}
+    </div>
+  );
+}
+
+function SegmentedFilter<TValue extends string>({ value, options, onChange }: {
+  value: TValue;
+  options: Array<{ value: TValue; label: string }>;
+  onChange: (value: TValue) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-md border border-gray-200 bg-gray-50 p-0.5">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          onClick={() => onChange(option.value)}
+          className={`h-7 rounded px-2 text-[11px] font-medium ${
+            value === option.value ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

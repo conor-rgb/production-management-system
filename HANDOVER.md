@@ -1,3 +1,49 @@
+# HANDOVER - 2026-05-28 - Options Candidate Filters and Computed Views
+
+## Built This Session
+- Added frontend-only candidate filtering for option sheets.
+- The toolbar `Filter` control now opens a real filter popover.
+- Filters currently support:
+  - candidate state: Active, Parked, Released,
+  - date status: any, blank, Req, 1st, 2nd, Confirmed, Released, Unavailable, N/A,
+  - Blackbook link: all, linked, unlinked,
+  - images: all, with images, without images.
+- Added computed saved views in the left rail:
+  - Grid view,
+  - Active only,
+  - Needs chasing,
+  - Confirmed,
+  - Missing Blackbook,
+  - No images.
+- Saved view buttons show live counts for the current sheet.
+- Candidate grid now combines the selected left-rail view with the active toolbar filters.
+- No schema changes yet; this pass validates the UX before persisting custom views.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Option sheets can now be filtered quickly without changing data.
+- Saved views are computed defaults, not persisted user-created views yet.
+
+## Exact Next Steps
+1. Add real sort menu with explicit sort choices.
+2. Add persisted saved views once the defaults feel correct.
+3. Add full field manager drawer.
+4. Build Gallery view using the same filters and fields.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Candidate Duplicate Action
 
 ## Built This Session
