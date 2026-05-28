@@ -1,3 +1,47 @@
+# HANDOVER - 2026-05-28 - Budget Grid Soft Theme Pass
+
+## Built This Session
+- Restyled the budget grid to better match the newer Airtable/options workspace theme.
+- Softened the visual system without removing the ADHD-friendly scanning cues:
+  - calmer sheet background and header treatment,
+  - softer row borders and hover states,
+  - taller parent rows for readability,
+  - stronger but cleaner status dots with a subtle white ring,
+  - quieter section headers with colored section badges instead of heavy dark bars,
+  - gentler cost-line type colors for PO / Bill / Receipt rows,
+  - deeper cost-line indentation so child spend records read clearly under their parent budget pot.
+- Updated inline editing states:
+  - teal focus rings,
+  - softer save flash,
+  - quieter input backgrounds,
+  - calmer dropdown and tooltip shadows.
+- Kept all budget logic untouched:
+  - no schema changes,
+  - no backend changes,
+  - no calculation changes,
+  - no versioning changes.
+
+## Frontend
+- Updated `frontend/src/components/budgets/BudgetView.tsx`.
+- Updated `frontend/src/components/budgets/budgetStatus.ts`.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Budget grid is visually softer and more aligned with the options table direction while retaining quick scan states.
+- Useful next pass: bring budget interactions closer to Options v1.1:
+  - persistent column widths / show-hide,
+  - active cell outline and keyboard movement,
+  - right-click row actions with the same menu styling,
+  - saved budget views.
+
+---
+
 # HANDOVER - 2026-05-28 - Budget Version Tabs and Immutable Minor Versions
 
 ## Built This Session

@@ -21,9 +21,9 @@ export const STATE_BADGES: Record<DotState, { text: string; bg: string; color: s
 };
 
 export const COST_LINE_BACKGROUNDS: Record<SubCostLineType, string> = {
-  PO: "#faf5ff",
-  BILL: "#eff6ff",
-  RECEIPT: "#f0fdf4",
+  PO: "#fbf8ff",
+  BILL: "#f5f9ff",
+  RECEIPT: "#f5fcf7",
 };
 
 export function getDotState(lineItem: BudgetLineItem): DotState {

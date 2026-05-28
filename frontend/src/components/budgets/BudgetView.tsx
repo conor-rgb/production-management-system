@@ -37,6 +37,12 @@ const STATUS_LABELS: Record<string, string> = {
   SUPERSEDED: "Superseded",
 };
 
+const SHEET_BORDER = "border-[#e6e6e1]";
+const SHEET_HEADER_BG = "bg-[#f7f7f3]";
+const SHEET_LINE = "border-[#ededeb]";
+const SHEET_HOVER = "hover:bg-[#fbfbf8]";
+const EDIT_FOCUS = "focus:ring-[#13a18d]/25";
+
 function money(value: number | null | undefined) {
   return `£${Number(value ?? 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -79,9 +85,9 @@ function statusSymbol(active: boolean) {
 }
 
 function lineTypeClass(lineType: SubCostLineType) {
-  if (lineType === "BILL") return "border-[#bfdbfe] bg-[#eff6ff] text-[#2563eb]";
-  if (lineType === "RECEIPT") return "border-[#bbf7d0] bg-[#f0fdf4] text-[#16a34a]";
-  return "border-[#ddd6fe] bg-[#f5f3ff] text-[#7c3aed]";
+  if (lineType === "BILL") return "border-[#cfe0fb] bg-[#f5f9ff] text-[#2563eb]";
+  if (lineType === "RECEIPT") return "border-[#ccefd6] bg-[#f5fcf7] text-[#15803d]";
+  return "border-[#e1d7ff] bg-[#fbf8ff] text-[#7c3aed]";
 }
 
 function lineTypeLabel(lineType: SubCostLineType) {
@@ -391,7 +397,7 @@ function SummaryBar({ revision, firstAdvance, onRevisionPatch }: {
   const counts = stateCounts(revision);
   const hasOpenCounts = counts.YELLOW + counts.PURPLE + counts.BLUE + counts.LIGHT_GREEN > 0;
   return (
-    <div className="shrink-0 border-b border-t border-[#e8e8e4] bg-white px-4 py-2">
+    <div className="shrink-0 border-b border-[#e6e6e1] bg-[#fbfbf8] px-4 py-2.5">
       <div className="grid grid-cols-2 gap-y-2 md:grid-cols-5">
         <Metric label="Subtotal" value={money(totals.subtotal)} />
         <EditableMetric label={`Production fee ${percentLabel(revision.productionFeePercent)}`} value={money(totals.productionFee)} current={revision.productionFeePercent} onSubmit={(value) => onRevisionPatch({ productionFeePercent: value })} />
@@ -422,7 +428,7 @@ function StateCount({ label, className, color }: { label: string; className: str
 function Metric({ label, value, grand = false }: { label: string; value: string; grand?: boolean }) {
   return (
     <div className="min-w-0">
-      <p className="truncate text-[10px] uppercase tracking-[0.5px] text-[#aaa]">{label}</p>
+      <p className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-[#a6a6a0]">{label}</p>
       <p className={`tabular-nums ${grand ? "text-xl font-semibold text-[#1a1a1f]" : "text-base font-medium text-[#1a1a1f]"}`}>{value}</p>
     </div>
   );
@@ -481,9 +487,9 @@ function BudgetTable(props: {
   }, [parentMenu]);
 
   return (
-    <div className="budget-table w-full overflow-x-auto">
-      <div className="budget-table-inner" style={{ width: tableWidth, minWidth: tableWidth }}>
-      <div className="sticky top-0 z-20 grid h-7 items-center border-b border-[#e8e8e4] bg-[#f8f8f6] text-[10px] uppercase tracking-[0.5px] text-[#aaa]" style={gridStyle(props.mode)}>
+    <div className="budget-table h-full w-full overflow-auto bg-[#f6f6f2]">
+      <div className="budget-table-inner min-h-full bg-white shadow-[inset_1px_0_0_#ededeb]" style={{ width: tableWidth, minWidth: tableWidth }}>
+      <div className={`sticky top-0 z-20 grid h-8 items-center border-b ${SHEET_BORDER} ${SHEET_HEADER_BG} text-[10px] font-medium uppercase tracking-[0.08em] text-[#9b9b95]`} style={gridStyle(props.mode)}>
         {internal && <HeaderCell center />}
         <HeaderCell>Code</HeaderCell>
         <HeaderCell>Description</HeaderCell>
@@ -525,7 +531,7 @@ function BudgetTable(props: {
       })}
       {internal && parentMenu && menuLine && !menuLine.isClosed && (
         <div
-          className="fixed z-[80] flex items-center gap-1 rounded-md border border-[#e8e8e4] bg-white p-1 shadow-[0_4px_12px_rgba(0,0,0,0.12)]"
+          className="fixed z-[80] flex items-center gap-1 rounded-md border border-[#e3e3dd] bg-[#fffefa] p-1 shadow-[0_10px_28px_rgba(20,20,20,0.12)]"
           style={{ left: parentMenu.x, top: parentMenu.y }}
           onMouseDown={(event) => event.stopPropagation()}
         >
@@ -540,7 +546,12 @@ function BudgetTable(props: {
 }
 
 function HeaderCell({ children, right, center, title }: { children?: ReactNode; right?: boolean; center?: boolean; title?: string }) {
-  return <div title={title} className={`flex items-center px-2 ${right ? "justify-end text-right" : center ? "justify-center" : ""}`}>{children}</div>;
+  return <div title={title} className={`flex min-w-0 items-center truncate px-2 ${right ? "justify-end text-right" : center ? "justify-center" : ""}`}>{children}</div>;
+}
+
+function sectionTint(index: number) {
+  const colors = ["#13a18d", "#8b5cf6", "#3b82f6", "#d97706", "#16a34a"];
+  return colors[index % colors.length];
 }
 
 function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, onToggleCostLines, internal, ...props }: {
@@ -562,35 +573,35 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
   const overflowCount = Math.max(0, topLevelLines.length - dots.length);
 
   return (
-    <section>
-      <button onClick={onToggleSection} className="flex h-9 w-full items-center bg-[#1a1a1f] px-3 text-left text-white">
+    <section className="border-b border-[#e9e9e4]">
+      <button onClick={onToggleSection} className="flex h-10 w-full items-center border-b border-[#e6e6e1] bg-[#f3f3ef] px-3 text-left text-[#1a1a1f] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="grid h-5 w-5 place-items-center rounded-[3px] bg-white/15 text-[10px] font-medium">{section.code}</span>
-          <span className="truncate text-xs font-medium uppercase">{section.name}</span>
-          {collapsed ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
+          <span className="grid h-5 w-5 place-items-center rounded-md text-[10px] font-semibold text-white" style={{ backgroundColor: sectionTint(section.order) }}>{section.code}</span>
+          <span className="truncate text-[12px] font-semibold uppercase tracking-[0.04em]">{section.name}</span>
+          {collapsed ? <ChevronRight size={12} className="text-gray-400" /> : <ChevronDown size={12} className="text-gray-400" />}
           {internal && (
             <div className="ml-3 flex items-center gap-[3px]">
               {dots.map((state, index) => <span key={`${section.id}-${index}`} className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: DOT_COLORS[state] }} title={state.toLowerCase()} />)}
-              {overflowCount > 0 && <span className="ml-1 text-[10px] text-white/70">+{overflowCount}</span>}
+              {overflowCount > 0 && <span className="ml-1 text-[10px] text-gray-400">+{overflowCount}</span>}
             </div>
           )}
         </div>
         <div className="flex items-center justify-end gap-3 text-xs">
-          <span className="font-medium tabular-nums">{money(estimated)}</span>
+          <span className="font-semibold tabular-nums text-[#1a1a1f]">{money(estimated)}</span>
           {internal && <span className={`rounded-full px-2 py-0.5 text-[10px] ${remainingPillClass(remaining, estimated)}`}>Remaining {money(remaining)}</span>}
           <button
             onClick={(event) => { event.stopPropagation(); props.onAddLine(section).catch(console.error); }}
-            className="grid h-8 w-8 place-items-center rounded hover:bg-white/10"
+            className="grid h-8 w-8 place-items-center rounded text-gray-500 hover:bg-white hover:text-[#1a1a1f]"
             title="Add line"
           >
             <Plus size={14} />
           </button>
-          <button onClick={(event) => event.stopPropagation()} className="grid h-8 w-8 place-items-center text-base" title="Section menu"><MoreHorizontal size={15} /></button>
+          <button onClick={(event) => event.stopPropagation()} className="grid h-8 w-8 place-items-center rounded text-gray-400 hover:bg-white hover:text-[#1a1a1f]" title="Section menu"><MoreHorizontal size={15} /></button>
         </div>
       </button>
 
       {!collapsed && topLevelLines.length === 0 && (
-        <div className="flex h-9 items-center justify-center gap-2 bg-[#fafaf8] text-[11px] text-gray-500">
+        <div className="flex h-10 items-center justify-center gap-2 border-b border-[#ededeb] bg-[#fbfbf8] text-[11px] text-gray-500">
           <span>No items —</span>
           <button onClick={props.onOpenTemplates} className="text-[#1a1a1f] underline">Browse templates</button>
           <span>or</span>
@@ -610,7 +621,7 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
       ))}
 
       {internal && sectionTotal && estimated !== 0 && (
-        <div className="grid h-7 items-center border-t border-[#e0e0dc] bg-[#f0f0ee] text-[11px] text-gray-500" style={gridStyle("internal")}>
+        <div className="grid h-8 items-center border-t border-[#e0e0dc] bg-[#f8f8f4] text-[11px] text-gray-500" style={gridStyle("internal")}>
           <div />
           <div />
           <div className="flex items-center px-2 italic">Section total</div>
@@ -636,18 +647,18 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
   const hasSubCosts = line.subCosts.length > 0;
   const displayActual = displayActualForLine(line);
   const displayRemaining = displayRemainingForLine(line);
-  const actualClass = hasSubCosts ? "text-blue-600" : "text-[#c8c8c4]";
+  const actualClass = hasSubCosts ? "text-[#2563eb]" : "text-[#c8c8c4]";
   const autoExpanded = state === "PURPLE" || state === "BLUE";
   const costLinesExpanded = hasSubCosts && (autoExpanded ? !toggledCostLines : toggledCostLines);
   const rowStyle = internal
-    ? { ...gridStyle("internal"), background: state === "GRAY" ? "var(--color-background-secondary, #f8f8f6)" : "var(--color-background-primary, #ffffff)", opacity: state === "GRAY" ? 0.55 : 1 }
+    ? { ...gridStyle("internal"), background: state === "GRAY" ? "#f3f3ef" : "#fffefa", opacity: state === "GRAY" ? 0.55 : 1 }
     : gridStyle("client");
   const closed = state === "GRAY";
 
   return (
     <div className="group/line">
       <div
-        className="group relative grid min-h-[34px] items-center border-b border-[#ebebea] text-xs hover:bg-[#f5f5f3]"
+        className={`group relative grid min-h-[38px] items-center border-b ${SHEET_LINE} text-[12px] transition ${SHEET_HOVER}`}
         style={rowStyle}
         onContextMenu={(event) => {
           if (!internal || closed) return;
@@ -656,9 +667,9 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
         }}
       >
         {internal && <StatusDot state={state} />}
-        <div className="flex items-center gap-1 px-2 text-[11px] text-[#888]">
+        <div className="flex items-center gap-1 px-2 text-[11px] text-[#8f8f89]">
           {internal && (
-            <button onClick={(event) => { event.stopPropagation(); onToggleCostLines(); }} className={`grid h-5 w-4 place-items-center text-[#888] ${hasSubCosts ? "" : "opacity-0 group-hover:opacity-100"}`}>
+            <button onClick={(event) => { event.stopPropagation(); onToggleCostLines(); }} className={`grid h-6 w-4 place-items-center rounded text-[#9b9b95] hover:bg-[#f0f0eb] ${hasSubCosts ? "" : "opacity-0 group-hover:opacity-100"}`}>
               {costLinesExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
             </button>
           )}
@@ -684,9 +695,9 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
         {internal && <ReadMoney value={displayRemaining} className={remainingClass(displayRemaining, line.estimatedTotal)} />}
         {internal && <StatusButton active={line.isClosed} onClick={() => props.onSaveLine(line, { isClosed: !line.isClosed }).catch(console.error)} title="Close this line when fully settled" />}
         {internal && (
-          <div className="absolute inset-y-0 right-0 flex items-center justify-end gap-1 bg-[#f5f5f3]/95 px-2 opacity-0 group-hover:opacity-100">
-            <button onClick={() => props.onDuplicate(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#888] hover:bg-gray-100" title="Duplicate"><Copy size={13} /></button>
-            <button onClick={() => props.onDelete(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#888] hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 size={13} /></button>
+          <div className="absolute inset-y-0 right-0 flex items-center justify-end gap-1 bg-[#fffefa]/95 px-2 opacity-0 shadow-[-16px_0_18px_rgba(255,254,250,0.95)] transition group-hover:opacity-100">
+            <button onClick={() => props.onDuplicate(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#8f8f89] hover:bg-[#f2f2ed] hover:text-[#1a1a1f]" title="Duplicate"><Copy size={13} /></button>
+            <button onClick={() => props.onDelete(line).catch(console.error)} className="grid h-7 w-7 place-items-center rounded text-[#b2b2ac] hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 size={13} /></button>
           </div>
         )}
       </div>
@@ -702,17 +713,17 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
 }
 
 function Cell({ children, className = "" }: { children?: ReactNode; className?: string }) {
-  return <div className={`flex min-h-[34px] items-center px-2 ${className}`}>{children}</div>;
+  return <div className={`flex min-h-[38px] items-center px-2 ${className}`}>{children}</div>;
 }
 
 function ReadMoney({ value, strong, className, title }: { value: number | null | undefined; strong?: boolean; className?: string; title?: string }) {
-  return <div title={title} className={`flex min-h-[34px] items-center justify-end px-2 text-right tabular-nums ${strong ? "font-medium" : ""} ${className ?? moneyClass(value)}`}>{money(value)}</div>;
+  return <div title={title} className={`flex min-h-[38px] items-center justify-end px-2 text-right tabular-nums ${strong ? "font-medium" : ""} ${className ?? moneyClass(value)}`}>{money(value)}</div>;
 }
 
 function StatusDot({ state }: { state: DotState }) {
   return (
-    <div className="flex min-h-[34px] w-6 items-center justify-center">
-      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: DOT_COLORS[state] }} />
+    <div className="flex min-h-[38px] w-6 items-center justify-center">
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-white shadow-[0_1px_3px_rgba(0,0,0,0.16)]" style={{ backgroundColor: DOT_COLORS[state] }} />
     </div>
   );
 }
@@ -741,7 +752,7 @@ function LineDescriptionCell({ line, state, internal, readOnly, onSave }: { line
             if (event.key === "Enter") save().catch(console.error);
             if (event.key === "Escape") { setDraft(line.description); setEditing(false); }
           }}
-          className="h-7 w-full border-0 border-b border-blue-500 bg-transparent p-0 text-xs font-medium outline-none"
+          className="h-7 w-full rounded border-0 bg-[#f7f7f3] px-1 text-xs font-medium outline-none ring-2 ring-[#13a18d]/25"
         />
       </Cell>
     );
@@ -749,7 +760,7 @@ function LineDescriptionCell({ line, state, internal, readOnly, onSave }: { line
 
   return (
     <Cell>
-      <button disabled={readOnly} onClick={() => setEditing(true)} className={`flex min-w-0 items-center text-left text-xs font-medium ${textClass}`}>
+      <button disabled={readOnly} onClick={() => setEditing(true)} className={`flex min-w-0 items-center rounded px-1 py-1 text-left text-[12px] font-semibold hover:bg-[#f7f7f3] disabled:hover:bg-transparent ${textClass}`}>
         <span className="truncate">{line.description || "—"}</span>
         {internal && (
           <span
@@ -815,20 +826,20 @@ function EditableCell({ value, onSave, className = "", kind = "text", readOnly =
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => save().catch(console.error)}
         onKeyDown={keyDown}
-        className={`h-7 w-full border-0 border-b border-blue-500 bg-transparent p-0 text-xs outline-none ${kind === "text" ? "text-left" : "text-right tabular-nums"} ${className}`}
+        className={`h-7 w-full rounded border-0 bg-[#f7f7f3] px-1 text-xs outline-none ring-2 ${EDIT_FOCUS} ${kind === "text" ? "text-left" : "text-right tabular-nums"} ${className}`}
       />
     );
   }
 
   const display = kind === "money" ? money(Number(value ?? 0)) : kind === "percent" ? percentLabel(Number(value ?? 0)) : kind === "number" ? numeric(Number(value ?? 0)) : String(value || "");
   if (readOnly) {
-    return <div className={`min-h-[30px] w-full truncate text-left ${kind !== "text" ? "text-right tabular-nums" : ""} ${Number(value ?? 1) === 0 && kind !== "text" ? "text-[#c8c8c4]" : ""} ${className}`}>{display || (kind === "text" ? "—" : "")}</div>;
+    return <div className={`min-h-[30px] w-full truncate rounded px-1 text-left ${kind !== "text" ? "text-right tabular-nums" : ""} ${Number(value ?? 1) === 0 && kind !== "text" ? "text-[#c8c8c4]" : ""} ${className}`}>{display || (kind === "text" ? "—" : "")}</div>;
   }
   return (
     <button
       data-budget-editable="true"
       onClick={() => setEditing(true)}
-      className={`min-h-[30px] w-full truncate text-left ${kind !== "text" ? "text-right tabular-nums" : ""} ${flash ? "bg-[#eef5ff]" : ""} ${Number(value ?? 1) === 0 && kind !== "text" ? "text-[#c8c8c4]" : ""} ${className}`}
+      className={`min-h-[30px] w-full truncate rounded px-1 text-left transition hover:bg-[#f7f7f3] focus:outline-none focus:ring-2 ${EDIT_FOCUS} ${kind !== "text" ? "text-right tabular-nums" : ""} ${flash ? "bg-[#e8f4f1]" : ""} ${Number(value ?? 1) === 0 && kind !== "text" ? "text-[#c8c8c4]" : ""} ${className}`}
     >
       {display || (kind === "text" ? "—" : "")}
     </button>
@@ -890,24 +901,24 @@ function UnitDaysCell({ days, unit, onSaveDays, onSaveUnit, readOnly = false }: 
               if (event.key === "Enter") saveDays().catch(console.error);
               if (event.key === "Escape") { setDraftDays(String(days ?? 1)); setEditingDays(false); }
             }}
-            className="h-7 w-8 border-0 border-b border-blue-500 bg-transparent p-0 text-right text-xs outline-none"
+            className="h-7 w-9 rounded border-0 bg-[#f7f7f3] px-1 text-right text-xs outline-none ring-2 ring-[#13a18d]/25"
           />
         ) : (
-          <button disabled={readOnly} data-budget-editable="true" onClick={() => setEditingDays(true)} className={Number(days ?? 0) === 0 ? "text-[#c8c8c4]" : ""}>
+          <button disabled={readOnly} data-budget-editable="true" onClick={() => setEditingDays(true)} className={`rounded px-1 hover:bg-[#f7f7f3] ${Number(days ?? 0) === 0 ? "text-[#c8c8c4]" : ""}`}>
             {numeric(days) || "0"}
           </button>
         )
       )}
-      <button disabled={readOnly} onClick={() => setOpen(!open)} className="flex min-h-[30px] items-center gap-1 text-xs">
+      <button disabled={readOnly} onClick={() => setOpen(!open)} className="flex min-h-[30px] items-center gap-1 rounded px-1 text-xs hover:bg-[#f7f7f3]">
         <span>{unit}</span><span className="text-[10px]">▾</span>
       </button>
       {open && (
-        <div className="absolute right-0 top-7 z-40 w-32 rounded border border-[#e8e8e4] bg-white py-1 text-xs shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
+        <div className="absolute right-0 top-7 z-40 w-32 rounded-md border border-[#e3e3dd] bg-[#fffefa] py-1 text-xs shadow-[0_10px_24px_rgba(20,20,20,0.10)]">
           {UNITS.map((option) => (
             <button
               key={option}
               onClick={() => { onSaveUnit(option).catch(console.error); setOpen(false); }}
-              className={`block h-[30px] w-full px-2 text-left hover:bg-[#f5f5f3] ${option === unit ? "bg-[#1a1a1f] text-white" : ""}`}
+              className={`block h-[30px] w-full px-2 text-left hover:bg-[#f2f2ed] ${option === unit ? "bg-[#1a1a1f] text-white" : ""}`}
             >
               {option}
             </button>
@@ -929,7 +940,7 @@ function EstimatedCell({ line }: { line: BudgetLineItem }) {
   return (
     <div className="group/estimated relative">
       <ReadMoney value={line.estimatedTotal} strong />
-      <div className="pointer-events-none absolute bottom-8 right-1 z-40 hidden w-max min-w-48 rounded border border-[#e8e8e4] bg-white px-3 py-2 text-left text-[11px] leading-[1.6] text-[#1a1a1f] shadow-[0_4px_12px_rgba(0,0,0,0.1)] group-hover/estimated:block">
+      <div className="pointer-events-none absolute bottom-8 right-1 z-40 hidden w-max min-w-48 rounded-md border border-[#e3e3dd] bg-[#fffefa] px-3 py-2 text-left text-[11px] leading-[1.6] text-[#1a1a1f] shadow-[0_10px_24px_rgba(20,20,20,0.12)] group-hover/estimated:block">
         {line.unit === "Flat Fee" ? (
           <div>{qty} × {money(rate)} Flat Fee = {money(base)}</div>
         ) : (
@@ -948,7 +959,7 @@ function EstimatedCell({ line }: { line: BudgetLineItem }) {
 
 function StatusButton({ active, onClick, title }: { active: boolean; onClick?: () => void; title: string }) {
   return (
-    <button title={title} onClick={onClick} disabled={!onClick} className="grid min-h-[34px] place-items-center text-[11px]">
+    <button title={title} onClick={onClick} disabled={!onClick} className="grid min-h-[38px] place-items-center text-[11px]">
       {statusSymbol(active)}
     </button>
   );
@@ -956,7 +967,7 @@ function StatusButton({ active, onClick, title }: { active: boolean; onClick?: (
 
 function CostLineAddButton({ lineType, onClick }: { lineType: SubCostLineType; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`min-h-7 rounded border px-2 text-[11px] font-medium ${lineTypeClass(lineType)}`} title={`Add ${lineTypeLabel(lineType)}`}>
+    <button onClick={onClick} className={`min-h-7 rounded border px-2 text-[11px] font-medium transition hover:brightness-[0.98] ${lineTypeClass(lineType)}`} title={`Add ${lineTypeLabel(lineType)}`}>
       + {lineTypeLabel(lineType)}
     </button>
   );
@@ -978,9 +989,9 @@ function CostLineTypePill({ lineType, onChange }: { lineType: SubCostLineType; o
         {lineTypeLabel(lineType)} ▾
       </button>
       {open && (
-        <div className="absolute left-0 top-7 z-40 w-24 rounded border border-[#e8e8e4] bg-white py-1 shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
+        <div className="absolute left-0 top-7 z-40 w-24 rounded-md border border-[#e3e3dd] bg-[#fffefa] py-1 shadow-[0_10px_24px_rgba(20,20,20,0.10)]">
           {(["PO", "BILL", "RECEIPT"] as SubCostLineType[]).map((type) => (
-            <button key={type} onClick={() => { onChange(type); setOpen(false); }} className={`block w-full px-2 py-1 text-left text-[11px] hover:bg-[#f5f5f3] ${type === lineType ? "font-semibold" : ""}`}>
+            <button key={type} onClick={() => { onChange(type); setOpen(false); }} className={`block w-full px-2 py-1 text-left text-[11px] hover:bg-[#f2f2ed] ${type === lineType ? "font-semibold" : ""}`}>
               {type}
             </button>
           ))}
@@ -1025,10 +1036,10 @@ function SubCostRow({ subCost, closed, onRevision, onError }: { subCost: SubCost
   }
 
   return (
-    <div className="grid min-h-[32px] border-b border-[#ebebea] text-xs" style={{ ...gridStyle("internal"), background, opacity: closed ? 0.55 : 1 }}>
+    <div className="grid min-h-[34px] border-b border-[#f0f0ed] text-[12px]" style={{ ...gridStyle("internal"), background, opacity: closed ? 0.55 : 1 }}>
       <div />
       <div />
-      <div className="flex min-h-[32px] min-w-0 items-center gap-2 overflow-hidden pl-8 pr-2">
+      <div className="flex min-h-[34px] min-w-0 items-center gap-2 overflow-hidden pl-12 pr-2">
         <span className="shrink-0 text-[#b8b8b4]">{subCost.receiptCaptureId ? <Camera size={12} /> : "└─"}</span>
         <CostLineTypePill lineType={subCost.lineType} onChange={(lineType) => patch({ lineType }).catch(console.error)} />
         {reference && <span className="shrink-0 whitespace-nowrap text-xs font-medium" style={{ color: DOT_COLORS[subCost.lineType === "PO" ? "PURPLE" : "BLUE" ] }}>{reference}</span>}
@@ -1036,11 +1047,11 @@ function SubCostRow({ subCost, closed, onRevision, onError }: { subCost: SubCost
         {subCost.supplierName && <span className="shrink-0 truncate text-[11px] italic text-[#888]">{subCost.supplierName}</span>}
       </div>
       <div className="col-span-7" />
-      <div className="flex min-h-[32px] items-center justify-end gap-1 px-2 text-right tabular-nums">
+      <div className="flex min-h-[34px] items-center justify-end gap-1 px-2 text-right tabular-nums">
         <EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={amountClass} />
       </div>
       <CostLineLifecycleCell subCost={subCost} onPatch={patch} />
-      <div className="flex min-h-[30px] items-center justify-end gap-1 px-1">
+      <div className="flex min-h-[34px] items-center justify-end gap-1 px-1">
         <Paperclip size={14} className={subCost.invoiceFileId ? "text-[#1a1a1f]" : "text-[#888]"} />
         {subCost.proofOfPayment ? <Check size={14} className="text-green-600" /> : <span className="text-[#aaa]">✓</span>}
         <button onClick={remove} className="grid h-7 w-7 place-items-center text-[#aaa] hover:text-red-600"><X size={12} /></button>
@@ -1055,7 +1066,7 @@ function CostLineLifecycleCell({ subCost, onPatch }: { subCost: SubCost; onPatch
       <div className="flex min-h-[32px] items-center justify-end px-2">
         <button
           onClick={() => onPatch({ lineType: "BILL" }).catch(console.error)}
-          className="min-h-7 rounded border border-[#bfdbfe] bg-[#eff6ff] px-2 text-[11px] font-medium text-[#2563eb]"
+          className="min-h-7 rounded border border-[#cfe0fb] bg-[#f5f9ff] px-2 text-[11px] font-medium text-[#2563eb]"
           title="Convert this PO to a Bill"
         >
           + Bill
@@ -1104,18 +1115,18 @@ function SubCostDraftRow({ lineId, initialLineType, onCancel, onRevision, onErro
   }
 
   return (
-    <div className="grid min-h-[30px] border-b border-[#ebebea] bg-[#fafaf8] text-xs" style={gridStyle("internal")}>
+    <div className="grid min-h-[34px] border-b border-[#f0f0ed] bg-[#fbfbf8] text-[12px]" style={gridStyle("internal")}>
       <div />
       <div className="flex min-h-[30px] items-center gap-1 overflow-hidden px-1">
       </div>
-      <div className="flex min-h-[30px] items-center gap-2 pl-8 pr-2">
+      <div className="flex min-h-[34px] items-center gap-2 pl-12 pr-2">
         <span className="shrink-0 text-[#b8b8b4]">└─</span>
         <CostLineTypePill lineType={lineType} onChange={setLineType} />
-        <input autoFocus value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description..." className="h-7 min-w-0 flex-1 border-0 bg-transparent text-xs outline-none" />
-        <input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="Supplier..." className="h-7 w-28 border-0 bg-transparent text-[11px] italic text-[#888] outline-none" />
+        <input autoFocus value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description..." className="h-7 min-w-0 flex-1 rounded border-0 bg-white/70 px-1 text-xs outline-none focus:ring-2 focus:ring-[#13a18d]/25" />
+        <input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="Supplier..." className="h-7 w-28 rounded border-0 bg-white/70 px-1 text-[11px] italic text-[#888] outline-none focus:ring-2 focus:ring-[#13a18d]/25" />
       </div>
       <div className="col-span-7" />
-      <Cell><input value={amount} onChange={(event) => setAmount(event.target.value)} type="number" placeholder="£" className="h-7 w-full border-0 bg-transparent text-right text-xs tabular-nums outline-none" /></Cell>
+      <Cell><input value={amount} onChange={(event) => setAmount(event.target.value)} type="number" placeholder="£" className="h-7 w-full rounded border-0 bg-white/70 px-1 text-right text-xs tabular-nums outline-none focus:ring-2 focus:ring-[#13a18d]/25" /></Cell>
       <div />
       <div className="flex items-center justify-end gap-2 px-2">
         <button onClick={save} className="min-h-[28px] rounded bg-[#1a1a1f] px-2 text-[11px] font-medium text-white">Save</button>
