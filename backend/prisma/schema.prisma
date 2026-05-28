@@ -1135,16 +1135,23 @@ model BudgetRevision {
   budget               Budget          @relation("BudgetRevisions", fields: [budgetId], references: [id], onDelete: Cascade)
   currentForBudget     Budget?         @relation("CurrentBudgetRevision")
   revisionNumber       Int
+  majorVersion         Int             @default(1)
+  minorVersion         Int             @default(0)
   label                String          @default("Original")
   status               RevisionStatus  @default(DRAFT)
   productionFeePercent Float           @default(10)
   insurancePercent     Float           @default(0)
   notes                String?
+  sourceRevisionId     String?
+  isLocked             Boolean         @default(false)
+  lockedAt             DateTime?
+  changeSummary        String?
   sections             BudgetSection[]
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
   @@unique([budgetId, revisionNumber])
+  @@index([budgetId, majorVersion, minorVersion])
   @@map("pms_budget_revisions")
 }
 

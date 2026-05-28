@@ -6,12 +6,14 @@ import prisma from "../prisma";
 import {
   applyTemplate,
   calculateRevisionTotals,
+  cloneRevisionForEdit,
   createLineItem,
   createRevision,
   createSection,
   duplicateLineItem,
   getOrCreateBudget,
   getRevision,
+  isRevisionImmutable,
   linePatchFromBody,
   recalculateAfterSubCost,
   syncProductionTotals,
@@ -298,6 +300,43 @@ async function lineRevision(lineItemId: string) {
   return getRevision(line.section.revisionId);
 }
 
+async function editableRevisionId(revisionId: string, changeSummary: string): Promise<string> {
+  const revision = await prisma.budgetRevision.findUniqueOrThrow({ where: { id: revisionId } });
+  if (!isRevisionImmutable(revision)) return revision.id;
+  return (await cloneRevisionForEdit(revision.id, changeSummary)).revisionId;
+}
+
+async function editableSectionId(sectionId: string, changeSummary: string): Promise<string> {
+  const section = await prisma.budgetSection.findUniqueOrThrow({
+    where: { id: sectionId },
+    include: { revision: true },
+  });
+  if (!isRevisionImmutable(section.revision)) return section.id;
+  return (await cloneRevisionForEdit(section.revisionId, changeSummary)).sectionMap.get(section.id) ?? section.id;
+}
+
+async function editableLineItemId(lineItemId: string, changeSummary: string): Promise<string> {
+  const line = await prisma.budgetLineItem.findUniqueOrThrow({
+    where: { id: lineItemId },
+    include: { section: { include: { revision: true } } },
+  });
+  if (!isRevisionImmutable(line.section.revision)) return line.id;
+  return (await cloneRevisionForEdit(line.section.revisionId, changeSummary)).lineMap.get(line.id) ?? line.id;
+}
+
+async function editableSubCostId(subCostId: string, changeSummary: string): Promise<{ subCostId: string; lineItemId: string }> {
+  const subCost = await prisma.subCost.findUniqueOrThrow({
+    where: { id: subCostId },
+    include: { lineItem: { include: { section: { include: { revision: true } } } } },
+  });
+  if (!isRevisionImmutable(subCost.lineItem.section.revision)) return { subCostId: subCost.id, lineItemId: subCost.lineItemId };
+  const clone = await cloneRevisionForEdit(subCost.lineItem.section.revisionId, changeSummary);
+  return {
+    subCostId: clone.subCostMap.get(subCost.id) ?? subCost.id,
+    lineItemId: clone.lineMap.get(subCost.lineItemId) ?? subCost.lineItemId,
+  };
+}
+
 // Budget
 router.get("/production/:productionId", async (req: Request, res: Response): Promise<void> => {
   res.json(await getOrCreateBudget({ productionId: req.params.productionId }));
@@ -370,11 +409,19 @@ router.post("/:budgetId/revisions", async (req: Request, res: Response): Promise
 
 router.patch("/revisions/:revisionId", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as Record<string, unknown>;
+  const existing = await prisma.budgetRevision.findUniqueOrThrow({ where: { id: req.params.revisionId } });
+  const changesContent = body.label !== undefined || body.notes !== undefined || body.productionFeePercent !== undefined || body.insurancePercent !== undefined;
+  const revisionId = changesContent && isRevisionImmutable(existing)
+    ? await editableRevisionId(existing.id, "Revision settings changed")
+    : existing.id;
+  const status = body.status as RevisionStatus | undefined;
   const revision = await prisma.budgetRevision.update({
-    where: { id: req.params.revisionId },
+    where: { id: revisionId },
     data: {
       label: body.label as string | undefined,
-      status: body.status as RevisionStatus | undefined,
+      status,
+      isLocked: status === RevisionStatus.SENT || status === RevisionStatus.APPROVED || status === RevisionStatus.SUPERSEDED ? true : undefined,
+      lockedAt: status === RevisionStatus.SENT || status === RevisionStatus.APPROVED || status === RevisionStatus.SUPERSEDED ? new Date() : undefined,
       notes: body.notes as string | null | undefined,
       productionFeePercent: numberOrUndefined(body.productionFeePercent),
       insurancePercent: numberOrUndefined(body.insurancePercent),
@@ -388,7 +435,8 @@ router.patch("/revisions/:revisionId", async (req: Request, res: Response): Prom
 router.post("/revisions/:revisionId/apply-template", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as { templateId?: string };
   if (!body.templateId) { res.status(400).json({ error: "templateId is required" }); return; }
-  const revision = await applyTemplate(req.params.revisionId, body.templateId);
+  const revisionId = await editableRevisionId(req.params.revisionId, "Template applied");
+  const revision = await applyTemplate(revisionId, body.templateId);
   res.status(201).json(revision);
 });
 
@@ -406,13 +454,15 @@ router.post("/revisions/:revisionId/export-pdf", async (req: Request, res: Respo
 router.post("/revisions/:revisionId/sections", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as { code?: string; name?: string; order?: number; isVisible?: boolean };
   if (!body.code || !body.name) { res.status(400).json({ error: "code and name are required" }); return; }
-  res.status(201).json(await createSection(req.params.revisionId, { code: body.code, name: body.name, order: body.order, isVisible: body.isVisible }));
+  const revisionId = await editableRevisionId(req.params.revisionId, "Section added");
+  res.status(201).json(await createSection(revisionId, { code: body.code, name: body.name, order: body.order, isVisible: body.isVisible }));
 });
 
 router.patch("/sections/:sectionId", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as Record<string, unknown>;
+  const sectionId = await editableSectionId(req.params.sectionId, "Section changed");
   const section = await prisma.budgetSection.update({
-    where: { id: req.params.sectionId },
+    where: { id: sectionId },
     data: {
       code: body.code as string | undefined,
       name: body.name as string | undefined,
@@ -424,46 +474,54 @@ router.patch("/sections/:sectionId", async (req: Request, res: Response): Promis
 });
 
 router.delete("/sections/:sectionId", async (req: Request, res: Response): Promise<void> => {
-  await prisma.budgetSection.delete({ where: { id: req.params.sectionId } });
+  const sectionId = await editableSectionId(req.params.sectionId, "Section deleted");
+  await prisma.budgetSection.delete({ where: { id: sectionId } });
   res.status(204).end();
 });
 
 router.patch("/sections/:sectionId/reorder", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as { order?: number };
-  const section = await prisma.budgetSection.update({ where: { id: req.params.sectionId }, data: { order: body.order ?? 0 } });
+  const sectionId = await editableSectionId(req.params.sectionId, "Section reordered");
+  const section = await prisma.budgetSection.update({ where: { id: sectionId }, data: { order: body.order ?? 0 } });
   res.json(section);
 });
 
 // Line items
 router.post("/sections/:sectionId/lines", async (req: Request, res: Response): Promise<void> => {
-  const line = await createLineItem(req.params.sectionId, req.body as Partial<Prisma.BudgetLineItemUncheckedCreateInput>);
+  const sectionId = await editableSectionId(req.params.sectionId, "Line item added");
+  const line = await createLineItem(sectionId, req.body as Partial<Prisma.BudgetLineItemUncheckedCreateInput>);
   res.status(201).json({ line, revision: await lineRevision(line.id) });
 });
 
 router.patch("/lines/:lineItemId", async (req: Request, res: Response): Promise<void> => {
-  const line = await updateLineItem(req.params.lineItemId, linePatchFromBody(req.body as Record<string, unknown>));
+  const lineItemId = await editableLineItemId(req.params.lineItemId, "Line item changed");
+  const line = await updateLineItem(lineItemId, linePatchFromBody(req.body as Record<string, unknown>));
   res.json({ line, revision: await lineRevision(line.id) });
 });
 
 router.delete("/lines/:lineItemId", async (req: Request, res: Response): Promise<void> => {
-  const line = await prisma.budgetLineItem.findUnique({ where: { id: req.params.lineItemId }, select: { section: { select: { revisionId: true } } } });
-  await prisma.budgetLineItem.delete({ where: { id: req.params.lineItemId } });
+  const lineItemId = await editableLineItemId(req.params.lineItemId, "Line item deleted");
+  const line = await prisma.budgetLineItem.findUnique({ where: { id: lineItemId }, select: { section: { select: { revisionId: true } } } });
+  await prisma.budgetLineItem.delete({ where: { id: lineItemId } });
   res.status(204).json(line ? await getRevision(line.section.revisionId) : null);
 });
 
 router.post("/lines/:lineItemId/duplicate", async (req: Request, res: Response): Promise<void> => {
-  const line = await duplicateLineItem(req.params.lineItemId);
+  const lineItemId = await editableLineItemId(req.params.lineItemId, "Line item duplicated");
+  const line = await duplicateLineItem(lineItemId);
   res.status(201).json({ line, revision: await lineRevision(line.id) });
 });
 
 router.patch("/lines/:lineItemId/reorder", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as { order?: number };
-  const line = await prisma.budgetLineItem.update({ where: { id: req.params.lineItemId }, data: { order: body.order ?? 0 } });
+  const lineItemId = await editableLineItemId(req.params.lineItemId, "Line item reordered");
+  const line = await prisma.budgetLineItem.update({ where: { id: lineItemId }, data: { order: body.order ?? 0 } });
   res.json({ line, revision: await lineRevision(line.id) });
 });
 
 router.post("/lines/:lineItemId/sub-item", async (req: Request, res: Response): Promise<void> => {
-  const parent = await prisma.budgetLineItem.findUnique({ where: { id: req.params.lineItemId } });
+  const lineItemId = await editableLineItemId(req.params.lineItemId, "Sub-item added");
+  const parent = await prisma.budgetLineItem.findUnique({ where: { id: lineItemId } });
   if (!parent) { res.status(404).json({ error: "Line item not found" }); return; }
   const line = await createLineItem(parent.sectionId, {
     ...(req.body as Partial<Prisma.BudgetLineItemUncheckedCreateInput>),
@@ -475,15 +533,16 @@ router.post("/lines/:lineItemId/sub-item", async (req: Request, res: Response): 
 
 // Sub-costs
 router.post("/lines/:lineItemId/subcosts", async (req: Request, res: Response): Promise<void> => {
+  const lineItemId = await editableLineItemId(req.params.lineItemId, "Cost line added");
   const body = req.body as Record<string, unknown>;
   const lineType = normalizeLineType(body.lineType);
   const lifecycle = lineTypeLifecycle(lineType);
   const purchaseOrderGroupId = body.purchaseOrderGroupId as string | null | undefined;
   const purchaseOrder = purchaseOrderGroupId ? await prisma.purchaseOrderGroup.findUnique({ where: { id: purchaseOrderGroupId } }) : null;
-  const poNumber = purchaseOrder?.poNumber ?? (lineType === SubCostLineType.PO ? await generatePoNumber(req.params.lineItemId) : null);
+  const poNumber = purchaseOrder?.poNumber ?? (lineType === SubCostLineType.PO ? await generatePoNumber(lineItemId) : null);
   const subCost = await prisma.subCost.create({
     data: {
-      lineItemId: req.params.lineItemId,
+      lineItemId,
       purchaseOrderGroupId,
       lineType,
       poNumber,
@@ -506,13 +565,14 @@ router.post("/lines/:lineItemId/subcosts", async (req: Request, res: Response): 
       isPaid: body.isPaid as boolean | undefined ?? lifecycle.isPaid,
     },
   });
-  await recalculateAfterSubCost(req.params.lineItemId);
+  await recalculateAfterSubCost(lineItemId);
   await syncPurchaseOrderStatus(purchaseOrderGroupId);
-  res.status(201).json({ subCost, revision: await lineRevision(req.params.lineItemId) });
+  res.status(201).json({ subCost, revision: await lineRevision(lineItemId) });
 });
 
 router.patch("/subcosts/:subCostId", async (req: Request, res: Response): Promise<void> => {
-  const existing = await prisma.subCost.findUnique({ where: { id: req.params.subCostId } });
+  const editable = await editableSubCostId(req.params.subCostId, "Cost line changed");
+  const existing = await prisma.subCost.findUnique({ where: { id: editable.subCostId } });
   if (!existing) { res.status(404).json({ error: "Sub-cost not found" }); return; }
   const subCost = await prisma.subCost.update({ where: { id: existing.id }, data: subCostPatch(req.body as Record<string, unknown>) });
   await recalculateAfterSubCost(existing.lineItemId);
@@ -521,7 +581,8 @@ router.patch("/subcosts/:subCostId", async (req: Request, res: Response): Promis
 });
 
 router.delete("/subcosts/:subCostId", async (req: Request, res: Response): Promise<void> => {
-  const existing = await prisma.subCost.findUnique({ where: { id: req.params.subCostId } });
+  const editable = await editableSubCostId(req.params.subCostId, "Cost line deleted");
+  const existing = await prisma.subCost.findUnique({ where: { id: editable.subCostId } });
   if (!existing) { res.status(404).json({ error: "Sub-cost not found" }); return; }
   await prisma.subCost.delete({ where: { id: existing.id } });
   await recalculateAfterSubCost(existing.lineItemId);
@@ -535,7 +596,8 @@ router.patch("/subcosts/:subCostId/status", async (req: Request, res: Response):
     res.status(400).json({ error: "valid status is required" });
     return;
   }
-  const existing = await prisma.subCost.findUnique({ where: { id: req.params.subCostId } });
+  const editable = await editableSubCostId(req.params.subCostId, "Cost line status changed");
+  const existing = await prisma.subCost.findUnique({ where: { id: editable.subCostId } });
   if (!existing) { res.status(404).json({ error: "Sub-cost not found" }); return; }
   const subCost = await prisma.subCost.update({
     where: { id: existing.id },

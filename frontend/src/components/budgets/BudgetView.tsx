@@ -88,6 +88,24 @@ function lineTypeLabel(lineType: SubCostLineType) {
   return lineType;
 }
 
+function budgetVersionLabel(revision: Pick<BudgetRevision, "revisionNumber" | "majorVersion" | "minorVersion" | "label"> | BudgetRevisionSummary) {
+  const major = revision.majorVersion ?? revision.revisionNumber;
+  const minor = revision.minorVersion ?? 0;
+  return `V${major}${minor > 0 ? `.${minor}` : ""}`;
+}
+
+function revisionLocked(revision: Pick<BudgetRevision, "status" | "isLocked"> | BudgetRevisionSummary) {
+  return Boolean(revision.isLocked) || revision.status === "SENT" || revision.status === "APPROVED" || revision.status === "SUPERSEDED";
+}
+
+function revisionTone(revision: Pick<BudgetRevision, "status" | "isLocked"> | BudgetRevisionSummary) {
+  if (revision.status === "APPROVED") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (revision.status === "SENT") return "border-blue-200 bg-blue-50 text-blue-800";
+  if (revision.status === "SUPERSEDED") return "border-gray-200 bg-gray-100 text-gray-500";
+  if (revisionLocked(revision)) return "border-gray-200 bg-gray-50 text-gray-700";
+  return "border-amber-200 bg-amber-50 text-amber-800";
+}
+
 function stateCounts(revision: BudgetRevision) {
   const counts: Record<DotState, number> = { YELLOW: 0, PURPLE: 0, BLUE: 0, LIGHT_GREEN: 0, DARK_GREEN: 0, GRAY: 0 };
   for (const section of revision.sections) {
@@ -153,6 +171,27 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
     setRevision(next);
   }
 
+  async function refreshVersionList(nextRevision?: BudgetRevision | null) {
+    if (!budget) return;
+    setRevisions(await api.get<BudgetRevisionSummary[]>(`/api/budgets/${budget.id}/revisions`));
+    if (nextRevision && nextRevision.id !== revision?.id) {
+      const refreshed = entity.type === "production"
+        ? await api.get<Budget>(`/api/budgets/production/${entity.id}`)
+        : await api.get<Budget>(`/api/budgets/opportunity/${entity.id}`);
+      setBudget(refreshed);
+    }
+  }
+
+  async function acceptMutationRevision(nextRevision: BudgetRevision | null) {
+    if (!nextRevision) return;
+    const cloned = nextRevision.id !== revision?.id;
+    setRevision(nextRevision);
+    if (cloned && budget) {
+      setToast(`${budgetVersionLabel(nextRevision)} created from locked ${budgetVersionLabel(revision ?? nextRevision)}.`);
+      await refreshVersionList(nextRevision);
+    }
+  }
+
   async function patchBudget(patch: Partial<Budget>) {
     if (!budget) return;
     const updated = await api.patch<Budget>(`/api/budgets/${budget.id}`, patch);
@@ -163,13 +202,13 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
   async function patchRevision(patch: Partial<BudgetRevision>) {
     if (!revision) return;
     const updated = await api.patch<BudgetRevision>(`/api/budgets/revisions/${revision.id}`, patch);
-    setRevision(updated);
+    await acceptMutationRevision(updated);
     if (budget) setRevisions(await api.get<BudgetRevisionSummary[]>(`/api/budgets/${budget.id}/revisions`));
   }
 
   async function saveLine(line: BudgetLineItem, patch: Partial<BudgetLineItem>) {
     const response = await api.patch<LineMutationResponse>(`/api/budgets/lines/${line.id}`, patch);
-    if (response.revision) setRevision(response.revision);
+    await acceptMutationRevision(response.revision);
   }
 
   async function addLine(section: BudgetSection) {
@@ -180,7 +219,7 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
       rate: 0,
       unit: "Days",
     });
-    if (response.revision) setRevision(response.revision);
+    await acceptMutationRevision(response.revision);
   }
 
   async function addSection() {
@@ -195,7 +234,7 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
 
   async function duplicateLine(line: BudgetLineItem) {
     const response = await api.post<LineMutationResponse>(`/api/budgets/lines/${line.id}/duplicate`, {});
-    if (response.revision) setRevision(response.revision);
+    await acceptMutationRevision(response.revision);
   }
 
   async function deleteLine(line: BudgetLineItem) {
@@ -207,7 +246,7 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
   async function applyTemplate(templateId: string) {
     if (!revision) return;
     const updated = await api.post<BudgetRevision>(`/api/budgets/revisions/${revision.id}/apply-template`, { templateId });
-    setRevision(updated);
+    await acceptMutationRevision(updated);
     setBlankStarted(false);
     setPanel(null);
   }
@@ -226,6 +265,7 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
   }, [budget, revision]);
 
   const entityLabel = entity.label ?? budget?.jobName ?? (entity.type === "production" ? "Production" : "Opportunity");
+  const currentRevisionLocked = revision ? revisionLocked(revision) : false;
 
   if (!budget || !revision) {
     return <div className="flex min-h-full items-center justify-center text-sm text-gray-500">Loading budget...</div>;
@@ -241,43 +281,70 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
         </button>
       )}
 
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[#e8e8e4] bg-white px-3">
-        <button onClick={onBack} className="flex min-h-11 items-center gap-1 text-[13px] text-gray-700">
-          <ArrowLeft size={15} /> {entityLabel}
+      <header className="flex h-16 shrink-0 items-center gap-4 border-b border-[#e8e8e4] bg-white px-3">
+        <button onClick={onBack} className="flex min-h-11 shrink-0 items-center gap-2 text-[15px] font-semibold text-[#1a1a1f]">
+          <ArrowLeft size={16} />
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#13a18d] text-white">◆</span>
+          <span className="max-w-[260px] truncate">{entityLabel}</span>
+          <ChevronDown size={14} className="text-gray-400" />
         </button>
-        <select value={revision.id} onChange={(e) => openRevision(e.target.value).catch(console.error)} className="mx-auto h-8 max-w-[220px] rounded-full border border-[#e8e8e4] bg-white px-3 text-xs">
-          {revisions.map((item) => <option key={item.id} value={item.id}>{item.label} — {STATUS_LABELS[item.status]}</option>)}
-        </select>
-        <button onClick={() => patchBudget({ status: budget.status === "DRAFT" ? "SENT" : budget.status }).catch(console.error)} className="hidden rounded-full bg-[#1a1a1f] px-3 py-1 text-[11px] font-medium text-white sm:block">
-          {STATUS_LABELS[budget.status]}
-        </button>
-        <div className="flex rounded-full bg-[#f5f5f3] p-0.5 text-[11px]">
-          <button onClick={() => setMode("internal")} className={`min-h-8 rounded-full px-3 ${mode === "internal" ? "bg-[#1a1a1f] text-white" : "text-gray-500"}`}>Internal</button>
-          <button onClick={() => setMode("client")} className={`min-h-8 rounded-full px-3 ${mode === "client" ? "bg-[#1a1a1f] text-white" : "text-gray-500"}`}>Client</button>
+        <nav className="flex h-full flex-1 items-end justify-center gap-6 text-[13px] font-medium text-gray-500">
+          <button className="h-full border-b-2 border-transparent pt-1 hover:text-[#1a1a1f]">Overview</button>
+          <button className="h-full border-b-2 border-[#13a18d] pt-1 text-[#1a1a1f]">Budget</button>
+          <button className="h-full border-b-2 border-transparent pt-1 hover:text-[#1a1a1f]">POs</button>
+          <button className="h-full border-b-2 border-transparent pt-1 hover:text-[#1a1a1f]">Comms</button>
+          <button className="h-full border-b-2 border-transparent pt-1 hover:text-[#1a1a1f]">Files</button>
+        </nav>
+        <div className="flex shrink-0 items-center gap-2">
+          <button onClick={() => patchRevision({ status: revision.status === "DRAFT" ? "SENT" : revision.status }).catch(console.error)} className={`rounded-md border px-3 py-2 text-[12px] font-medium ${revisionTone(revision)}`}>
+            {currentRevisionLocked ? "Locked" : STATUS_LABELS[revision.status]}
+          </button>
+          <button onClick={() => exportPdf(mode).catch((err: Error) => setToast(err.message))} className="flex h-9 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-700 shadow-sm hover:bg-gray-50" title="Export PDF">
+            <Download size={14} /> Export
+          </button>
         </div>
-        <button onClick={() => exportPdf(mode).catch((err: Error) => setToast(err.message))} className="grid h-9 w-9 place-items-center rounded-md bg-[#1a1a1f] text-white" title="Export PDF">
-          <Download size={15} />
-        </button>
       </header>
 
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#e8e8e4] bg-[#f8f8f6] px-3 text-[11px] text-gray-500">
-        <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
-          <button onClick={() => exportPdf("client").catch(console.error)} className="whitespace-nowrap hover:text-[#1a1a1f]">Print estimate</button>
-          <span>·</span>
-          <button onClick={() => exportPdf("client").catch(console.error)} className="whitespace-nowrap hover:text-[#1a1a1f]">Email estimate</button>
-          <span>·</span>
-          <button onClick={() => createRevision(budget.id, load).catch(console.error)} className="whitespace-nowrap hover:text-[#1a1a1f]">Revision history</button>
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-[#caeee9] bg-[#e9fbf8]">
+        <div className="flex h-full min-w-0 flex-1 items-end overflow-x-auto">
+          {revisions.map((item) => {
+            const active = item.id === revision.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => openRevision(item.id).catch(console.error)}
+                className={`flex h-full min-w-[132px] max-w-[190px] items-center gap-2 border-r border-[#caeee9] px-3 text-left text-[13px] transition ${
+                  active ? "bg-white font-semibold text-[#1a1a1f] shadow-[inset_0_-2px_0_#1a1a1f]" : "text-gray-600 hover:bg-white/55"
+                }`}
+                title={`${budgetVersionLabel(item)} · ${item.label}`}
+              >
+                <span className="truncate">{budgetVersionLabel(item)}</span>
+                <span className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase ${revisionTone(item)}`}>{STATUS_LABELS[item.status]}</span>
+              </button>
+            );
+          })}
+          <button onClick={() => createRevision(budget.id, load).catch(console.error)} className="grid h-full w-12 shrink-0 place-items-center border-r border-[#caeee9] text-xl text-gray-500 hover:bg-white/60" title="New major version">
+            +
+          </button>
         </div>
-        <div className="ml-4 flex min-w-max items-center gap-2">
-          <button onClick={addSection} className="hover:text-[#1a1a1f]">+ Add section</button>
-          <span>·</span>
-          <button onClick={() => revision.sections[0] && addLine(revision.sections[0]).catch(console.error)} className="hover:text-[#1a1a1f]">+ Add line</button>
-          <span>·</span>
-          <button onClick={() => setPanel("templates")} className="hover:text-[#1a1a1f]">Templates</button>
-          <span>·</span>
-          <button onClick={() => setPanel("cover")} className="hover:text-[#1a1a1f]">Cover page</button>
-          <span>·</span>
-          <button onClick={() => setPanel("advances")} className="hover:text-[#1a1a1f]">Advances</button>
+        <div className="mr-3 flex shrink-0 rounded-md bg-white p-0.5 text-[12px] shadow-sm ring-1 ring-[#caeee9]">
+          <button onClick={() => setMode("internal")} className={`h-8 rounded px-3 ${mode === "internal" ? "bg-[#1a1a1f] text-white" : "text-gray-500"}`}>Internal</button>
+          <button onClick={() => setMode("client")} className={`h-8 rounded px-3 ${mode === "client" ? "bg-[#1a1a1f] text-white" : "text-gray-500"}`}>Client</button>
+        </div>
+      </div>
+
+      <div className="flex h-11 shrink-0 items-center justify-between border-b border-[#e8e8e4] bg-white px-3 text-[13px] text-gray-600">
+        <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
+          <span className="font-semibold text-[#1a1a1f]">Grid view</span>
+          <span className="text-gray-300">·</span>
+          <span className="truncate text-[12px] text-gray-400">{currentRevisionLocked ? "Edits create a new minor version automatically." : "Draft edits save into this version."}</span>
+        </div>
+        <div className="ml-4 flex min-w-max items-center gap-1">
+          <button onClick={addSection} className="h-8 rounded px-2 hover:bg-gray-100">+ Section</button>
+          <button onClick={() => revision.sections[0] && addLine(revision.sections[0]).catch(console.error)} className="h-8 rounded px-2 hover:bg-gray-100">+ Line</button>
+          <button onClick={() => setPanel("templates")} className="h-8 rounded px-2 hover:bg-gray-100">Templates</button>
+          <button onClick={() => setPanel("cover")} className="h-8 rounded px-2 hover:bg-gray-100">Cover</button>
+          <button onClick={() => setPanel("advances")} className="h-8 rounded px-2 hover:bg-gray-100">Advances</button>
         </div>
       </div>
 
@@ -296,7 +363,7 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
             onAddLine={addLine}
             onDuplicate={duplicateLine}
             onDelete={deleteLine}
-            onRevision={(next) => setRevision(next)}
+            onRevision={(next) => { void acceptMutationRevision(next); }}
             onError={(message) => setToast(message)}
             onOpenTemplates={() => setPanel("templates")}
           />

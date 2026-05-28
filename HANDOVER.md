@@ -1,3 +1,71 @@
+# HANDOVER - 2026-05-28 - Budget Version Tabs and Immutable Minor Versions
+
+## Built This Session
+- Added the first Airtable-style budget workspace pass.
+- Replaced the old revision dropdown presentation with clean budget version tabs:
+  - `V1`, `V1.1`, `V2`, etc.
+  - status pills on each version tab,
+  - active version has a clear selected state.
+- Added immutable revision metadata to `BudgetRevision`:
+  - `majorVersion`
+  - `minorVersion`
+  - `sourceRevisionId`
+  - `isLocked`
+  - `lockedAt`
+  - `changeSummary`
+- Existing revisions were migrated so their major version matches the old `revisionNumber`.
+- Locking behaviour:
+  - Sent / Approved / Superseded revisions are treated as immutable.
+  - Manually locked revisions are also immutable.
+  - Marking a revision as Sent / Approved / Superseded sets `isLocked` and `lockedAt`.
+- Core budget edit routes now clone immutable revisions before applying changes:
+  - revision settings,
+  - apply template,
+  - add/update/delete/reorder sections,
+  - add/update/delete/duplicate/reorder line items,
+  - add/update/delete/status-change cost lines.
+- Editing a locked version creates a new draft minor version from it, e.g. `V1.1`, then applies the change to that new version.
+- The frontend detects the cloned revision response, switches to it, refreshes version tabs, and shows a toast.
+- The budget header now follows the newer project workspace style:
+  - project identity left,
+  - project module nav centre,
+  - version status/export actions right,
+  - budget version tabs on the second row,
+  - cleaner grid toolbar below.
+
+## Backend
+- Updated `backend/prisma/schema.prisma`.
+- Added migration:
+  - `backend/prisma/migrations/20260528135000_budget_revision_immutability/migration.sql`
+- Updated `backend/src/services/budgetService.ts`.
+- Updated `backend/src/routes/budgets.ts`.
+
+## Frontend
+- Updated `frontend/src/components/budgets/BudgetView.tsx`.
+- Updated `frontend/src/lib/types.ts`.
+
+## Deployment / Verification
+- Prisma migration deployed successfully.
+- Prisma client regenerated.
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Budget revisions now have a real immutable/minor-version foundation.
+- The visible budget workspace is closer to the Airtable-style project interface.
+- Next useful pass: bring the budget grid itself up to the Options grid standard:
+  - active cell outline,
+  - keyboard navigation,
+  - column show/hide,
+  - saved budget views,
+  - drag row reorder with insertion feedback.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Grid Active Cell Pass
 
 ## Built This Session

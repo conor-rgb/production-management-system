@@ -1,4 +1,4 @@
-import { AdvanceCalcType, Prisma } from "@prisma/client";
+import { AdvanceCalcType, Prisma, RevisionStatus } from "@prisma/client";
 import prisma from "../prisma";
 
 export const revisionInclude = {
@@ -26,6 +26,12 @@ export const revisionInclude = {
 export type FullRevision = Prisma.BudgetRevisionGetPayload<{ include: typeof revisionInclude }>;
 type FullSection = FullRevision["sections"][number];
 type FullLineItem = FullSection["lineItems"][number];
+type RevisionEditClone = {
+  revisionId: string;
+  sectionMap: Map<string, string>;
+  lineMap: Map<string, string>;
+  subCostMap: Map<string, string>;
+};
 type FullBudget = Prisma.BudgetGetPayload<{
   include: {
     currentRevision: { include: typeof revisionInclude };
@@ -239,16 +245,19 @@ export async function createRevision(budgetId: string) {
   const budget = await budgetWithCurrent(budgetId);
   const source = budget.currentRevision;
   const nextNumber = Math.max(0, ...budget.revisions.map((revision) => revision.revisionNumber)) + 1;
+  const nextMajor = Math.max(0, ...budget.revisions.map((revision) => revision.majorVersion ?? revision.revisionNumber)) + 1;
 
   const created = await prisma.$transaction(async (tx) => {
     if (source) {
-      await tx.budgetRevision.update({ where: { id: source.id }, data: { status: "SUPERSEDED" } });
+      await tx.budgetRevision.update({ where: { id: source.id }, data: { isLocked: true, lockedAt: new Date() } });
     }
     const revision = await tx.budgetRevision.create({
       data: {
         budgetId,
         revisionNumber: nextNumber,
-        label: `R${nextNumber}`,
+        majorVersion: nextMajor,
+        minorVersion: 0,
+        label: `V${nextMajor}`,
         productionFeePercent: source?.productionFeePercent ?? budget.productionFeePercent,
         insurancePercent: source?.insurancePercent ?? budget.insurancePercent,
         notes: source?.notes,
@@ -286,6 +295,124 @@ export async function createRevision(budgetId: string) {
   });
 
   return getRevision(created.id);
+}
+
+export function revisionVersionLabel(revision: { majorVersion?: number | null; minorVersion?: number | null; revisionNumber: number; label?: string | null }): string {
+  const major = revision.majorVersion ?? revision.revisionNumber;
+  const minor = revision.minorVersion ?? 0;
+  return `V${major}${minor > 0 ? `.${minor}` : ""}`;
+}
+
+export function isRevisionImmutable(revision: { status: RevisionStatus; isLocked?: boolean | null }): boolean {
+  return Boolean(revision.isLocked) || revision.status === RevisionStatus.SENT || revision.status === RevisionStatus.APPROVED || revision.status === RevisionStatus.SUPERSEDED;
+}
+
+function copySubCostData(subCost: FullLineItem["subCosts"][number], lineItemId: string): Prisma.SubCostUncheckedCreateInput {
+  return {
+    lineItemId,
+    purchaseOrderGroupId: subCost.purchaseOrderGroupId,
+    lineType: subCost.lineType,
+    poNumber: subCost.poNumber,
+    description: subCost.description,
+    supplierName: subCost.supplierName,
+    amount: subCost.amount,
+    amountGross: subCost.amountGross,
+    vatAmount: subCost.vatAmount,
+    vatRate: subCost.vatRate,
+    currency: subCost.currency,
+    status: subCost.status,
+    invoiceNumber: subCost.invoiceNumber,
+    invoiceDate: subCost.invoiceDate,
+    datePaid: subCost.datePaid,
+    invoiceFileId: subCost.invoiceFileId,
+    proofOfPayment: subCost.proofOfPayment,
+    receiptCaptureId: subCost.receiptCaptureId,
+    isAgreed: subCost.isAgreed,
+    isInvoiced: subCost.isInvoiced,
+    isPaid: subCost.isPaid,
+    freeAgentTransactionId: subCost.freeAgentTransactionId,
+  };
+}
+
+export async function cloneRevisionForEdit(revisionId: string, changeSummary = "Working edit"): Promise<RevisionEditClone> {
+  const source = await prisma.budgetRevision.findUniqueOrThrow({ where: { id: revisionId }, include: revisionInclude });
+  if (!isRevisionImmutable(source)) {
+    return {
+      revisionId: source.id,
+      sectionMap: new Map(source.sections.map((section) => [section.id, section.id])),
+      lineMap: new Map(source.sections.flatMap((section) => section.lineItems.map((line) => [line.id, line.id] as const))),
+      subCostMap: new Map(source.sections.flatMap((section) => section.lineItems.flatMap((line) => line.subCosts.map((subCost) => [subCost.id, subCost.id] as const)))),
+    };
+  }
+
+  const maxRevision = await prisma.budgetRevision.aggregate({ where: { budgetId: source.budgetId }, _max: { revisionNumber: true } });
+  const majorVersion = source.majorVersion ?? source.revisionNumber;
+  const maxMinor = await prisma.budgetRevision.aggregate({ where: { budgetId: source.budgetId, majorVersion }, _max: { minorVersion: true } });
+  const nextMinor = (maxMinor._max.minorVersion ?? 0) + 1;
+  const sectionMap = new Map<string, string>();
+  const lineMap = new Map<string, string>();
+  const subCostMap = new Map<string, string>();
+
+  const created = await prisma.$transaction(async (tx) => {
+    const revision = await tx.budgetRevision.create({
+      data: {
+        budgetId: source.budgetId,
+        revisionNumber: (maxRevision._max.revisionNumber ?? 0) + 1,
+        majorVersion,
+        minorVersion: nextMinor,
+        label: `V${majorVersion}.${nextMinor}`,
+        status: RevisionStatus.DRAFT,
+        productionFeePercent: source.productionFeePercent,
+        insurancePercent: source.insurancePercent,
+        notes: source.notes,
+        sourceRevisionId: source.id,
+        changeSummary,
+      },
+    });
+
+    for (const section of source.sections) {
+      const copiedSection = await tx.budgetSection.create({
+        data: {
+          revisionId: revision.id,
+          code: section.code,
+          name: section.name,
+          order: section.order,
+          isVisible: section.isVisible,
+        },
+      });
+      sectionMap.set(section.id, copiedSection.id);
+
+      for (const line of section.lineItems.filter((item) => !item.parentId)) {
+        const copied = await tx.budgetLineItem.create({
+          data: copyLineData(line, copiedSection.id, line.order, null),
+        });
+        lineMap.set(line.id, copied.id);
+        for (const subCost of line.subCosts) {
+          const copiedSubCost = await tx.subCost.create({ data: copySubCostData(subCost, copied.id) });
+          subCostMap.set(subCost.id, copiedSubCost.id);
+        }
+        await tx.budgetLineItem.update({ where: { id: copied.id }, data: { actualTotal: line.actualTotal, variance: line.variance } });
+      }
+
+      for (const line of section.lineItems.filter((item) => item.parentId)) {
+        const parentId = lineMap.get(line.parentId ?? "") ?? null;
+        const copied = await tx.budgetLineItem.create({
+          data: copyLineData(line, copiedSection.id, line.order, parentId),
+        });
+        lineMap.set(line.id, copied.id);
+        for (const subCost of line.subCosts) {
+          const copiedSubCost = await tx.subCost.create({ data: copySubCostData(subCost, copied.id) });
+          subCostMap.set(subCost.id, copiedSubCost.id);
+        }
+        await tx.budgetLineItem.update({ where: { id: copied.id }, data: { actualTotal: line.actualTotal, variance: line.variance } });
+      }
+    }
+
+    await tx.budget.update({ where: { id: source.budgetId }, data: { currentRevisionId: revision.id } });
+    return revision;
+  });
+
+  return { revisionId: created.id, sectionMap, lineMap, subCostMap };
 }
 
 function copyLineData(line: FullLineItem, sectionId: string, order: number, parentId: string | null): Prisma.BudgetLineItemUncheckedCreateInput {
