@@ -1823,8 +1823,8 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-white">
-      <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4">
-        <div className="flex min-w-0 items-center gap-3 text-sm text-gray-600">
+      <div className="flex h-11 shrink-0 items-center gap-3 overflow-hidden border-b border-gray-200 px-4">
+        <div className="flex shrink-0 items-center gap-3 text-sm text-gray-600">
           <button className="grid h-8 w-8 place-items-center rounded hover:bg-gray-100" title="View menu">
             <Menu size={17} />
           </button>
@@ -1834,24 +1834,24 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
             <ChevronDown size={14} />
           </button>
         </div>
-        <div className="relative flex items-center gap-2">
+        <div className="relative ml-auto flex min-w-0 flex-1 items-center justify-end gap-1.5">
           <ToolbarButton icon={<EyeOff size={15} />} label="Hide fields" onClick={() => setFieldManagerOpen((open) => !open)} />
           <ToolbarButton icon={<Filter size={15} />} label={filterCount ? `Filter ${filterCount}` : "Filter"} onClick={() => setFilterOpen((open) => !open)} active={filterCount > 0 || filterOpen} />
-          <ToolbarButton icon={<Layers3 size={15} />} label="Group" disabled />
+          <div className="hidden lg:block"><ToolbarButton icon={<Layers3 size={15} />} label="Group" disabled /></div>
           <ToolbarButton label="Sort" onClick={() => setSort(sortKey === "manual" ? "name" : "manual")} />
-          <ToolbarButton icon={<PaintBucket size={15} />} label="Color" disabled />
-          <ToolbarButton icon={<Share2 size={15} />} label="Share/export" disabled />
-          <button className="grid h-8 w-8 place-items-center rounded text-gray-500 hover:bg-gray-100" title="Search">
+          <div className="hidden xl:block"><ToolbarButton icon={<PaintBucket size={15} />} label="Color" disabled /></div>
+          <div className="hidden 2xl:block"><ToolbarButton icon={<Share2 size={15} />} label="Share/export" disabled /></div>
+          <button className="grid h-8 w-8 shrink-0 place-items-center rounded text-gray-500 hover:bg-gray-100" title="Search">
             <Search size={16} />
           </button>
-          <span className="mx-1 h-5 w-px bg-gray-200" />
-          <button onClick={() => setFieldFormOpen((open) => !open)} className="flex h-8 items-center rounded px-2 text-[13px] font-medium text-gray-700 hover:bg-gray-100">
+          <span className="mx-1 hidden h-5 w-px shrink-0 bg-gray-200 sm:block" />
+          <button onClick={() => setFieldFormOpen((open) => !open)} className="flex h-8 shrink-0 items-center rounded px-2 text-[13px] font-medium text-gray-700 hover:bg-gray-100">
             <Plus size={14} className="mr-1" /> Field
           </button>
-          <button onClick={onAddCandidate} className="flex h-8 items-center rounded px-2 text-[13px] font-medium text-gray-700 hover:bg-gray-100">
+          <button onClick={onAddCandidate} className="flex h-8 shrink-0 items-center rounded px-2 text-[13px] font-medium text-gray-700 hover:bg-gray-100">
             <Plus size={14} className="mr-1" /> Candidate
           </button>
-          <button onClick={() => setDesignerOpen(true)} className="h-8 rounded border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+          <button onClick={() => setDesignerOpen(true)} className="h-8 shrink-0 rounded border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">
             Design PDF
           </button>
           {fieldFormOpen && (
@@ -1914,8 +1914,8 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           )}
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto bg-white">
-        <div className="inline-block min-h-full overflow-visible bg-white" style={{ minWidth: minimumSheetWidth }}>
+      <div className="min-h-0 max-w-full flex-1 overflow-auto overscroll-contain bg-white">
+        <div className="min-h-full overflow-visible bg-white" style={{ width: `max(100%, ${minimumSheetWidth}px)` }}>
           <div className="sticky top-0 z-20 grid h-8 items-center gap-x-2 border-y border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
             <div className="flex items-center justify-center">
               <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600" aria-label="Select all candidates" />

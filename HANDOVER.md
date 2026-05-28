@@ -1,3 +1,36 @@
+# HANDOVER - 2026-05-28 - Options Horizontal Scroll and Toolbar Clamp Fix
+
+## Built This Session
+- Fixed option candidate sheet horizontal scrolling after the scroll-container pass.
+- The grid body now has an explicit scroll canvas width:
+  - `width: max(100%, [calculated sheet width]px)`
+  - this forces horizontal scroll when columns exceed the visible workspace.
+- Fixed the toolbar stretching off-screen.
+- Toolbar controls now stay inside the visible pane:
+  - left view controls are fixed-width,
+  - right controls are constrained,
+  - lower-priority placeholder controls hide at smaller widths,
+  - core actions remain visible: Hide fields, Filter, Sort, Search, Field, Candidate, Design PDF.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Long option sheets should scroll vertically and horizontally.
+- The toolbar should remain fixed and contained inside the viewport.
+
+---
+
 # HANDOVER - 2026-05-28 - Options List Scrolling Fix
 
 ## Built This Session
