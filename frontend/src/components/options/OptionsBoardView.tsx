@@ -1746,9 +1746,14 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   const [designerOpen, setDesignerOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ candidate: OptionCandidate; x: number; y: number } | null>(null);
   const [expandedCandidateId, setExpandedCandidateId] = useState<string | null>(null);
+  const [previewColumnWidths, setPreviewColumnWidths] = useState<Record<string, number>>({});
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
   const expandedCandidate = expandedCandidateId ? group.candidates.find((candidate) => candidate.id === expandedCandidateId) ?? null : null;
-  const visibleColumns = group.columns.filter((column) => !column.hidden).sort((a, b) => a.order - b.order);
+  const orderedColumns = group.columns
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((column) => ({ ...column, width: previewColumnWidths[column.id] ?? column.width }));
+  const visibleColumns = orderedColumns.filter((column) => !column.hidden);
   const rowControlWidth = 58;
   const rowActionWidth = 34;
   const gridColumns = `${rowControlWidth}px ${visibleColumns.flatMap((column) => column.key === "date_statuses" ? dates.map(() => `${column.width}px`) : [`${column.width}px`]).join(" ")} ${rowActionWidth}px`;
@@ -1761,6 +1766,10 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   );
   const filterCount = activeFilterCount(filters);
   const minimumSheetWidth = rowControlWidth + rowActionWidth + visibleColumns.reduce((sum, column) => sum + (column.key === "date_statuses" ? Math.max(1, dates.length) * column.width : column.width), 0);
+
+  useEffect(() => {
+    setPreviewColumnWidths({});
+  }, [group.id]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1819,6 +1828,21 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
     await onReorderColumns(next.map((item) => item.id));
     setDragColumnId(null);
     setDropColumnId(null);
+  }
+
+  function previewColumnWidth(columnId: string, width: number) {
+    setPreviewColumnWidths((current) => ({ ...current, [columnId]: width }));
+  }
+
+  function orderedColumnIdsWithMove(columnId: string, direction: -1 | 1): string[] {
+    const ids = orderedColumns.map((column) => column.id);
+    const index = ids.indexOf(columnId);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return ids;
+    const next = ids.slice();
+    const [moved] = next.splice(index, 1);
+    next.splice(nextIndex, 0, moved);
+    return next;
   }
 
   return (
@@ -1888,19 +1912,58 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
                 <div className="text-[10px] text-gray-400">Core + custom</div>
               </div>
               <div className="max-h-[360px] overflow-auto pr-1">
-                {group.columns.slice().sort((a, b) => a.order - b.order).map((column) => (
-                  <label key={column.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50">
+                {orderedColumns.map((column, index) => (
+                  <div key={column.id} className="grid grid-cols-[18px_1fr_64px_48px] items-center gap-2 rounded-md px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50">
                     <input
                       type="checkbox"
                       checked={!column.hidden}
                       onChange={(event) => { void onUpdateColumn(column.id, { hidden: !event.target.checked }); }}
                       className="h-3.5 w-3.5 rounded border-gray-300 text-gray-900"
+                      aria-label={`Show ${column.label}`}
                     />
-                    <span className="min-w-0 flex-1 truncate">{column.label}</span>
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] ${column.locked ? "bg-gray-100 text-gray-500" : "bg-blue-50 text-blue-600"}`}>
-                      {column.locked ? "Blackbook/core" : "Custom"}
-                    </span>
-                  </label>
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{column.label}</div>
+                      <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-400">
+                        <span>{column.locked ? "Blackbook/core" : "Custom"}</span>
+                        <span>·</span>
+                        <span>{optionColumnTypeLabel(column.type)}</span>
+                      </div>
+                    </div>
+                    <input
+                      value={column.width}
+                      onChange={(event) => {
+                        const width = Number(event.target.value);
+                        if (Number.isFinite(width)) previewColumnWidth(column.id, Math.max(48, Math.min(520, width)));
+                      }}
+                      onBlur={(event) => {
+                        const width = Number(event.target.value);
+                        if (Number.isFinite(width)) void onUpdateColumn(column.id, { width: Math.max(48, Math.min(520, Math.round(width))) });
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") event.currentTarget.blur();
+                      }}
+                      className="h-7 rounded border border-gray-200 px-1.5 text-right text-[11px] tabular-nums outline-none focus:border-gray-400"
+                      aria-label={`${column.label} width`}
+                    />
+                    <div className="flex items-center justify-end gap-0.5">
+                      <button
+                        onClick={() => { void onReorderColumns(orderedColumnIdsWithMove(column.id, -1)); }}
+                        disabled={index === 0}
+                        className="grid h-6 w-5 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900 disabled:opacity-25"
+                        title="Move field left"
+                      >
+                        ←
+                      </button>
+                      <button
+                        onClick={() => { void onReorderColumns(orderedColumnIdsWithMove(column.id, 1)); }}
+                        disabled={index === orderedColumns.length - 1}
+                        className="grid h-6 w-5 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900 disabled:opacity-25"
+                        title="Move field right"
+                      >
+                        →
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -1933,11 +1996,12 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
                   if (dragColumnId && dragColumnId !== column.id) setDropColumnId(column.id);
                 },
                 onDrop: () => { void dropColumn(column.id).catch((err: Error) => window.alert(err.message)); },
-                onDragEnd: () => {
-                  setDragColumnId(null);
-                  setDropColumnId(null);
-                },
-              };
+                  onDragEnd: () => {
+                    setDragColumnId(null);
+                    setDropColumnId(null);
+                  },
+                  onResizePreview: previewColumnWidth,
+                };
               if (column.key === "date_statuses") {
                 return dates.map((date, index) => (
                   <DateStatusColumnHeader
@@ -2794,7 +2858,7 @@ function normalizeColumnValue(value: string, type: OptionColumnType): unknown {
   return value.trim() || null;
 }
 
-function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDrop, onDragEnd }: {
+function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDrop, onDragEnd, onResizePreview }: {
   column: OptionColumn;
   isDropTarget: boolean;
   sortKey?: CandidateSortKey;
@@ -2807,6 +2871,7 @@ function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sort
   onDragOver: () => void;
   onDrop: () => void;
   onDragEnd: () => void;
+  onResizePreview?: (columnId: string, width: number) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -2825,6 +2890,7 @@ function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sort
     let latestWidth = column.width;
     const move = (moveEvent: MouseEvent) => {
       latestWidth = Math.max(80, Math.min(420, Math.round(startWidth.current + moveEvent.clientX - startX.current)));
+      onResizePreview?.(column.id, latestWidth);
     };
     const up = () => {
       document.removeEventListener("mousemove", move);
@@ -2910,7 +2976,7 @@ function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sort
   );
 }
 
-function DateStatusColumnHeader({ column, date, showControls, isDropTarget, sortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDrop, onDragEnd }: {
+function DateStatusColumnHeader({ column, date, showControls, isDropTarget, sortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDrop, onDragEnd, onResizePreview }: {
   column: OptionColumn;
   date: MatrixDate;
   showControls: boolean;
@@ -2924,6 +2990,7 @@ function DateStatusColumnHeader({ column, date, showControls, isDropTarget, sort
   onDragOver: () => void;
   onDrop: () => void;
   onDragEnd: () => void;
+  onResizePreview?: (columnId: string, width: number) => void;
 }) {
   const parts = compactDateLabel(date);
   const active = sortKey === `date:${date.id}`;
@@ -2940,6 +3007,7 @@ function DateStatusColumnHeader({ column, date, showControls, isDropTarget, sort
             onDragOver={onDragOver}
             onDrop={onDrop}
             onDragEnd={onDragEnd}
+            onResizePreview={onResizePreview}
           />
         </div>
       )}

@@ -1,3 +1,42 @@
+# HANDOVER - 2026-05-28 - Options Airtable Column Controls Foundation
+
+## Built This Session
+- Strengthened the Airtable-style options grid column foundation.
+- Column resizing now previews live while dragging the header resize handle instead of only jumping after save.
+- The existing column persistence is now more usable from the field manager:
+  - show/hide any column,
+  - adjust column width numerically,
+  - move fields left/right,
+  - see whether a field is Blackbook/core or custom,
+  - see each field type.
+- Column changes continue to save through the existing `OptionColumn` API and persist per option sheet.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+- Existing `OptionColumn` persistence was already present and reused:
+  - `width`
+  - `order`
+  - `hidden`
+  - `type`
+  - `locked`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Options sheets now have a stronger field manager for v1.1 column layout work.
+- Header drag reorder and resize remain available directly in the grid.
+- The next useful pass is a proper Airtable-style add-field/type menu and persisted saved views.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Toolbar Constraint and Horizontal Scroll Follow-up
 
 ## Built This Session
