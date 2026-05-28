@@ -2000,6 +2000,86 @@ router.patch("/matrix/candidates/:candidateId", async (req: Request, res: Respon
   res.json(await matrixResponse(candidate.productionId));
 });
 
+router.post("/matrix/candidates/:candidateId/duplicate", async (req: Request, res: Response): Promise<void> => {
+  const source = await prisma.optionCandidate.findUnique({
+    where: { id: req.params.candidateId },
+    include: {
+      dateStatuses: true,
+      photos: true,
+      columnValues: true,
+    },
+  });
+  if (!source) {
+    res.status(404).json({ error: "Candidate not found" });
+    return;
+  }
+
+  const order = await prisma.optionCandidate.count({ where: { groupId: source.groupId } });
+  await prisma.optionCandidate.create({
+    data: {
+      productionId: source.productionId,
+      groupId: source.groupId,
+      blackbookEntryId: source.blackbookEntryId,
+      selectedAddressId: source.selectedAddressId,
+      name: `${source.name} copy`,
+      subtitle: source.subtitle,
+      website: source.website,
+      contactName: source.contactName,
+      contactEmail: source.contactEmail,
+      contactPhone: source.contactPhone,
+      bookUrl: source.bookUrl,
+      socialUrl: source.socialUrl,
+      modelsComUrl: source.modelsComUrl,
+      pdfUrl: source.pdfUrl,
+      pdfFilename: source.pdfFilename,
+      pdfSizeBytes: source.pdfSizeBytes,
+      addressLine1: source.addressLine1,
+      addressLine2: source.addressLine2,
+      city: source.city,
+      region: source.region,
+      postcode: source.postcode,
+      country: source.country,
+      locationType: source.locationType,
+      latitude: source.latitude,
+      longitude: source.longitude,
+      rate: source.rate,
+      rateUnit: source.rateUnit,
+      currency: source.currency,
+      activeState: source.activeState,
+      internalNotes: source.internalNotes,
+      clientNotes: source.clientNotes,
+      order,
+      dateStatuses: {
+        create: source.dateStatuses.map((status) => ({
+          dateId: status.dateId,
+          status: status.status,
+          notes: status.notes,
+        })),
+      },
+      photos: {
+        create: source.photos.map((photo) => ({
+          filename: photo.filename,
+          storedPath: photo.storedPath,
+          sizeBytes: photo.sizeBytes,
+          width: photo.width,
+          height: photo.height,
+          order: photo.order,
+          caption: photo.caption,
+          exportSelected: photo.exportSelected,
+        })),
+      },
+      columnValues: {
+        create: source.columnValues.map((columnValue) => ({
+          columnId: columnValue.columnId,
+          value: columnValue.value === null ? Prisma.JsonNull : columnValue.value,
+        })),
+      },
+    },
+  });
+
+  res.status(201).json(await matrixResponse(source.productionId));
+});
+
 router.patch("/matrix/groups/:groupId/candidates/reorder", async (req: Request, res: Response): Promise<void> => {
   const { orderedIds } = req.body as { orderedIds?: string[] };
   const group = await prisma.optionGroup.findUnique({ where: { id: req.params.groupId }, select: { id: true, productionId: true } });

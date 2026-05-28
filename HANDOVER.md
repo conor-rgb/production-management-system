@@ -1,3 +1,49 @@
+# HANDOVER - 2026-05-28 - Options Candidate Duplicate Action
+
+## Built This Session
+- Added backend support for duplicating option candidates:
+  - `POST /api/options/matrix/candidates/:candidateId/duplicate`
+- Duplicate now copies safe candidate metadata:
+  - core candidate fields,
+  - linked Blackbook entry reference,
+  - selected address reference,
+  - date availability statuses,
+  - custom sheet field values,
+  - photo records pointing to existing stored files.
+- Duplicate deliberately does not copy:
+  - purchase orders,
+  - matrix role assignments,
+  - unique public PDF token / stored PDF path,
+  - static map image cache.
+- Wired the row context menu `Duplicate record` action to the new endpoint.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- Updated `backend/src/routes/options.ts`.
+- No schema migration required.
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Right-clicking an option candidate row and choosing `Duplicate record` creates a copy at the bottom of the same candidate sheet.
+- The duplicate keeps option/deck metadata but avoids copying operational commitments.
+
+## Exact Next Steps
+1. Add real filter and saved view support for candidate sheets.
+2. Add a full field manager drawer.
+3. Add record link/copy URL behaviour.
+4. Build Gallery view.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Expanded Record Panel
 
 ## Built This Session

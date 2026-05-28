@@ -1182,6 +1182,10 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
     setMatrix(await api.delete(`/api/options/matrix/candidates/${candidateId}`).then(() => api.get<MatrixResponse>(`/api/options/production/${productionId}/matrix`)));
   }
 
+  async function duplicateCandidate(candidateId: string) {
+    setMatrix(await api.post<MatrixResponse>(`/api/options/matrix/candidates/${candidateId}/duplicate`, {}));
+  }
+
   async function updateCandidateDate(candidateId: string, dateId: string, status: HoldStatus | null) {
     setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/candidates/${candidateId}/dates/${dateId}`, { status }));
   }
@@ -1331,6 +1335,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
               onDeleteColumn={deleteColumn}
               onReorderColumns={(orderedIds) => reorderColumns(selectedGroup.id, orderedIds)}
               onUpdateColumnValue={updateColumnValue}
+              onDuplicateCandidate={duplicateCandidate}
             />
           ) : (
             <MatrixTable
@@ -1609,7 +1614,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   );
 }
 
-function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate, onCreateColumn, onUpdateColumn, onDeleteColumn, onReorderColumns, onUpdateColumnValue }: {
+function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate, onCreateColumn, onUpdateColumn, onDeleteColumn, onReorderColumns, onUpdateColumnValue, onDuplicateCandidate }: {
   matrix: MatrixResponse;
   group: OptionGroup;
   dates: MatrixDate[];
@@ -1629,6 +1634,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   onDeleteColumn: (columnId: string) => Promise<void>;
   onReorderColumns: (orderedIds: string[]) => Promise<void>;
   onUpdateColumnValue: (candidateId: string, columnId: string, value: unknown) => Promise<void>;
+  onDuplicateCandidate: (candidateId: string) => Promise<void>;
 }) {
   const [photoCandidate, setPhotoCandidate] = useState<OptionCandidate | null>(null);
   const [sortKey, setSortKey] = useState<CandidateSortKey>("manual");
@@ -1908,6 +1914,11 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           onAddCandidate={() => {
             setContextMenu(null);
             void onAddCandidate().catch((err: Error) => window.alert(err.message));
+          }}
+          onDuplicate={() => {
+            const candidate = contextMenu.candidate;
+            setContextMenu(null);
+            void onDuplicateCandidate(candidate.id).catch((err: Error) => window.alert(err.message));
           }}
           onOpenPhotos={() => {
             setPhotoCandidate(contextMenu.candidate);
@@ -2896,12 +2907,13 @@ function ToolbarButton({ icon, label, onClick, disabled = false }: {
   );
 }
 
-function CandidateContextMenu({ candidate, x, y, onClose, onAddCandidate, onOpenPhotos, onExpand, onOpenBlackbook, onDelete }: {
+function CandidateContextMenu({ candidate, x, y, onClose, onAddCandidate, onDuplicate, onOpenPhotos, onExpand, onOpenBlackbook, onDelete }: {
   candidate: OptionCandidate;
   x: number;
   y: number;
   onClose: () => void;
   onAddCandidate: () => void;
+  onDuplicate: () => void;
   onOpenPhotos: () => void;
   onExpand: () => void;
   onOpenBlackbook: () => void;
@@ -2921,7 +2933,7 @@ function CandidateContextMenu({ candidate, x, y, onClose, onAddCandidate, onOpen
         Ask Omni
       </button>
       <ContextMenuItem icon={<Plus size={16} />} label="Insert record below" onClick={onAddCandidate} />
-      <ContextMenuItem icon={<Copy size={16} />} label="Duplicate record" disabled />
+      <ContextMenuItem icon={<Copy size={16} />} label="Duplicate record" onClick={onDuplicate} />
       <ContextMenuItem icon={<Maximize2 size={16} />} label="Expand record" onClick={onExpand} />
       <div className="my-1 border-t border-gray-100" />
       <ContextMenuItem icon={<ImageIcon size={16} />} label="Manage photos" onClick={onOpenPhotos} />
