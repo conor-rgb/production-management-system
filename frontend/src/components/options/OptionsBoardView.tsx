@@ -1387,7 +1387,8 @@ function ProjectWorkspaceHeader({ matrix, activeModule, onBack, onNavigateModule
   rightActions: ReactNode;
 }) {
   const projectName = [matrix.production.brand, matrix.production.clientName].filter(Boolean).join(" x ") || matrix.production.title || matrix.production.jobCode || "Project";
-  const modules: Array<{ id: "options" | "budget" | "dates" | "crew" | "pos" | "comms" | "files"; label: string; onClick?: () => void }> = [
+  const modules: Array<{ id: "overview" | "options" | "budget" | "dates" | "crew" | "pos" | "comms" | "files"; label: string; onClick?: () => void }> = [
+    { id: "overview", label: "Overview", onClick: () => onNavigateModule("overview") },
     { id: "options", label: "Options" },
     { id: "budget", label: "Budget", onClick: () => onNavigateModule("budget") },
     { id: "dates", label: "Dates", onClick: () => onNavigateModule("dates") },
@@ -1409,36 +1410,26 @@ function ProjectWorkspaceHeader({ matrix, activeModule, onBack, onNavigateModule
             <ChevronDown size={16} className="shrink-0 text-gray-500" />
           </button>
         </div>
-        <div className="flex h-full items-center gap-7 text-[14px] font-medium text-gray-600">
-          <button className="relative h-full text-[#111827]">
-            Data
-            <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#0f8f7f]" />
-          </button>
-          <button className="h-full hover:text-gray-900">Automations</button>
-          <button className="h-full hover:text-gray-900">Interfaces</button>
-          <button className="h-full hover:text-gray-900">Forms</button>
-        </div>
-        <div className="flex min-w-0 items-center justify-end gap-2">
-          <button className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">Launch</button>
-          <button className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">Share</button>
-          {rightActions}
-        </div>
-      </div>
-      <div className="flex h-[38px] items-center justify-between border-t border-[#e7ecef] bg-[#e6fbf7] px-4">
-        <div className="flex h-full min-w-0 items-center gap-1 overflow-x-auto">
+        <div className="flex h-full min-w-0 items-center gap-7 overflow-x-auto text-[14px] font-medium text-gray-600">
           {modules.map((module) => (
             <button
               key={module.id}
               onClick={module.onClick}
-              className={`flex h-full shrink-0 items-center border-r border-[#c7ebe4] px-3 text-[14px] ${
-                activeModule === module.id ? "bg-white font-semibold text-[#111827]" : "font-medium text-gray-600 hover:bg-white/60 hover:text-gray-900"
+              className={`relative h-full shrink-0 whitespace-nowrap hover:text-gray-900 ${
+                activeModule === module.id ? "text-[#111827]" : ""
               }`}
             >
               {module.label}
+              {activeModule === module.id && <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#0f8f7f]" />}
             </button>
           ))}
         </div>
-        <button className="h-8 rounded px-2 text-[13px] font-medium text-gray-600 hover:bg-white/70">Tools <ChevronDown size={14} className="ml-1 inline" /></button>
+        <div className="flex min-w-0 items-center justify-end gap-2">
+          <button className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">Launch</button>
+          <button className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">Share</button>
+          <button className="h-9 rounded-md px-2 text-[13px] font-medium text-gray-600 hover:bg-gray-50">Tools <ChevronDown size={14} className="ml-1 inline" /></button>
+          {rightActions}
+        </div>
       </div>
     </div>
   );

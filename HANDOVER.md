@@ -1,3 +1,48 @@
+# HANDOVER - 2026-05-28 - Project Module Nav Moved Into Top Workspace Header
+
+## Built This Session
+- Replaced the placeholder `Data / Automations / Interfaces / Forms` top-centre navigation with the real project module navigation.
+- The top Airtable-style header now carries:
+  - `Overview`
+  - `Options`
+  - `Budget`
+  - `Dates`
+  - `Crew List`
+  - `POs`
+  - `Comms`
+  - `Files`
+- Removed the duplicate pale module strip from the shared production workspace header.
+- Kept the Airtable-style active underline and spacing from the former `Data` nav.
+- Kept option sheet tabs as the lower pale row inside the Options module only, so `Matrix / Photographer / Location / ...` remain the second-level navigation.
+- Applied the same header change to the standalone Options workspace header for consistency if it is opened outside the embedded production shell.
+
+## Frontend
+- Updated `frontend/src/pages/Productions.tsx`.
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- The project workspace now follows the requested hierarchy:
+  - top row: project-level modules,
+  - second row only when needed: module-specific subpages/sheets.
+- Options still owns its own sheet tabs and view rail.
+
+## Exact Next Steps
+1. Remove old dead `ProductionDetail` code from `Productions.tsx`.
+2. Tighten the non-options module interiors so Budget/Dates/Crew/POs/Comms/Files visually match the new shell.
+3. Make the left rail real per module with saved views, filters, notes, and settings.
+
+---
+
 # HANDOVER - 2026-05-28 - Production Modules Moved Into Shared Workspace Shell
 
 ## Built This Session
