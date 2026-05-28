@@ -1,3 +1,38 @@
+# HANDOVER - 2026-05-28 - Options Select Field Configuration
+
+## Built This Session
+- Added configuration for custom `Single select` and `Multiple select` fields.
+- Column header menus now show an options editor for select fields:
+  - one option per line,
+  - comma-separated values also supported,
+  - options are saved into the existing `OptionColumn.config`.
+- New select fields now start with sensible default options:
+  - Requested
+  - Shortlisted
+  - Approved
+- Custom select cells now render as compact colored pill dropdowns.
+- Multi-select cells support multiple pill values in a compact dropdown.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+- Reused existing `OptionColumn.config` JSON persistence.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Custom select fields are now useful in the grid rather than behaving like plain text.
+- Next useful pass: persisted saved views for filters/sorts/field visibility.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Field Type Picker and Export PDF Button
 
 ## Built This Session

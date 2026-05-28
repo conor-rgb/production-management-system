@@ -32,6 +32,12 @@ type OptionColumnType =
   | "PHONE"
   | "ATTACHMENT"
   | "BLACKBOOK_LINK";
+type SelectOptionColor = "gray" | "blue" | "green" | "amber" | "purple" | "pink";
+
+interface SelectOptionConfig {
+  label: string;
+  color: SelectOptionColor;
+}
 type DeckBlockType = "field" | "links" | "dateStatus" | "imageGrid" | "notes" | "map" | "footer";
 type DeckField = "name" | "subtitle" | "location" | "address" | "clientNotes" | "internalNotes" | "project";
 type DeckImageLayout = "grid" | "justify";
@@ -411,6 +417,7 @@ const OPTION_FIELD_TYPE_HINTS: Record<OptionColumnType, string> = {
   ATTACHMENT: "Files attached to the option",
   BLACKBOOK_LINK: "Link to a Blackbook record",
 };
+const SELECT_OPTION_COLORS: SelectOptionColor[] = ["gray", "blue", "green", "amber", "purple", "pink"];
 const TYPE_TO_BLACKBOOK_CATEGORY: Record<RequirementType, BlackbookCategory> = {
   CREW: "CREW",
   SERVICE: "SERVICE",
@@ -1313,7 +1320,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
     setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/groups/${groupId}/candidates/reorder`, { orderedIds }));
   }
 
-  async function createColumn(groupId: string, payload: { label: string; type: OptionColumnType; width?: number }) {
+  async function createColumn(groupId: string, payload: { label: string; type: OptionColumnType; width?: number; config?: Record<string, unknown> }) {
     setMatrix(await api.post<MatrixResponse>(`/api/options/matrix/groups/${groupId}/columns`, payload));
   }
 
@@ -1748,7 +1755,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   onDeletePhoto: (photoId: string) => Promise<void>;
   onDeleteCandidate: (candidateId: string) => Promise<void>;
   onAddCandidate: () => Promise<void>;
-  onCreateColumn: (payload: { label: string; type: OptionColumnType; width?: number }) => Promise<void>;
+  onCreateColumn: (payload: { label: string; type: OptionColumnType; width?: number; config?: Record<string, unknown> }) => Promise<void>;
   onUpdateColumn: (columnId: string, patch: Partial<Pick<OptionColumn, "label" | "type" | "width" | "hidden" | "locked" | "order" | "config">>) => Promise<void>;
   onDeleteColumn: (columnId: string) => Promise<void>;
   onReorderColumns: (orderedIds: string[]) => Promise<void>;
@@ -1841,7 +1848,12 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   async function createField() {
     const label = fieldLabel.trim();
     if (!label) return;
-    await onCreateColumn({ label, type: fieldType, width: defaultOptionColumnWidth(fieldType) });
+    await onCreateColumn({
+      label,
+      type: fieldType,
+      width: defaultOptionColumnWidth(fieldType),
+      config: defaultOptionColumnConfig(fieldType),
+    });
     setFieldLabel("");
     setFieldType("SINGLE_LINE_TEXT");
     setFieldTypeSearch("");
@@ -2942,6 +2954,51 @@ function fieldTypeIcon(type: OptionColumnType): string {
   return "A";
 }
 
+function defaultOptionColumnConfig(type: OptionColumnType): Record<string, unknown> | undefined {
+  if (type === "SINGLE_SELECT" || type === "MULTI_SELECT") {
+    return {
+      options: [
+        { label: "Requested", color: "amber" },
+        { label: "Shortlisted", color: "blue" },
+        { label: "Approved", color: "green" },
+      ],
+    };
+  }
+  return undefined;
+}
+
+function selectOptionColorForIndex(index: number): SelectOptionColor {
+  return SELECT_OPTION_COLORS[index % SELECT_OPTION_COLORS.length];
+}
+
+function selectOptionsForColumn(column: OptionColumn): SelectOptionConfig[] {
+  const options = column.config?.options;
+  if (!Array.isArray(options)) return [];
+  return options
+    .map((option, index): SelectOptionConfig | null => {
+      if (typeof option === "string") return { label: option, color: selectOptionColorForIndex(index) };
+      if (!option || typeof option !== "object") return null;
+      const record = option as Record<string, unknown>;
+      const labelValue = record.label;
+      if (typeof labelValue !== "string" || !labelValue.trim()) return null;
+      const colorValue = record.color;
+      const color = typeof colorValue === "string" && SELECT_OPTION_COLORS.includes(colorValue as SelectOptionColor)
+        ? colorValue as SelectOptionColor
+        : selectOptionColorForIndex(index);
+      return { label: labelValue.trim(), color };
+    })
+    .filter((option): option is SelectOptionConfig => option !== null);
+}
+
+function customSelectClass(color: SelectOptionColor | null): string {
+  if (color === "blue") return "border-blue-100 bg-blue-50 text-blue-700";
+  if (color === "green") return "border-emerald-100 bg-emerald-50 text-emerald-700";
+  if (color === "amber") return "border-amber-100 bg-amber-50 text-amber-700";
+  if (color === "purple") return "border-purple-100 bg-purple-50 text-purple-700";
+  if (color === "pink") return "border-pink-100 bg-pink-50 text-pink-700";
+  return "border-gray-200 bg-gray-50 text-gray-600";
+}
+
 function customColumnValue(candidate: OptionCandidate, columnId: string): unknown {
   return candidate.columnValues.find((item) => item.columnId === columnId)?.value ?? null;
 }
@@ -2982,11 +3039,27 @@ function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sort
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(column.label);
+  const [selectOptionsDraft, setSelectOptionsDraft] = useState("");
   const startX = useRef(0);
   const startWidth = useRef(column.width);
   const active = sortKey !== undefined && activeSortKey === sortKey;
 
   useEffect(() => setLabel(column.label), [column.label]);
+  useEffect(() => {
+    setSelectOptionsDraft(selectOptionsForColumn(column).map((option) => option.label).join("\n"));
+  }, [column]);
+
+  function saveSelectOptions() {
+    const options = selectOptionsDraft
+      .split(/\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((optionLabel, index) => ({
+        label: optionLabel,
+        color: selectOptionColorForIndex(index),
+      }));
+    void onUpdate(column.id, { config: { ...(column.config ?? {}), options } }).catch((err: Error) => window.alert(err.message));
+  }
 
   function beginResize(event: React.MouseEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -3073,6 +3146,19 @@ function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sort
               </select>
             </label>
           )}
+          {!column.locked && (column.type === "SINGLE_SELECT" || column.type === "MULTI_SELECT") && (
+            <label className="mb-2 block text-gray-500">
+              Options
+              <textarea
+                value={selectOptionsDraft}
+                onChange={(event) => setSelectOptionsDraft(event.target.value)}
+                onBlur={saveSelectOptions}
+                placeholder={"Requested\nShortlisted\nApproved"}
+                className="mt-1 h-24 w-full resize-none rounded border border-gray-200 px-2 py-1.5 text-gray-800 outline-none focus:border-gray-400"
+              />
+              <span className="mt-1 block text-[10px] text-gray-400">One option per line or comma-separated.</span>
+            </label>
+          )}
           {!column.locked && <button onClick={() => { setEditing(true); setMenuOpen(false); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50">Rename</button>}
           <button onClick={() => { void onUpdate(column.id, { hidden: true }); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50">Hide field</button>
           {!column.locked && <button onClick={() => { void onDelete(column.id); }} className="block w-full rounded px-2 py-1.5 text-left text-red-600 hover:bg-red-50">Delete field</button>}
@@ -3154,6 +3240,24 @@ function CustomColumnCell({ column, candidate, onSave }: {
       />
     );
   }
+  if (column.type === "SINGLE_SELECT") {
+    return (
+      <CustomSelectCell
+        column={column}
+        value={typeof value === "string" ? value : null}
+        onSave={onSave}
+      />
+    );
+  }
+  if (column.type === "MULTI_SELECT") {
+    return (
+      <CustomMultiSelectCell
+        column={column}
+        value={Array.isArray(value) ? value.map((item) => String(item)) : []}
+        onSave={onSave}
+      />
+    );
+  }
   if (column.type === "URL" && display) {
     return (
       <div className="min-w-0 truncate text-[11px]">
@@ -3169,6 +3273,129 @@ function CustomColumnCell({ column, candidate, onSave }: {
       className={`truncate text-[12px] ${alignRight ? "pr-1 text-right tabular-nums" : "text-gray-600"}`}
       placeholder={column.type === "CURRENCY" ? "—" : column.label}
     />
+  );
+}
+
+function CustomSelectCell({ column, value, onSave }: {
+  column: OptionColumn;
+  value: string | null;
+  onSave: (value: unknown) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const options = selectOptionsForColumn(column);
+  const selected = options.find((option) => option.label === value) ?? null;
+
+  useEffect(() => {
+    function close(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  if (options.length === 0) {
+    return <span className="text-[11px] text-gray-300">configure options</span>;
+  }
+
+  return (
+    <div ref={ref} className="relative min-w-0">
+      <button
+        onClick={() => setOpen((current) => !current)}
+        className={`inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold uppercase ${customSelectClass(selected?.color ?? null)}`}
+      >
+        <span className="truncate">{selected?.label ?? "blank"}</span>
+        <span className="text-[8px] opacity-50">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-[160px] overflow-hidden rounded-md border border-gray-200 bg-white p-1 shadow-lg">
+          <button
+            onClick={() => {
+              setOpen(false);
+              void onSave(null);
+            }}
+            className="mb-1 flex w-full items-center rounded border border-transparent px-2 py-1.5 text-left text-[10px] font-semibold uppercase text-gray-400 hover:bg-gray-50"
+          >
+            blank
+          </button>
+          {options.map((option) => (
+            <button
+              key={option.label}
+              onClick={() => {
+                setOpen(false);
+                void onSave(option.label);
+              }}
+              className={`mb-1 flex w-full items-center rounded border px-2 py-1.5 text-left text-[10px] font-semibold uppercase last:mb-0 ${option.label === value ? customSelectClass(option.color) : "border-transparent text-gray-600 hover:bg-gray-50"}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomMultiSelectCell({ column, value, onSave }: {
+  column: OptionColumn;
+  value: string[];
+  onSave: (value: unknown) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const options = selectOptionsForColumn(column);
+
+  useEffect(() => {
+    function close(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  if (options.length === 0) {
+    return <span className="text-[11px] text-gray-300">configure options</span>;
+  }
+
+  function toggle(optionLabel: string) {
+    const next = value.includes(optionLabel)
+      ? value.filter((item) => item !== optionLabel)
+      : [...value, optionLabel];
+    void onSave(next.length ? next : null);
+  }
+
+  return (
+    <div ref={ref} className="relative min-w-0">
+      <button
+        onClick={() => setOpen((current) => !current)}
+        className="flex max-w-full items-center gap-1 overflow-hidden rounded-md border border-gray-200 bg-white px-1.5 py-1 text-[10px] font-semibold uppercase text-gray-500 hover:bg-gray-50"
+      >
+        <span className="flex min-w-0 gap-1 overflow-hidden">
+          {value.length
+            ? value.slice(0, 2).map((item) => {
+              const option = options.find((candidate) => candidate.label === item);
+              return <span key={item} className={`truncate rounded border px-1.5 py-0.5 ${customSelectClass(option?.color ?? null)}`}>{item}</span>;
+            })
+            : <span className="text-gray-300">blank</span>}
+          {value.length > 2 && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-500">+{value.length - 2}</span>}
+        </span>
+        <span className="text-[8px] opacity-50">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] rounded-md border border-gray-200 bg-white p-1 shadow-lg">
+          {options.map((option) => (
+            <button
+              key={option.label}
+              onClick={() => toggle(option.label)}
+              className={`mb-1 flex w-full items-center justify-between rounded border px-2 py-1.5 text-left text-[10px] font-semibold uppercase last:mb-0 ${value.includes(option.label) ? customSelectClass(option.color) : "border-transparent text-gray-600 hover:bg-gray-50"}`}
+            >
+              <span>{option.label}</span>
+              {value.includes(option.label) && <span>✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
