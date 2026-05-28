@@ -2279,6 +2279,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
             {visibleColumns.flatMap((column) => {
               const shared = {
                 isDropTarget: dropColumnId === column.id && dragColumnId !== column.id,
+                isDragging: dragColumnId === column.id,
                 onUpdate: onUpdateColumn,
                 onDelete: onDeleteColumn,
                 onDragStart: () => {
@@ -2288,13 +2289,16 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
                 onDragOver: () => {
                   if (dragColumnId && dragColumnId !== column.id) setDropColumnId(column.id);
                 },
+                onDragLeave: () => {
+                  if (dropColumnId === column.id) setDropColumnId(null);
+                },
                 onDrop: () => { void dropColumn(column.id).catch((err: Error) => window.alert(err.message)); },
-                  onDragEnd: () => {
-                    setDragColumnId(null);
-                    setDropColumnId(null);
-                  },
-                  onResizePreview: previewColumnWidth,
-                };
+                onDragEnd: () => {
+                  setDragColumnId(null);
+                  setDropColumnId(null);
+                },
+                onResizePreview: previewColumnWidth,
+              };
               if (column.key === "date_statuses") {
                 return dates.map((date, index) => (
                   <DateStatusColumnHeader
@@ -3233,9 +3237,10 @@ function normalizeColumnValue(value: string, type: OptionColumnType): unknown {
   return value.trim() || null;
 }
 
-function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDrop, onDragEnd, onResizePreview }: {
+function CustomColumnHeader({ column, isDropTarget, isDragging, sortKey, activeSortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onResizePreview }: {
   column: OptionColumn;
   isDropTarget: boolean;
+  isDragging: boolean;
   sortKey?: CandidateSortKey;
   activeSortKey?: CandidateSortKey;
   sortDirection?: SortDirection;
@@ -3244,6 +3249,7 @@ function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sort
   onDelete: (columnId: string) => Promise<void>;
   onDragStart: () => void;
   onDragOver: () => void;
+  onDragLeave: () => void;
   onDrop: () => void;
   onDragEnd: () => void;
   onResizePreview?: (columnId: string, width: number) => void;
@@ -3294,24 +3300,49 @@ function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sort
 
   return (
     <div
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", column.id);
-        onDragStart();
-      }}
       onDragOver={(event) => {
         event.preventDefault();
-        onDragOver();
+        if (!isDragging) {
+          event.dataTransfer.dropEffect = "move";
+          onDragOver();
+        }
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onDragLeave();
       }}
       onDrop={(event) => {
         event.preventDefault();
         onDrop();
       }}
-      onDragEnd={onDragEnd}
-      className={`relative flex h-full min-w-0 items-center gap-1 border-l border-gray-100 pl-2 pr-3 ${isDropTarget ? "bg-blue-50" : ""}`}
+      className={`group/column relative flex h-full min-w-0 items-center gap-1 border-l border-gray-100 pl-1.5 pr-3 transition ${
+        isDropTarget ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""
+      } ${isDragging ? "bg-gray-100 opacity-55" : ""}`}
       title={`${column.label} · ${optionColumnTypeLabel(column.type)}`}
     >
+      {isDropTarget && (
+        <div className="pointer-events-none absolute inset-y-1 left-0 z-20 w-1 rounded-r-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.18)]" />
+      )}
+      <button
+        draggable
+        onClick={(event) => event.stopPropagation()}
+        onDragStart={(event) => {
+          event.stopPropagation();
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", column.id);
+          onDragStart();
+        }}
+        onDragEnd={(event) => {
+          event.stopPropagation();
+          onDragEnd();
+        }}
+        className={`grid h-5 w-4 shrink-0 cursor-grab place-items-center rounded text-[10px] leading-none text-gray-300 opacity-0 transition active:cursor-grabbing group-hover/column:opacity-100 hover:bg-white hover:text-gray-700 ${
+          isDragging ? "opacity-100 text-blue-600" : ""
+        }`}
+        title="Drag column"
+        aria-label={`Drag ${column.label} column`}
+      >
+        ⋮⋮
+      </button>
       {editing && !column.locked ? (
         <input
           value={label}
@@ -3339,7 +3370,7 @@ function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sort
           {column.label}{active ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
         </button>
       )}
-      <button onClick={() => setMenuOpen((open) => !open)} className="text-gray-300 hover:text-gray-700">▾</button>
+      <button onClick={(event) => { event.stopPropagation(); setMenuOpen((open) => !open); }} className="text-gray-300 hover:text-gray-700">▾</button>
       <div onMouseDown={beginResize} className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-gray-300" />
       {menuOpen && (
         <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-gray-200 bg-white p-2 text-[11px] normal-case tracking-normal shadow-xl">
@@ -3380,11 +3411,12 @@ function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sort
   );
 }
 
-function DateStatusColumnHeader({ column, date, showControls, isDropTarget, sortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDrop, onDragEnd, onResizePreview }: {
+function DateStatusColumnHeader({ column, date, showControls, isDropTarget, isDragging, sortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onResizePreview }: {
   column: OptionColumn;
   date: MatrixDate;
   showControls: boolean;
   isDropTarget: boolean;
+  isDragging: boolean;
   sortKey: CandidateSortKey;
   sortDirection: SortDirection;
   onSort: () => void;
@@ -3392,6 +3424,7 @@ function DateStatusColumnHeader({ column, date, showControls, isDropTarget, sort
   onDelete: (columnId: string) => Promise<void>;
   onDragStart: () => void;
   onDragOver: () => void;
+  onDragLeave: () => void;
   onDrop: () => void;
   onDragEnd: () => void;
   onResizePreview?: (columnId: string, width: number) => void;
@@ -3399,16 +3432,37 @@ function DateStatusColumnHeader({ column, date, showControls, isDropTarget, sort
   const parts = compactDateLabel(date);
   const active = sortKey === `date:${date.id}`;
   return (
-    <div className={`relative flex h-full min-w-0 items-center justify-center border-l border-gray-100 px-1 ${isDropTarget ? "bg-blue-50" : ""}`}>
+    <div
+      onDragOver={(event) => {
+        event.preventDefault();
+        if (!isDragging) {
+          event.dataTransfer.dropEffect = "move";
+          onDragOver();
+        }
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onDragLeave();
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDrop();
+      }}
+      className={`relative flex h-full min-w-0 items-center justify-center border-l border-gray-100 px-1 transition ${isDropTarget ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""} ${isDragging ? "bg-gray-100 opacity-55" : ""}`}
+    >
+      {isDropTarget && (
+        <div className="pointer-events-none absolute inset-y-1 left-0 z-20 w-1 rounded-r-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.18)]" />
+      )}
       {showControls && (
         <div className="absolute left-0 top-0 h-full w-full opacity-0 transition hover:opacity-100">
           <CustomColumnHeader
             column={column}
             isDropTarget={isDropTarget}
+            isDragging={isDragging}
             onUpdate={onUpdate}
             onDelete={onDelete}
             onDragStart={onDragStart}
             onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
             onDrop={onDrop}
             onDragEnd={onDragEnd}
             onResizePreview={onResizePreview}
@@ -4022,10 +4076,13 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
       }}
       onContextMenu={onContextMenuOpen}
       className={`group relative grid min-h-[62px] items-center gap-x-2 border-b px-2 py-2 text-xs transition ${
-        dragActive ? "border-gray-400 bg-blue-50 ring-1 ring-inset ring-blue-300" : isReorderTarget ? "border-gray-300 bg-gray-100 ring-1 ring-inset ring-gray-300" : "border-gray-100 hover:bg-[#fafafa]"
+        dragActive ? "border-gray-400 bg-blue-50 ring-1 ring-inset ring-blue-300" : isReorderTarget ? "border-blue-200 bg-blue-50/35" : "border-gray-100 hover:bg-[#fafafa]"
       } ${candidate.activeState === "RELEASED" ? "opacity-45" : ""} ${isReorderDragging ? "opacity-45" : ""}`}
       style={{ gridTemplateColumns: gridColumns }}
     >
+      {isReorderTarget && !dragActive && (
+        <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 h-0.5 bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.18)]" />
+      )}
       {dragActive && (
         <div className="pointer-events-none absolute inset-1 z-10 grid place-items-center rounded-md border border-dashed border-blue-300 bg-blue-50/80 text-[11px] font-medium text-blue-700">
           Drop image{dropUploading ? " - uploading..." : "s here to add to this option"}
@@ -4037,7 +4094,7 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
           onDragStart={onReorderDragStart}
           onDragEnd={onReorderDragEnd}
           title="Drag to reorder"
-          className="grid h-7 w-4 cursor-grab place-items-center rounded text-[12px] leading-none opacity-0 active:cursor-grabbing group-hover:opacity-100 hover:bg-white hover:text-gray-900"
+          className={`grid h-7 w-4 cursor-grab place-items-center rounded text-[12px] leading-none text-gray-300 opacity-0 transition active:cursor-grabbing group-hover:opacity-100 hover:bg-white hover:text-gray-900 ${isReorderDragging ? "opacity-100 text-blue-600" : ""}`}
         >
           ⋮⋮
         </button>

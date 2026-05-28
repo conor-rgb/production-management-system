@@ -1,3 +1,36 @@
+# HANDOVER - 2026-05-28 - Options Column Drag Feedback
+
+## Built This Session
+- Improved drag and drop feedback in the options table view.
+- Column reordering now starts from an explicit header drag handle instead of the whole header cell.
+- While dragging a column:
+  - the source column fades,
+  - valid targets show a blue tinted cell,
+  - a clear blue insertion marker appears on the target edge.
+- Row reorder feedback was tightened to match the column interaction:
+  - dragged rows keep the handle visible,
+  - drop targets show a thin blue insertion line.
+- Sorting, header menus, resizing, and existing column persistence are unchanged.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Options grid column drag/drop should now feel more deliberate and legible.
+- Next useful pass: richer Airtable-style cell selection / active-cell outline and keyboard navigation.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Gallery View
 
 ## Built This Session
