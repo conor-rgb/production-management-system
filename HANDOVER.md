@@ -1,3 +1,31 @@
+# HANDOVER - 2026-05-28 - Options List Scrolling Fix
+
+## Built This Session
+- Fixed option candidate sheets not scrolling vertically.
+- Converted the selected sheet area into a proper full-height flex container.
+- The candidate toolbar remains fixed at the top of the sheet.
+- The grid body now owns vertical and horizontal scrolling.
+- This preserves the Airtable-like layout while allowing long option lists to scroll normally.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Long option candidate lists should scroll within the options workspace.
+- The toolbar and header rows remain usable while reviewing longer sheets.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Candidate Filters and Computed Views
 
 ## Built This Session

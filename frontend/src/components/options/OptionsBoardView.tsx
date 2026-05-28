@@ -1382,7 +1382,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
           onSelectView={setCandidateView}
           onAddCandidate={() => selectedGroup ? addCandidate(selectedGroup.id) : setShowRoleForm(true)}
         />
-        <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-w-0 flex-1 overflow-hidden">
           {selectedGroup ? (
             <CandidateSheet
               matrix={matrix}
@@ -1822,8 +1822,8 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-white">
-      <div className="flex h-11 items-center justify-between gap-3 border-b border-gray-200 px-4">
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-white">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4">
         <div className="flex min-w-0 items-center gap-3 text-sm text-gray-600">
           <button className="grid h-8 w-8 place-items-center rounded hover:bg-gray-100" title="View menu">
             <Menu size={17} />
@@ -1914,106 +1914,108 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           )}
         </div>
       </div>
-      <div className="inline-block min-h-[calc(100vh-258px)] overflow-visible bg-white" style={{ minWidth: minimumSheetWidth }}>
-        <div className="sticky top-0 z-20 grid h-8 items-center gap-x-2 border-y border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
-          <div className="flex items-center justify-center">
-            <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600" aria-label="Select all candidates" />
-          </div>
-          {visibleColumns.flatMap((column) => {
-            const shared = {
-              isDropTarget: dropColumnId === column.id && dragColumnId !== column.id,
-              onUpdate: onUpdateColumn,
-              onDelete: onDeleteColumn,
-              onDragStart: () => {
-                setDragColumnId(column.id);
-                setDropColumnId(null);
-              },
-              onDragOver: () => {
-                if (dragColumnId && dragColumnId !== column.id) setDropColumnId(column.id);
-              },
-              onDrop: () => { void dropColumn(column.id).catch((err: Error) => window.alert(err.message)); },
-              onDragEnd: () => {
-                setDragColumnId(null);
-                setDropColumnId(null);
-              },
-            };
-            if (column.key === "date_statuses") {
-              return dates.map((date, index) => (
-                <DateStatusColumnHeader
-                  key={`${column.id}:${date.id}`}
+      <div className="min-h-0 flex-1 overflow-auto bg-white">
+        <div className="inline-block min-h-full overflow-visible bg-white" style={{ minWidth: minimumSheetWidth }}>
+          <div className="sticky top-0 z-20 grid h-8 items-center gap-x-2 border-y border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
+            <div className="flex items-center justify-center">
+              <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600" aria-label="Select all candidates" />
+            </div>
+            {visibleColumns.flatMap((column) => {
+              const shared = {
+                isDropTarget: dropColumnId === column.id && dragColumnId !== column.id,
+                onUpdate: onUpdateColumn,
+                onDelete: onDeleteColumn,
+                onDragStart: () => {
+                  setDragColumnId(column.id);
+                  setDropColumnId(null);
+                },
+                onDragOver: () => {
+                  if (dragColumnId && dragColumnId !== column.id) setDropColumnId(column.id);
+                },
+                onDrop: () => { void dropColumn(column.id).catch((err: Error) => window.alert(err.message)); },
+                onDragEnd: () => {
+                  setDragColumnId(null);
+                  setDropColumnId(null);
+                },
+              };
+              if (column.key === "date_statuses") {
+                return dates.map((date, index) => (
+                  <DateStatusColumnHeader
+                    key={`${column.id}:${date.id}`}
+                    column={column}
+                    date={date}
+                    showControls={index === 0}
+                    sortKey={sortKey}
+                    sortDirection={sortDirection}
+                    onSort={() => setSort(`date:${date.id}`)}
+                    {...shared}
+                  />
+                ));
+              }
+              return (
+                <CustomColumnHeader
+                  key={column.id}
                   column={column}
-                  date={date}
-                  showControls={index === 0}
-                  sortKey={sortKey}
+                  sortKey={column.key === "image" ? "manual" : column.key === "option" ? "name" : column.key === "clientNotes" ? "notes" : column.key === "links" ? "links" : column.key === "rate" ? "rate" : column.key === "activeState" ? "state" : undefined}
+                  activeSortKey={sortKey}
                   sortDirection={sortDirection}
-                  onSort={() => setSort(`date:${date.id}`)}
+                  onSort={setSort}
                   {...shared}
                 />
-              ));
-            }
-            return (
-              <CustomColumnHeader
-                key={column.id}
-                column={column}
-                sortKey={column.key === "image" ? "manual" : column.key === "option" ? "name" : column.key === "clientNotes" ? "notes" : column.key === "links" ? "links" : column.key === "rate" ? "rate" : column.key === "activeState" ? "state" : undefined}
-                activeSortKey={sortKey}
-                sortDirection={sortDirection}
-                onSort={setSort}
-                {...shared}
-              />
-            );
-          })}
-          <div />
-        </div>
-        {candidates.map((candidate, index) => (
-          <CandidateRow
-            key={candidate.id}
-            candidate={candidate}
-            rowIndex={index + 1}
-            group={group}
-            dates={dates}
-            customColumns={visibleColumns}
-            gridColumns={gridColumns}
-            onOpenPhotos={() => setPhotoCandidate(candidate)}
-            onUpdateCandidate={onUpdateCandidate}
-            onLinkBlackbook={onLinkBlackbook}
-            onOpenBlackbook={onOpenBlackbook}
-            onUpdateCandidateDate={onUpdateCandidateDate}
-            onUpdateColumnValue={onUpdateColumnValue}
-            onUploadPhoto={onUploadPhoto}
-            onUploadPdf={onUploadPdf}
-            isReorderDragging={dragCandidateId === candidate.id}
-            isReorderTarget={dropCandidateId === candidate.id && dragCandidateId !== candidate.id}
-            onReorderDragStart={(event) => {
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", candidate.id);
-              setDragCandidateId(candidate.id);
-              setDropCandidateId(null);
-            }}
-            onReorderDragOver={() => {
-              if (dragCandidateId && dragCandidateId !== candidate.id) setDropCandidateId(candidate.id);
-            }}
-            onReorderDrop={() => dropCandidate(candidate.id).catch((err: Error) => window.alert(err.message))}
-            onReorderDragEnd={() => {
-              setDragCandidateId(null);
-              setDropCandidateId(null);
-            }}
-            onDeleteCandidate={onDeleteCandidate}
-            onContextMenuOpen={(event) => {
-              event.preventDefault();
-              setContextMenu({ candidate, x: event.clientX, y: event.clientY });
-            }}
-          />
-        ))}
-        {group.candidates.length === 0 && (
-          <div className="grid h-28 place-items-center text-center text-sm text-gray-500">
-            <div>No candidates on option for {group.name} yet.<br /><button onClick={onAddCandidate} className="mt-2 text-gray-900 underline">+ Add candidate</button></div>
+              );
+            })}
+            <div />
           </div>
-        )}
-        <button onClick={onAddCandidate} className="flex h-9 items-center gap-2 border-b border-gray-100 px-4 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-900" style={{ width: minimumSheetWidth }}>
-          <span className="ml-[26px] text-lg leading-none">+</span>
-          Add candidate
-        </button>
+          {candidates.map((candidate, index) => (
+            <CandidateRow
+              key={candidate.id}
+              candidate={candidate}
+              rowIndex={index + 1}
+              group={group}
+              dates={dates}
+              customColumns={visibleColumns}
+              gridColumns={gridColumns}
+              onOpenPhotos={() => setPhotoCandidate(candidate)}
+              onUpdateCandidate={onUpdateCandidate}
+              onLinkBlackbook={onLinkBlackbook}
+              onOpenBlackbook={onOpenBlackbook}
+              onUpdateCandidateDate={onUpdateCandidateDate}
+              onUpdateColumnValue={onUpdateColumnValue}
+              onUploadPhoto={onUploadPhoto}
+              onUploadPdf={onUploadPdf}
+              isReorderDragging={dragCandidateId === candidate.id}
+              isReorderTarget={dropCandidateId === candidate.id && dragCandidateId !== candidate.id}
+              onReorderDragStart={(event) => {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", candidate.id);
+                setDragCandidateId(candidate.id);
+                setDropCandidateId(null);
+              }}
+              onReorderDragOver={() => {
+                if (dragCandidateId && dragCandidateId !== candidate.id) setDropCandidateId(candidate.id);
+              }}
+              onReorderDrop={() => dropCandidate(candidate.id).catch((err: Error) => window.alert(err.message))}
+              onReorderDragEnd={() => {
+                setDragCandidateId(null);
+                setDropCandidateId(null);
+              }}
+              onDeleteCandidate={onDeleteCandidate}
+              onContextMenuOpen={(event) => {
+                event.preventDefault();
+                setContextMenu({ candidate, x: event.clientX, y: event.clientY });
+              }}
+            />
+          ))}
+          {group.candidates.length === 0 && (
+            <div className="grid h-28 place-items-center text-center text-sm text-gray-500">
+              <div>No candidates on option for {group.name} yet.<br /><button onClick={onAddCandidate} className="mt-2 text-gray-900 underline">+ Add candidate</button></div>
+            </div>
+          )}
+          <button onClick={onAddCandidate} className="flex h-9 items-center gap-2 border-b border-gray-100 px-4 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-900" style={{ width: minimumSheetWidth }}>
+            <span className="ml-[26px] text-lg leading-none">+</span>
+            Add candidate
+          </button>
+        </div>
       </div>
       {contextMenu && (
         <CandidateContextMenu
