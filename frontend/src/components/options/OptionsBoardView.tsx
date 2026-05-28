@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowLeft, BookOpen, Download, ExternalLink, FileText, Globe, Image as ImageIcon, Mail, Phone, Plus, Share2, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, BookOpen, ChevronDown, Download, ExternalLink, FileText, Globe, Image as ImageIcon, Mail, Phone, Plus, Search, Share2, Trash2, Upload, X } from "lucide-react";
 import { api } from "../../lib/api";
 import { COUNTRY_OPTIONS, countryName } from "../../lib/countries";
 import BlackbookOverlay from "../blackbook/BlackbookOverlay";
@@ -1130,6 +1130,16 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
     setSearchParams(next);
   }
 
+  function navigateModule(module: "overview" | "dates" | "crew" | "budget" | "pos" | "comms" | "files") {
+    const next = new URLSearchParams(searchParams);
+    next.set("production", productionId);
+    next.delete("optionGroup");
+    next.delete("view");
+    if (module === "budget") next.set("view", "budget");
+    next.set("tab", module === "pos" ? "POs" : module);
+    setSearchParams(next);
+  }
+
   async function patchNeed(requirementId: string, dateId: string, isRequired: boolean) {
     setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/requirements/${requirementId}/dates/${dateId}`, { isRequired }));
   }
@@ -1272,65 +1282,75 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
   const selectedGroup = matrix.groups.find((group) => group.id === selectedGroupId) ?? null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white">
-      <div className="flex min-h-12 items-center justify-between gap-3 border-b border-gray-200 px-4">
-        <button onClick={selectedGroup ? closeGroup : onBack} className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900">
-          <ArrowLeft size={15} /> {selectedGroup ? "Matrix" : `${matrix.production.jobCode ?? "Production"} ${matrix.production.brand ?? matrix.production.clientName ?? ""}`}
-        </button>
-        <div className="min-w-0 text-center">
-          <h2 className="truncate text-base font-semibold text-gray-900">{selectedGroup ? `${selectedGroup.name} options` : "Options Matrix"}</h2>
-          <p className="text-[11px] text-gray-400">{selectedGroup ? "Candidate sheet for this role/service" : "Requirements by production date"}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {!selectedGroup && <button onClick={() => setShowDateForm(true)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">+ Date</button>}
-          {!selectedGroup && <button onClick={() => setShowRoleForm(true)} className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white">+ Role / service</button>}
-          {selectedGroup && (
-            <button
-              onClick={() => exportGroupPdf(selectedGroup.id).catch((err: Error) => window.alert(err.message))}
-              disabled={exportingGroupId === selectedGroup.id}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60"
-            >
-              <Download size={13} /> {exportingGroupId === selectedGroup.id ? "Generating..." : "Export PDF"}
-            </button>
+    <div className="flex h-full min-h-0 flex-col bg-white text-[#1f1f1f]">
+      <ProjectWorkspaceHeader
+        matrix={matrix}
+        activeModule="options"
+        onBack={onBack}
+        onNavigateModule={navigateModule}
+        rightActions={(
+          <>
+            {!selectedGroup && <button onClick={() => setShowDateForm(true)} className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">+ Date</button>}
+            {!selectedGroup && <button onClick={() => setShowRoleForm(true)} className="h-9 rounded-md bg-[#0f172a] px-3 text-[13px] font-semibold text-white shadow-sm">+ Role / service</button>}
+            {selectedGroup && (
+              <button
+                onClick={() => exportGroupPdf(selectedGroup.id).catch((err: Error) => window.alert(err.message))}
+                disabled={exportingGroupId === selectedGroup.id}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60"
+              >
+                <Download size={14} /> {exportingGroupId === selectedGroup.id ? "Generating..." : "Export PDF"}
+              </button>
+            )}
+            {selectedGroup && <button onClick={() => addCandidate(selectedGroup.id)} className="h-9 rounded-md bg-[#0f172a] px-3 text-[13px] font-semibold text-white shadow-sm">+ Candidate</button>}
+          </>
+        )}
+      />
+      <OptionsSheetTabs
+        groups={matrix.groups}
+        selectedGroupId={selectedGroupId}
+        onOpenMatrix={closeGroup}
+        onOpenGroup={openGroup}
+        onAddRole={() => setShowRoleForm(true)}
+      />
+      <div className="flex min-h-0 flex-1 bg-white">
+        <OptionsViewRail selectedGroup={selectedGroup} onAddCandidate={() => selectedGroup ? addCandidate(selectedGroup.id) : setShowRoleForm(true)} />
+        <div className="min-w-0 flex-1 overflow-hidden">
+          {selectedGroup ? (
+            <CandidateSheet
+              matrix={matrix}
+              group={selectedGroup}
+              dates={matrix.dates}
+              onUpdateCandidate={updateCandidate}
+              onLinkBlackbook={linkBlackbook}
+              onOpenBlackbook={setOpenBlackbookEntryId}
+              onUpdateCandidateDate={updateCandidateDate}
+              onUploadPhoto={uploadCandidatePhoto}
+              onUploadPdf={uploadCandidatePdf}
+              onReorderCandidates={(orderedIds) => reorderCandidates(selectedGroup.id, orderedIds)}
+              onUpdatePhoto={updateCandidatePhoto}
+              onDeletePhoto={deleteCandidatePhoto}
+              onDeleteCandidate={deleteCandidate}
+              onAddCandidate={() => addCandidate(selectedGroup.id)}
+              onCreateColumn={(payload) => createColumn(selectedGroup.id, payload)}
+              onUpdateColumn={updateColumn}
+              onDeleteColumn={deleteColumn}
+              onReorderColumns={(orderedIds) => reorderColumns(selectedGroup.id, orderedIds)}
+              onUpdateColumnValue={updateColumnValue}
+            />
+          ) : (
+            <MatrixTable
+              matrix={matrix}
+              onOpenGroup={openGroup}
+              onPatchNeed={patchNeed}
+              onUpdateRequirement={updateRequirement}
+              onDuplicateRequirement={duplicateRequirement}
+              onDeleteRequirement={deleteRequirement}
+              onUpdateDate={updateDate}
+              onAssignSlot={assignSlot}
+            />
           )}
-          {selectedGroup && <button onClick={() => addCandidate(selectedGroup.id)} className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white">+ Candidate</button>}
         </div>
       </div>
-
-      {selectedGroup ? (
-        <CandidateSheet
-          matrix={matrix}
-          group={selectedGroup}
-          dates={matrix.dates}
-          onUpdateCandidate={updateCandidate}
-          onLinkBlackbook={linkBlackbook}
-          onOpenBlackbook={setOpenBlackbookEntryId}
-          onUpdateCandidateDate={updateCandidateDate}
-          onUploadPhoto={uploadCandidatePhoto}
-          onUploadPdf={uploadCandidatePdf}
-          onReorderCandidates={(orderedIds) => reorderCandidates(selectedGroup.id, orderedIds)}
-          onUpdatePhoto={updateCandidatePhoto}
-          onDeletePhoto={deleteCandidatePhoto}
-          onDeleteCandidate={deleteCandidate}
-          onAddCandidate={() => addCandidate(selectedGroup.id)}
-          onCreateColumn={(payload) => createColumn(selectedGroup.id, payload)}
-          onUpdateColumn={updateColumn}
-          onDeleteColumn={deleteColumn}
-          onReorderColumns={(orderedIds) => reorderColumns(selectedGroup.id, orderedIds)}
-          onUpdateColumnValue={updateColumnValue}
-        />
-      ) : (
-        <MatrixTable
-          matrix={matrix}
-          onOpenGroup={openGroup}
-          onPatchNeed={patchNeed}
-          onUpdateRequirement={updateRequirement}
-          onDuplicateRequirement={duplicateRequirement}
-          onDeleteRequirement={deleteRequirement}
-          onUpdateDate={updateDate}
-          onAssignSlot={assignSlot}
-        />
-      )}
 
       {showRoleForm && <RoleForm productionId={productionId} onClose={() => setShowRoleForm(false)} onSaved={(data) => { setMatrix(data); setShowRoleForm(false); }} />}
       {showDateForm && <DateForm productionId={productionId} onClose={() => setShowDateForm(false)} onSaved={(data) => { setMatrix(data); setShowDateForm(false); }} />}
@@ -1345,6 +1365,144 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
         />
       )}
     </div>
+  );
+}
+
+function ProjectWorkspaceHeader({ matrix, activeModule, onBack, onNavigateModule, rightActions }: {
+  matrix: MatrixResponse;
+  activeModule: "overview" | "options" | "budget" | "dates" | "crew" | "pos" | "comms" | "files";
+  onBack: () => void;
+  onNavigateModule: (module: "overview" | "dates" | "crew" | "budget" | "pos" | "comms" | "files") => void;
+  rightActions: ReactNode;
+}) {
+  const projectName = [matrix.production.brand, matrix.production.clientName].filter(Boolean).join(" x ") || matrix.production.title || matrix.production.jobCode || "Project";
+  const modules: Array<{ id: "options" | "budget" | "dates" | "crew" | "pos" | "comms" | "files"; label: string; onClick?: () => void }> = [
+    { id: "options", label: "Options" },
+    { id: "budget", label: "Budget", onClick: () => onNavigateModule("budget") },
+    { id: "dates", label: "Dates", onClick: () => onNavigateModule("dates") },
+    { id: "crew", label: "Crew List", onClick: () => onNavigateModule("crew") },
+    { id: "pos", label: "POs", onClick: () => onNavigateModule("pos") },
+    { id: "comms", label: "Comms", onClick: () => onNavigateModule("comms") },
+    { id: "files", label: "Files", onClick: () => onNavigateModule("files") },
+  ];
+  return (
+    <div className="shrink-0 border-b border-[#dcdfe3] bg-white">
+      <div className="grid h-[54px] grid-cols-[minmax(260px,1fr)_auto_minmax(260px,1fr)] items-center gap-4 px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <button onClick={onBack} className="grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Back to productions">
+            <ArrowLeft size={17} />
+          </button>
+          <div className="grid h-8 w-8 place-items-center rounded-md bg-[#0f8f7f] text-sm font-bold text-white shadow-sm">◆</div>
+          <button className="flex min-w-0 items-center gap-1.5 text-left">
+            <span className="truncate text-[19px] font-semibold tracking-[-0.01em] text-[#1f1f1f]">{projectName}</span>
+            <ChevronDown size={16} className="shrink-0 text-gray-500" />
+          </button>
+        </div>
+        <div className="flex h-full items-center gap-7 text-[14px] font-medium text-gray-600">
+          <button className="relative h-full text-[#111827]">
+            Data
+            <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#0f8f7f]" />
+          </button>
+          <button className="h-full hover:text-gray-900">Automations</button>
+          <button className="h-full hover:text-gray-900">Interfaces</button>
+          <button className="h-full hover:text-gray-900">Forms</button>
+        </div>
+        <div className="flex min-w-0 items-center justify-end gap-2">
+          <button className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">Launch</button>
+          <button className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">Share</button>
+          {rightActions}
+        </div>
+      </div>
+      <div className="flex h-[38px] items-center justify-between border-t border-[#e7ecef] bg-[#e6fbf7] px-4">
+        <div className="flex h-full min-w-0 items-center gap-1 overflow-x-auto">
+          {modules.map((module) => (
+            <button
+              key={module.id}
+              onClick={module.onClick}
+              className={`flex h-full shrink-0 items-center border-r border-[#c7ebe4] px-3 text-[14px] ${
+                activeModule === module.id ? "bg-white font-semibold text-[#111827]" : "font-medium text-gray-600 hover:bg-white/60 hover:text-gray-900"
+              }`}
+            >
+              {module.label}
+            </button>
+          ))}
+        </div>
+        <button className="h-8 rounded px-2 text-[13px] font-medium text-gray-600 hover:bg-white/70">Tools <ChevronDown size={14} className="ml-1 inline" /></button>
+      </div>
+    </div>
+  );
+}
+
+function OptionsSheetTabs({ groups, selectedGroupId, onOpenMatrix, onOpenGroup, onAddRole }: {
+  groups: OptionGroup[];
+  selectedGroupId: string | null;
+  onOpenMatrix: () => void;
+  onOpenGroup: (groupId: string) => void;
+  onAddRole: () => void;
+}) {
+  return (
+    <div className="flex h-[40px] shrink-0 items-center border-b border-[#d7ece8] bg-[#e6fbf7]">
+      <button
+        onClick={onOpenMatrix}
+        className={`flex h-full shrink-0 items-center border-r border-[#c7ebe4] px-4 text-[14px] ${
+          selectedGroupId === null ? "bg-white font-semibold text-gray-900 shadow-[inset_0_-2px_0_#111827]" : "font-medium text-gray-600 hover:bg-white/60"
+        }`}
+      >
+        Matrix
+      </button>
+      <div className="flex h-full min-w-0 flex-1 items-center overflow-x-auto">
+        {groups.map((group) => (
+          <button
+            key={group.id}
+            onClick={() => onOpenGroup(group.id)}
+            className={`flex h-full shrink-0 items-center border-r border-[#c7ebe4] px-4 text-[14px] ${
+              selectedGroupId === group.id ? "bg-white font-semibold text-gray-900 shadow-[inset_0_-2px_0_#111827]" : "font-medium text-gray-600 hover:bg-white/60 hover:text-gray-900"
+            }`}
+          >
+            {group.name}
+          </button>
+        ))}
+        <button onClick={onAddRole} className="flex h-full w-11 shrink-0 items-center justify-center text-xl text-gray-500 hover:bg-white/60 hover:text-gray-900">+</button>
+      </div>
+    </div>
+  );
+}
+
+function OptionsViewRail({ selectedGroup, onAddCandidate }: { selectedGroup: OptionGroup | null; onAddCandidate: () => void }) {
+  return (
+    <aside className="hidden w-[260px] shrink-0 border-r border-gray-200 bg-[#fbfbfa] lg:flex lg:flex-col">
+      <div className="border-b border-gray-200 p-3">
+        <button onClick={onAddCandidate} className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-gray-700 hover:bg-gray-100">
+          <Plus size={18} /> {selectedGroup ? "Create new candidate" : "Create new role/service"}
+        </button>
+        <button className="mt-1 flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-gray-500 hover:bg-gray-100">
+          <Search size={16} /> Find a view
+        </button>
+      </div>
+      <div className="space-y-1 p-3">
+        <button className="flex h-9 w-full items-center gap-2 rounded-md bg-[#eeeeec] px-2 text-left text-[14px] font-semibold text-gray-800">
+          <span className="grid h-4 w-4 place-items-center rounded border border-blue-400 text-[10px] text-blue-600">▦</span>
+          Grid view
+        </button>
+        <button className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-gray-600 hover:bg-gray-100">
+          <span className="grid h-4 w-4 place-items-center rounded border border-violet-300 text-[10px] text-violet-500">▧</span>
+          Gallery
+        </button>
+      </div>
+      <div className="mt-auto border-t border-gray-200 p-4 text-[12px] leading-5 text-gray-500">
+        {selectedGroup ? (
+          <>
+            <div className="mb-2 font-semibold uppercase tracking-[0.05em] text-gray-400">Sheet settings</div>
+            <p>Use this space for view settings, page notes, date requirements, and linked budget lines for {selectedGroup.name}.</p>
+          </>
+        ) : (
+          <>
+            <div className="mb-2 font-semibold uppercase tracking-[0.05em] text-gray-400">Matrix settings</div>
+            <p>The matrix is the master role/date plan. Each role opens its own options sheet.</p>
+          </>
+        )}
+      </div>
+    </aside>
   );
 }
 

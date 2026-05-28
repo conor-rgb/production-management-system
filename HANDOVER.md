@@ -1,3 +1,53 @@
+# HANDOVER - 2026-05-28 - Airtable-Style Project Workspace Shell for Options
+
+## Built This Session
+- Started the project workspace overhaul using Airtable as the visual/layout reference.
+- Reworked the Options full-screen view into a project workspace frame:
+  - project header with project name,
+  - top workspace nav: `Data`, `Automations`, `Interfaces`, `Forms`,
+  - module row: `Options`, `Budget`, `Dates`, `Crew List`, `POs`, `Comms`, `Files`,
+  - option sheet tab row: `Matrix` plus each option group/sheet,
+  - left view rail with `Create new`, `Find a view`, `Grid view`, `Gallery`, and contextual notes/settings area.
+- Existing options matrix and candidate sheets now render inside the new workspace shell.
+- Module buttons route out to the existing production pages where those modules already exist.
+- The URL flow still preserves `production`, `tab=options`, and `optionGroup` so refresh and direct links keep their place.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Added:
+  - `ProjectWorkspaceHeader`
+  - `OptionsSheetTabs`
+  - `OptionsViewRail`
+- No backend or schema changes in this pass.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Options now has the first Airtable-like project workspace layout.
+- The actual candidate grid and matrix functionality are unchanged.
+- This is a shell/layout pass only; Budget/Dates/Crew/Files/Comms still use their existing internal layouts after navigating to them.
+
+## Known Gaps / Technical Debt
+- The workspace shell currently lives in `OptionsBoardView`; it should become a reusable `ProductionWorkspace` wrapper.
+- Budget/Dates/Crew/POs/Files/Comms should be moved into the same shell rather than routing out to older layouts.
+- Left rail controls are mostly visual placeholders except create actions.
+- `Automations`, `Interfaces`, and `Forms` are placeholders.
+- Mobile behaviour needs a dedicated pass.
+
+## Exact Next Steps
+1. Extract the workspace shell into a reusable `ProductionWorkspace` component.
+2. Move Budget, Dates, Crew, POs, Files, and Comms into the shell one by one.
+3. Replace placeholder left-rail controls with real saved views and view settings.
+4. Tighten grid typography/spacing to further match the Airtable reference.
+5. Add gallery view as the second real view for option sheets.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Field Layout Controls for Core and Blackbook Fields
 
 ## Built This Session
