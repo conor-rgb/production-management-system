@@ -386,6 +386,31 @@ const OPTION_COLUMN_TYPES: Array<{ value: OptionColumnType; label: string }> = [
   { value: "ATTACHMENT", label: "Attachment" },
   { value: "BLACKBOOK_LINK", label: "Blackbook link" },
 ];
+
+const OPTION_FIELD_TYPE_GROUPS: Array<{ label: string; types: OptionColumnType[] }> = [
+  { label: "Text", types: ["SINGLE_LINE_TEXT", "LONG_TEXT"] },
+  { label: "Numbers", types: ["NUMBER", "CURRENCY", "PERCENT"] },
+  { label: "Choices", types: ["CHECKBOX", "SINGLE_SELECT", "MULTI_SELECT"] },
+  { label: "Dates and links", types: ["DATE", "URL", "EMAIL", "PHONE"] },
+  { label: "Files and records", types: ["ATTACHMENT", "BLACKBOOK_LINK"] },
+];
+
+const OPTION_FIELD_TYPE_HINTS: Record<OptionColumnType, string> = {
+  SINGLE_LINE_TEXT: "Short names, references, labels",
+  LONG_TEXT: "Multi-line notes and client copy",
+  NUMBER: "Plain numeric values",
+  CURRENCY: "Money values formatted for budgets",
+  PERCENT: "Percentages and markups",
+  CHECKBOX: "Yes/no values",
+  SINGLE_SELECT: "One choice from a configured list",
+  MULTI_SELECT: "Multiple choices from a configured list",
+  DATE: "Single date values",
+  URL: "Clickable web links",
+  EMAIL: "Email addresses",
+  PHONE: "Phone numbers",
+  ATTACHMENT: "Files attached to the option",
+  BLACKBOOK_LINK: "Link to a Blackbook record",
+};
 const TYPE_TO_BLACKBOOK_CATEGORY: Record<RequirementType, BlackbookCategory> = {
   CREW: "CREW",
   SERVICE: "SERVICE",
@@ -1408,6 +1433,8 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
               selectedView={candidateView}
               filters={candidateFilters}
               onFiltersChange={setCandidateFilters}
+              onExportPdf={() => exportGroupPdf(selectedGroup.id)}
+              exportingPdf={exportingGroupId === selectedGroup.id}
             />
           ) : (
             <MatrixTable
@@ -1706,7 +1733,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   );
 }
 
-function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate, onCreateColumn, onUpdateColumn, onDeleteColumn, onReorderColumns, onUpdateColumnValue, onDuplicateCandidate, selectedView, filters, onFiltersChange }: {
+function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate, onCreateColumn, onUpdateColumn, onDeleteColumn, onReorderColumns, onUpdateColumnValue, onDuplicateCandidate, selectedView, filters, onFiltersChange, onExportPdf, exportingPdf }: {
   matrix: MatrixResponse;
   group: OptionGroup;
   dates: MatrixDate[];
@@ -1730,6 +1757,8 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   selectedView: CandidateViewKey;
   filters: CandidateFilters;
   onFiltersChange: (filters: CandidateFilters) => void;
+  onExportPdf: () => Promise<void>;
+  exportingPdf: boolean;
 }) {
   const [photoCandidate, setPhotoCandidate] = useState<OptionCandidate | null>(null);
   const [sortKey, setSortKey] = useState<CandidateSortKey>("manual");
@@ -1739,6 +1768,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   const [fieldFormOpen, setFieldFormOpen] = useState(false);
   const [fieldLabel, setFieldLabel] = useState("");
   const [fieldType, setFieldType] = useState<OptionColumnType>("SINGLE_LINE_TEXT");
+  const [fieldTypeSearch, setFieldTypeSearch] = useState("");
   const [dragColumnId, setDragColumnId] = useState<string | null>(null);
   const [dropColumnId, setDropColumnId] = useState<string | null>(null);
   const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
@@ -1811,9 +1841,10 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   async function createField() {
     const label = fieldLabel.trim();
     if (!label) return;
-    await onCreateColumn({ label, type: fieldType, width: fieldType === "LONG_TEXT" ? 220 : 150 });
+    await onCreateColumn({ label, type: fieldType, width: defaultOptionColumnWidth(fieldType) });
     setFieldLabel("");
     setFieldType("SINGLE_LINE_TEXT");
+    setFieldTypeSearch("");
     setFieldFormOpen(false);
   }
 
@@ -1875,12 +1906,25 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           <button onClick={onAddCandidate} className="flex h-8 shrink-0 items-center rounded px-2 text-[13px] font-medium text-gray-700 hover:bg-gray-100">
             <Plus size={14} className="mr-1" /> Candidate
           </button>
+          <button
+            onClick={() => { void onExportPdf().catch((err: Error) => window.alert(err.message)); }}
+            disabled={exportingPdf}
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60"
+          >
+            <Download size={14} /> {exportingPdf ? "Generating..." : "Export PDF"}
+          </button>
           <button onClick={() => setDesignerOpen(true)} className="h-8 shrink-0 rounded border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">
             Design PDF
           </button>
           {fieldFormOpen && (
-            <div className="absolute right-0 top-full z-40 mt-2 w-[330px] rounded-xl border border-gray-200 bg-white p-3 shadow-xl">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">New custom field</div>
+            <div className="absolute right-0 top-full z-40 mt-2 w-[390px] rounded-xl border border-gray-200 bg-white p-3 shadow-xl">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">New custom field</div>
+                  <div className="mt-0.5 text-[11px] text-gray-400">Choose a type, then name the field.</div>
+                </div>
+                <button onClick={() => setFieldFormOpen(false)} className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-gray-50 hover:text-gray-900"><X size={14} /></button>
+              </div>
               <input
                 value={fieldLabel}
                 onChange={(event) => setFieldLabel(event.target.value)}
@@ -1892,13 +1936,39 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
                 placeholder="Field name"
                 className="mb-2 w-full rounded-md border border-gray-200 px-2 py-2 text-sm outline-none focus:border-gray-400"
               />
-              <select
-                value={fieldType}
-                onChange={(event) => setFieldType(event.target.value as OptionColumnType)}
-                className="mb-3 w-full rounded-md border border-gray-200 px-2 py-2 text-xs outline-none focus:border-gray-400"
-              >
-                {OPTION_COLUMN_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
-              </select>
+              <div className="mb-2 flex items-center gap-2 rounded-md border border-gray-200 px-2 py-1.5">
+                <Search size={14} className="text-gray-400" />
+                <input
+                  value={fieldTypeSearch}
+                  onChange={(event) => setFieldTypeSearch(event.target.value)}
+                  placeholder="Find a field type"
+                  className="min-w-0 flex-1 border-0 bg-transparent text-xs outline-none"
+                />
+              </div>
+              <div className="mb-3 max-h-[290px] overflow-auto rounded-lg border border-gray-100 bg-[#fbfbfa] p-1">
+                {OPTION_FIELD_TYPE_GROUPS.map((group) => {
+                  const types = group.types.filter((type) => fieldTypeMatches(type, fieldTypeSearch));
+                  if (types.length === 0) return null;
+                  return (
+                    <div key={group.label} className="mb-1 last:mb-0">
+                      <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">{group.label}</div>
+                      {types.map((type) => (
+                        <button
+                          key={type}
+                          onClick={() => setFieldType(type)}
+                          className={`flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-white ${fieldType === type ? "bg-white shadow-sm ring-1 ring-gray-200" : ""}`}
+                        >
+                          <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded border border-gray-200 bg-white text-[10px] text-gray-500">{fieldTypeIcon(type)}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-xs font-medium text-gray-800">{optionColumnTypeLabel(type)}</span>
+                            <span className="mt-0.5 block text-[11px] leading-4 text-gray-400">{OPTION_FIELD_TYPE_HINTS[type]}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
               <div className="flex justify-end gap-2">
                 <button onClick={() => setFieldFormOpen(false)} className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-50">Cancel</button>
                 <button onClick={() => { void createField().catch((err: Error) => window.alert(err.message)); }} className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white">Add field</button>
@@ -2834,6 +2904,42 @@ function DeckBlockContent({ matrix, group, dates, candidate, block }: {
 
 function optionColumnTypeLabel(type: OptionColumnType): string {
   return OPTION_COLUMN_TYPES.find((item) => item.value === type)?.label ?? type;
+}
+
+function fieldTypeMatches(type: OptionColumnType, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return `${optionColumnTypeLabel(type)} ${OPTION_FIELD_TYPE_HINTS[type]}`.toLowerCase().includes(needle);
+}
+
+function defaultOptionColumnWidth(type: OptionColumnType): number {
+  if (type === "LONG_TEXT") return 220;
+  if (type === "ATTACHMENT") return 130;
+  if (type === "BLACKBOOK_LINK") return 170;
+  if (type === "URL" || type === "EMAIL") return 180;
+  if (type === "PHONE") return 140;
+  if (type === "DATE") return 120;
+  if (type === "CURRENCY" || type === "PERCENT" || type === "NUMBER") return 110;
+  if (type === "CHECKBOX") return 90;
+  if (type === "SINGLE_SELECT" || type === "MULTI_SELECT") return 150;
+  return 150;
+}
+
+function fieldTypeIcon(type: OptionColumnType): string {
+  if (type === "LONG_TEXT") return "☰";
+  if (type === "NUMBER") return "#";
+  if (type === "CURRENCY") return "£";
+  if (type === "PERCENT") return "%";
+  if (type === "CHECKBOX") return "✓";
+  if (type === "SINGLE_SELECT") return "●";
+  if (type === "MULTI_SELECT") return "◉";
+  if (type === "DATE") return "31";
+  if (type === "URL") return "↗";
+  if (type === "EMAIL") return "@";
+  if (type === "PHONE") return "☎";
+  if (type === "ATTACHMENT") return "▣";
+  if (type === "BLACKBOOK_LINK") return "▤";
+  return "A";
 }
 
 function customColumnValue(candidate: OptionCandidate, columnId: string): unknown {

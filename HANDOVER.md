@@ -1,3 +1,36 @@
+# HANDOVER - 2026-05-28 - Options Field Type Picker and Export PDF Button
+
+## Built This Session
+- Restored `Export PDF` directly into the selected options sheet toolbar.
+- The button calls the existing group PDF export endpoint and shows a generating state.
+- Reworked `+ Field` into a more Airtable-like field picker:
+  - field name input,
+  - searchable field type list,
+  - grouped field types,
+  - short descriptions for each type,
+  - sensible default widths per field type.
+- Field creation still uses the existing `OptionColumn` API and persists on the sheet.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Options sheets now have visible PDF export from within the sheet.
+- Custom field creation is closer to Airtable’s type-first workflow.
+- Next useful pass: field configuration for select options and a saved views model.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Airtable Column Controls Foundation
 
 ## Built This Session
