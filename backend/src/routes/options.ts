@@ -16,6 +16,7 @@ import {
   ContactType,
   OptionAvailability,
   OptionCandidateState,
+  OptionColumnType,
   OptionRequirementState,
   OptionRequirementType,
   OptionStatus,
@@ -74,6 +75,20 @@ type OptionFieldBody = {
   selectedAddressId?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
+};
+
+type OptionColumnFieldBody = {
+  label?: string;
+  type?: OptionColumnType;
+  width?: number | string;
+  order?: number | string;
+  hidden?: boolean;
+  locked?: boolean;
+  config?: Prisma.InputJsonValue | null;
+};
+
+type OptionColumnValueBody = {
+  value?: Prisma.InputJsonValue | null;
 };
 
 type AddressFieldBody = {
@@ -274,6 +289,56 @@ function optionalText(value: string | null | undefined): string | null | undefin
   if (value === null) return null;
   const trimmed = value.trim();
   return trimmed || null;
+}
+
+const OPTION_COLUMN_TYPES = new Set<string>(Object.values(OptionColumnType));
+
+function optionColumnType(value: unknown): OptionColumnType | undefined {
+  if (typeof value !== "string") return undefined;
+  return OPTION_COLUMN_TYPES.has(value) ? value as OptionColumnType : undefined;
+}
+
+function optionColumnWidth(value: unknown): number | undefined {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.max(80, Math.min(420, Math.round(parsed)));
+}
+
+function optionColumnKey(label: string): string {
+  const key = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+  return key || "field";
+}
+
+async function uniqueOptionColumnKey(groupId: string, label: string): Promise<string> {
+  const base = optionColumnKey(label);
+  let key = base;
+  let suffix = 2;
+  while (await prisma.optionColumn.findUnique({ where: { groupId_key: { groupId, key } } })) {
+    key = `${base}_${suffix}`;
+    suffix += 1;
+  }
+  return key;
+}
+
+function optionColumnConfig(value: unknown): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return Prisma.JsonNull;
+  if (typeof value === "object" || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value as Prisma.InputJsonValue;
+  }
+  return undefined;
+}
+
+function optionColumnValue(value: unknown): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
+  if (value === null || value === undefined) return Prisma.JsonNull;
+  if (typeof value === "object" || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value as Prisma.InputJsonValue;
+  }
+  return Prisma.JsonNull;
 }
 
 function addressDataFromBody(body: AddressFieldBody): Omit<Prisma.BlackbookAddressUncheckedCreateInput, "entryId"> {
@@ -731,6 +796,7 @@ async function matrixResponse(productionId: string) {
       where: { productionId },
       orderBy: { order: "asc" },
       include: {
+        columns: { orderBy: { order: "asc" } },
         requirements: {
           orderBy: { order: "asc" },
           include: { dateNeeds: true, assignments: true },
@@ -747,6 +813,7 @@ async function matrixResponse(productionId: string) {
               },
             },
             photos: { orderBy: { order: "asc" } },
+            columnValues: true,
           },
         },
       },
@@ -1647,6 +1714,120 @@ router.patch("/matrix/requirements/:requirementId/dates/:dateId/assignment", asy
     create: { requirementId: requirement.id, dateId: req.params.dateId, isRequired: true },
   });
   res.json(await matrixResponse(requirement.productionId));
+});
+
+router.post("/matrix/groups/:groupId/columns", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as OptionColumnFieldBody;
+  const label = body.label?.trim();
+  if (!label) {
+    res.status(400).json({ error: "label is required" });
+    return;
+  }
+  const group = await prisma.optionGroup.findUnique({ where: { id: req.params.groupId }, select: { id: true, productionId: true } });
+  if (!group) {
+    res.status(404).json({ error: "Group not found" });
+    return;
+  }
+  const order = await prisma.optionColumn.count({ where: { groupId: group.id } });
+  await prisma.optionColumn.create({
+    data: {
+      groupId: group.id,
+      key: await uniqueOptionColumnKey(group.id, label),
+      label,
+      type: optionColumnType(body.type) ?? "SINGLE_LINE_TEXT",
+      width: optionColumnWidth(body.width) ?? 160,
+      order,
+      config: optionColumnConfig(body.config),
+    },
+  });
+  res.status(201).json(await matrixResponse(group.productionId));
+});
+
+router.patch("/matrix/columns/:columnId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as OptionColumnFieldBody;
+  const column = await prisma.optionColumn.findUnique({ where: { id: req.params.columnId }, include: { group: { select: { productionId: true } } } });
+  if (!column) {
+    res.status(404).json({ error: "Column not found" });
+    return;
+  }
+  const data: Prisma.OptionColumnUpdateInput = {};
+  if (body.label !== undefined) {
+    const label = body.label.trim();
+    if (!label) {
+      res.status(400).json({ error: "label cannot be blank" });
+      return;
+    }
+    data.label = label;
+  }
+  const type = optionColumnType(body.type);
+  if (type !== undefined) data.type = type;
+  const width = optionColumnWidth(body.width);
+  if (width !== undefined) data.width = width;
+  const order = asNumber(body.order);
+  if (typeof order === "number") data.order = Math.max(0, Math.floor(order));
+  if (body.hidden !== undefined) data.hidden = body.hidden;
+  if (body.locked !== undefined) data.locked = body.locked;
+  const config = optionColumnConfig(body.config);
+  if (config !== undefined) data.config = config;
+  await prisma.optionColumn.update({ where: { id: column.id }, data });
+  res.json(await matrixResponse(column.group.productionId));
+});
+
+router.delete("/matrix/columns/:columnId", async (req: Request, res: Response): Promise<void> => {
+  const column = await prisma.optionColumn.findUnique({ where: { id: req.params.columnId }, include: { group: { select: { productionId: true } } } });
+  if (!column) {
+    res.status(404).json({ error: "Column not found" });
+    return;
+  }
+  if (column.locked) {
+    res.status(400).json({ error: "Locked columns cannot be deleted" });
+    return;
+  }
+  await prisma.optionColumn.delete({ where: { id: column.id } });
+  res.json(await matrixResponse(column.group.productionId));
+});
+
+router.patch("/matrix/groups/:groupId/columns/reorder", async (req: Request, res: Response): Promise<void> => {
+  const { orderedIds } = req.body as { orderedIds?: string[] };
+  if (!Array.isArray(orderedIds)) {
+    res.status(400).json({ error: "orderedIds is required" });
+    return;
+  }
+  const group = await prisma.optionGroup.findUnique({ where: { id: req.params.groupId }, select: { id: true, productionId: true } });
+  if (!group) {
+    res.status(404).json({ error: "Group not found" });
+    return;
+  }
+  const columns = await prisma.optionColumn.findMany({ where: { groupId: group.id }, select: { id: true } });
+  const validIds = new Set(columns.map((column) => column.id));
+  await prisma.$transaction(
+    orderedIds
+      .filter((id) => validIds.has(id))
+      .map((id, order) => prisma.optionColumn.update({ where: { id }, data: { order } }))
+  );
+  res.json(await matrixResponse(group.productionId));
+});
+
+router.patch("/matrix/candidates/:candidateId/columns/:columnId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as OptionColumnValueBody;
+  const [candidate, column] = await Promise.all([
+    prisma.optionCandidate.findUnique({ where: { id: req.params.candidateId }, select: { id: true, groupId: true, productionId: true } }),
+    prisma.optionColumn.findUnique({ where: { id: req.params.columnId }, select: { id: true, groupId: true } }),
+  ]);
+  if (!candidate || !column) {
+    res.status(404).json({ error: "Candidate or column not found" });
+    return;
+  }
+  if (candidate.groupId !== column.groupId) {
+    res.status(400).json({ error: "Column must belong to the same candidate sheet" });
+    return;
+  }
+  await prisma.optionColumnValue.upsert({
+    where: { candidateId_columnId: { candidateId: candidate.id, columnId: column.id } },
+    update: { value: optionColumnValue(body.value) },
+    create: { candidateId: candidate.id, columnId: column.id, value: optionColumnValue(body.value) },
+  });
+  res.json(await matrixResponse(candidate.productionId));
 });
 
 router.post("/matrix/groups/:groupId/candidates", async (req: Request, res: Response): Promise<void> => {

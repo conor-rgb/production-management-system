@@ -1,3 +1,91 @@
+# HANDOVER - 2026-05-28 - Options V1.1 Custom Columns and Airtable-Style Sheet Foundation
+
+## Built This Session
+- Added a V1.1 custom field layer to options candidate sheets.
+- Core Blackbook-linked fields remain separate and reusable:
+  - option name / identity,
+  - email,
+  - phone,
+  - address,
+  - links,
+  - rate,
+  - active state.
+- New custom fields are specific to the current options sheet/role and store per-candidate values.
+- Added first-pass Airtable-style field controls:
+  - `+ Field` popover,
+  - field type selector,
+  - custom columns in the grid,
+  - editable custom field cells,
+  - column resize handles,
+  - drag-to-reorder custom field headers,
+  - hide/delete/rename/type-change menu on custom fields.
+
+## Backend
+- Updated `backend/prisma/schema.prisma`.
+- Added:
+  - `OptionColumn`
+  - `OptionColumnValue`
+  - `OptionColumnType`
+- Added migration:
+  - `backend/prisma/migrations/20260528120000_option_custom_columns/migration.sql`
+- Updated `backend/src/routes/options.ts`.
+- Matrix responses now include:
+  - `group.columns`
+  - `candidate.columnValues`
+- Added options matrix endpoints:
+  - `POST /api/options/matrix/groups/:groupId/columns`
+  - `PATCH /api/options/matrix/columns/:columnId`
+  - `DELETE /api/options/matrix/columns/:columnId`
+  - `PATCH /api/options/matrix/groups/:groupId/columns/reorder`
+  - `PATCH /api/options/matrix/candidates/:candidateId/columns/:columnId`
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Candidate sheets now render fixed core fields plus custom option-sheet fields.
+- Custom cell support added for:
+  - single line text,
+  - long text,
+  - number,
+  - currency,
+  - percent,
+  - checkbox,
+  - URL,
+  - email,
+  - phone,
+  - select-like placeholder types for future refinement.
+- The contact field still syncs email/phone back to Blackbook when a candidate is linked.
+
+## Deployment / Verification
+- Prisma migration deployed.
+- Prisma client generated.
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Options V1.1 now has the data model needed for Airtable-style custom columns without polluting Blackbook records.
+- The UI is a functional first pass: custom fields can be added, resized, reordered, edited, hidden, and deleted.
+- Core fields are still intentionally fixed because they feed Blackbook, PO, accounting, and PDF workflows.
+
+## Known Gaps / Technical Debt
+- Single-select and multi-select fields currently store values but do not yet have a polished options editor.
+- Hide fields does not yet have a visible "show hidden fields" panel.
+- Column resize persists after mouse-up, but the resize does not show a live guide while dragging.
+- Custom field sorting/filtering is not implemented yet.
+- Gallery/card view is still a future step.
+
+## Exact Next Steps
+1. Add a field manager drawer for hidden fields, select options, and field descriptions.
+2. Add sorting/filtering/grouping across custom columns.
+3. Add custom field visibility controls for deck export templates.
+4. Add gallery/card view using the same custom field definitions.
+5. Continue the visual pass toward the Airtable clarity reference while keeping the current production workflow.
+
+---
+
 # HANDOVER - 2026-05-27 - Options Deck Text and Image Styling Controls
 
 ## Built This Session

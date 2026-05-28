@@ -619,6 +619,7 @@ model OptionGroup {
   order        Int                   @default(0)
   requirements OptionRequirement[]
   candidates   OptionCandidate[]
+  columns      OptionColumn[]
   deckTemplate OptionDeckTemplate?
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
@@ -724,6 +725,7 @@ model OptionCandidate {
   dateStatuses      CandidateDateStatusRecord[]
   assignments       OptionSlotAssignment[]
   photos            OptionCandidatePhoto[]
+  columnValues       OptionColumnValue[]
   purchaseOrders    PurchaseOrderGroup[]
   createdAt         DateTime                    @default(now())
   updatedAt         DateTime                    @updatedAt
@@ -738,6 +740,44 @@ model OptionCandidate {
   @@index([blackbookEntryId])
   @@index([selectedAddressId])
   @@map("pms_option_candidates")
+}
+
+model OptionColumn {
+  id        String           @id @default(uuid())
+  groupId   String
+  key       String
+  label     String
+  type      OptionColumnType @default(SINGLE_LINE_TEXT)
+  width     Int              @default(160)
+  order     Int              @default(0)
+  hidden    Boolean          @default(false)
+  locked    Boolean          @default(false)
+  config    Json?
+  values    OptionColumnValue[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  group OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, key])
+  @@index([groupId, order])
+  @@map("pms_option_columns")
+}
+
+model OptionColumnValue {
+  id          String   @id @default(uuid())
+  candidateId String
+  columnId    String
+  value       Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  candidate OptionCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  column    OptionColumn    @relation(fields: [columnId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, columnId])
+  @@index([columnId])
+  @@map("pms_option_column_values")
 }
 
 model OptionCandidatePhoto {
@@ -822,6 +862,25 @@ enum OptionCandidateState {
   RELEASED
 
   @@map("pms_option_candidate_state")
+}
+
+enum OptionColumnType {
+  SINGLE_LINE_TEXT
+  LONG_TEXT
+  NUMBER
+  CURRENCY
+  PERCENT
+  CHECKBOX
+  SINGLE_SELECT
+  MULTI_SELECT
+  DATE
+  URL
+  EMAIL
+  PHONE
+  ATTACHMENT
+  BLACKBOOK_LINK
+
+  @@map("pms_option_column_type")
 }
 
 enum CandidateDateHoldStatus {

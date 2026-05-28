@@ -14,6 +14,21 @@ type BlackbookLifecycleStatus = "TARGET" | "IN_TOUCH" | "CLIENT" | "PAST_CLIENT"
 type CandidateSortKey = "manual" | "name" | "notes" | "links" | "rate" | "state" | `date:${string}`;
 type SortDirection = "asc" | "desc";
 type BlackbookAddressType = "WORK" | "BILLING" | "PERSONAL" | "CUSTOM";
+type OptionColumnType =
+  | "SINGLE_LINE_TEXT"
+  | "LONG_TEXT"
+  | "NUMBER"
+  | "CURRENCY"
+  | "PERCENT"
+  | "CHECKBOX"
+  | "SINGLE_SELECT"
+  | "MULTI_SELECT"
+  | "DATE"
+  | "URL"
+  | "EMAIL"
+  | "PHONE"
+  | "ATTACHMENT"
+  | "BLACKBOOK_LINK";
 type DeckBlockType = "field" | "links" | "dateStatus" | "imageGrid" | "notes" | "map" | "footer";
 type DeckField = "name" | "subtitle" | "location" | "address" | "clientNotes" | "internalNotes" | "project";
 type DeckImageLayout = "grid" | "justify";
@@ -186,6 +201,26 @@ interface OptionCandidatePhoto {
   url: string;
 }
 
+interface OptionColumn {
+  id: string;
+  groupId: string;
+  key: string;
+  label: string;
+  type: OptionColumnType;
+  width: number;
+  order: number;
+  hidden: boolean;
+  locked: boolean;
+  config: Record<string, unknown> | null;
+}
+
+interface OptionColumnValue {
+  id: string;
+  candidateId: string;
+  columnId: string;
+  value: unknown;
+}
+
 interface OptionRequirement {
   id: string;
   productionId: string;
@@ -240,6 +275,7 @@ interface OptionCandidate {
   dateStatuses: CandidateDateStatus[];
   assignments: OptionSlotAssignment[];
   photos: OptionCandidatePhoto[];
+  columnValues: OptionColumnValue[];
   blackbookEntry: BlackbookEntry | null;
   selectedAddress: BlackbookAddress | null;
 }
@@ -303,6 +339,7 @@ interface OptionGroup {
   name: string;
   type: RequirementType;
   order: number;
+  columns: OptionColumn[];
   requirements: OptionRequirement[];
   candidates: OptionCandidate[];
 }
@@ -323,6 +360,22 @@ const REQUIREMENT_TYPES: RequirementType[] = ["CREW", "SERVICE", "LOCATION", "EQ
 const DATE_TYPES: ProductionDateType[] = ["MEETING", "RECCE", "PPM", "FITTING", "SHOOT_DAY", "POST_DELIVERY", "OTHER"];
 const DATE_STATUSES: ProductionDateStatus[] = ["PROPOSED", "OPTIONED", "CONFIRMED", "RELEASED", "CANCELLED"];
 const HOLD_STATUSES: HoldStatus[] = ["REQUESTED", "FIRST_OPTION", "SECOND_OPTION", "CONFIRMED", "RELEASED", "UNAVAILABLE", "NA"];
+const OPTION_COLUMN_TYPES: Array<{ value: OptionColumnType; label: string }> = [
+  { value: "SINGLE_LINE_TEXT", label: "Single line text" },
+  { value: "LONG_TEXT", label: "Long text" },
+  { value: "NUMBER", label: "Number" },
+  { value: "CURRENCY", label: "Currency" },
+  { value: "PERCENT", label: "Percent" },
+  { value: "CHECKBOX", label: "Checkbox" },
+  { value: "SINGLE_SELECT", label: "Single select" },
+  { value: "MULTI_SELECT", label: "Multi select" },
+  { value: "DATE", label: "Date" },
+  { value: "URL", label: "URL" },
+  { value: "EMAIL", label: "Email" },
+  { value: "PHONE", label: "Phone" },
+  { value: "ATTACHMENT", label: "Attachment" },
+  { value: "BLACKBOOK_LINK", label: "Blackbook link" },
+];
 const TYPE_TO_BLACKBOOK_CATEGORY: Record<RequirementType, BlackbookCategory> = {
   CREW: "CREW",
   SERVICE: "SERVICE",
@@ -782,7 +835,7 @@ function EditableText({ value, onSave, className = "", placeholder = "" }: { val
   return <button onClick={() => setEditing(true)} className={`w-full truncate text-left ${className}`}>{value || <span className="text-gray-300">{placeholder}</span>}</button>;
 }
 
-function NoteCell({ value, onSave, placeholder, tone }: { value: string; onSave: (value: string) => Promise<void>; placeholder: string; tone: "deck" | "internal" }) {
+function NoteCell({ value, onSave, placeholder, tone }: { value: string; onSave: (value: string) => Promise<void>; placeholder: string; tone: "deck" | "internal" | "custom" }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -803,7 +856,7 @@ function NoteCell({ value, onSave, placeholder, tone }: { value: string; onSave:
     <div ref={ref} className="relative min-w-0">
       <button
         onClick={() => setOpen(true)}
-        className={`block max-h-10 w-full overflow-hidden text-left text-[11px] leading-5 ${tone === "deck" ? "text-gray-600" : "italic text-gray-400"}`}
+        className={`block max-h-10 w-full overflow-hidden text-left text-[11px] leading-5 ${tone === "deck" ? "text-gray-600" : tone === "custom" ? "text-gray-500" : "italic text-gray-400"}`}
         title={value || placeholder}
       >
         {value ? (
@@ -814,7 +867,7 @@ function NoteCell({ value, onSave, placeholder, tone }: { value: string; onSave:
       </button>
       {open && (
         <div className="absolute left-0 top-full z-50 mt-1 w-[300px] rounded-lg border border-amber-100 bg-[#fffdf3] p-3 shadow-xl">
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-amber-700">{tone === "deck" ? "Deck note" : "Internal note"}</div>
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-amber-700">{tone === "deck" ? "Deck note" : tone === "custom" ? placeholder : "Internal note"}</div>
           <textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -1157,6 +1210,27 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
     setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/groups/${groupId}/candidates/reorder`, { orderedIds }));
   }
 
+  async function createColumn(groupId: string, payload: { label: string; type: OptionColumnType; width?: number }) {
+    setMatrix(await api.post<MatrixResponse>(`/api/options/matrix/groups/${groupId}/columns`, payload));
+  }
+
+  async function updateColumn(columnId: string, patch: Partial<Pick<OptionColumn, "label" | "type" | "width" | "hidden" | "locked" | "order" | "config">>) {
+    setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/columns/${columnId}`, patch));
+  }
+
+  async function deleteColumn(columnId: string) {
+    if (!window.confirm("Delete this custom field from this options sheet?")) return;
+    setMatrix(await api.delete(`/api/options/matrix/columns/${columnId}`).then(() => api.get<MatrixResponse>(`/api/options/production/${productionId}/matrix`)));
+  }
+
+  async function reorderColumns(groupId: string, orderedIds: string[]) {
+    setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/groups/${groupId}/columns/reorder`, { orderedIds }));
+  }
+
+  async function updateColumnValue(candidateId: string, columnId: string, value: unknown) {
+    setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/candidates/${candidateId}/columns/${columnId}`, { value }));
+  }
+
   async function updateCandidatePhoto(photoId: string, patch: Partial<OptionCandidatePhoto>) {
     setMatrix(await api.patch<MatrixResponse>(`/api/options/candidate-photos/${photoId}`, patch));
   }
@@ -1239,6 +1313,11 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
           onDeletePhoto={deleteCandidatePhoto}
           onDeleteCandidate={deleteCandidate}
           onAddCandidate={() => addCandidate(selectedGroup.id)}
+          onCreateColumn={(payload) => createColumn(selectedGroup.id, payload)}
+          onUpdateColumn={updateColumn}
+          onDeleteColumn={deleteColumn}
+          onReorderColumns={(orderedIds) => reorderColumns(selectedGroup.id, orderedIds)}
+          onUpdateColumnValue={updateColumnValue}
         />
       ) : (
         <MatrixTable
@@ -1370,7 +1449,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   );
 }
 
-function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate }: {
+function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate, onCreateColumn, onUpdateColumn, onDeleteColumn, onReorderColumns, onUpdateColumnValue }: {
   matrix: MatrixResponse;
   group: OptionGroup;
   dates: MatrixDate[];
@@ -1385,17 +1464,28 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   onDeletePhoto: (photoId: string) => Promise<void>;
   onDeleteCandidate: (candidateId: string) => Promise<void>;
   onAddCandidate: () => Promise<void>;
+  onCreateColumn: (payload: { label: string; type: OptionColumnType; width?: number }) => Promise<void>;
+  onUpdateColumn: (columnId: string, patch: Partial<Pick<OptionColumn, "label" | "type" | "width" | "hidden" | "locked" | "order" | "config">>) => Promise<void>;
+  onDeleteColumn: (columnId: string) => Promise<void>;
+  onReorderColumns: (orderedIds: string[]) => Promise<void>;
+  onUpdateColumnValue: (candidateId: string, columnId: string, value: unknown) => Promise<void>;
 }) {
   const [photoCandidate, setPhotoCandidate] = useState<OptionCandidate | null>(null);
   const [sortKey, setSortKey] = useState<CandidateSortKey>("manual");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [dragCandidateId, setDragCandidateId] = useState<string | null>(null);
   const [dropCandidateId, setDropCandidateId] = useState<string | null>(null);
+  const [fieldFormOpen, setFieldFormOpen] = useState(false);
+  const [fieldLabel, setFieldLabel] = useState("");
+  const [fieldType, setFieldType] = useState<OptionColumnType>("SINGLE_LINE_TEXT");
+  const [dragColumnId, setDragColumnId] = useState<string | null>(null);
+  const [dropColumnId, setDropColumnId] = useState<string | null>(null);
   const [designerOpen, setDesignerOpen] = useState(false);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
-  const gridColumns = `56px 320px ${dates.map(() => "92px").join(" ")} 160px 230px 170px 82px 200px 58px 88px 34px`;
+  const visibleColumns = group.columns.filter((column) => !column.hidden).sort((a, b) => a.order - b.order);
+  const gridColumns = `56px 320px ${dates.map(() => "92px").join(" ")} 160px 230px 170px ${visibleColumns.map((column) => `${column.width}px`).join(" ")} 82px 190px 58px 88px 34px`;
   const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
-  const minimumSheetWidth = 1366 + (dates.length * 92);
+  const minimumSheetWidth = 1346 + (dates.length * 92) + visibleColumns.reduce((sum, column) => sum + column.width, 0);
 
   function setSort(nextKey: CandidateSortKey) {
     if (sortKey === nextKey) {
@@ -1421,6 +1511,28 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
     setDropCandidateId(null);
   }
 
+  async function createField() {
+    const label = fieldLabel.trim();
+    if (!label) return;
+    await onCreateColumn({ label, type: fieldType, width: fieldType === "LONG_TEXT" ? 220 : 150 });
+    setFieldLabel("");
+    setFieldType("SINGLE_LINE_TEXT");
+    setFieldFormOpen(false);
+  }
+
+  async function dropColumn(targetColumnId: string) {
+    if (!dragColumnId || dragColumnId === targetColumnId) return;
+    const source = visibleColumns.findIndex((column) => column.id === dragColumnId);
+    const target = visibleColumns.findIndex((column) => column.id === targetColumnId);
+    if (source < 0 || target < 0) return;
+    const next = visibleColumns.slice();
+    const [column] = next.splice(source, 1);
+    next.splice(target, 0, column);
+    await onReorderColumns(next.map((item) => item.id));
+    setDragColumnId(null);
+    setDropColumnId(null);
+  }
+
   function SortHeader({ sort, children, align = "left" }: { sort: CandidateSortKey; children: React.ReactNode; align?: "left" | "center" | "right" }) {
     const active = sortKey === sort;
     return (
@@ -1437,10 +1549,46 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-white p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-xs text-gray-400">Client deck layout can be previewed and adjusted before export.</div>
-        <button onClick={() => setDesignerOpen(true)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
-          Design PDF
-        </button>
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <span className="font-medium text-gray-800">Grid view</span>
+          <span className="text-gray-300">·</span>
+          <span>Core Blackbook fields stay synced. Custom fields live on this sheet.</span>
+        </div>
+        <div className="relative flex items-center gap-2">
+          <button onClick={() => setFieldFormOpen((open) => !open)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+            + Field
+          </button>
+          <button onClick={() => setDesignerOpen(true)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+            Design PDF
+          </button>
+          {fieldFormOpen && (
+            <div className="absolute right-0 top-full z-40 mt-2 w-[330px] rounded-xl border border-gray-200 bg-white p-3 shadow-xl">
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">New custom field</div>
+              <input
+                value={fieldLabel}
+                onChange={(event) => setFieldLabel(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void createField().catch((err: Error) => window.alert(err.message));
+                  if (event.key === "Escape") setFieldFormOpen(false);
+                }}
+                autoFocus
+                placeholder="Field name"
+                className="mb-2 w-full rounded-md border border-gray-200 px-2 py-2 text-sm outline-none focus:border-gray-400"
+              />
+              <select
+                value={fieldType}
+                onChange={(event) => setFieldType(event.target.value as OptionColumnType)}
+                className="mb-3 w-full rounded-md border border-gray-200 px-2 py-2 text-xs outline-none focus:border-gray-400"
+              >
+                {OPTION_COLUMN_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+              </select>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setFieldFormOpen(false)} className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-50">Cancel</button>
+                <button onClick={() => { void createField().catch((err: Error) => window.alert(err.message)); }} className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white">Add field</button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       <div className="inline-block overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm" style={{ minWidth: minimumSheetWidth }}>
         <div className="sticky top-0 z-20 grid h-8 items-center gap-x-2 border-b border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
@@ -1458,6 +1606,27 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           <div>Contact</div>
           <SortHeader sort="notes">Deck notes</SortHeader>
           <div>Internal</div>
+          {visibleColumns.map((column) => (
+            <CustomColumnHeader
+              key={column.id}
+              column={column}
+              isDropTarget={dropColumnId === column.id && dragColumnId !== column.id}
+              onUpdate={onUpdateColumn}
+              onDelete={onDeleteColumn}
+              onDragStart={() => {
+                setDragColumnId(column.id);
+                setDropColumnId(null);
+              }}
+              onDragOver={() => {
+                if (dragColumnId && dragColumnId !== column.id) setDropColumnId(column.id);
+              }}
+              onDrop={() => { void dropColumn(column.id).catch((err: Error) => window.alert(err.message)); }}
+              onDragEnd={() => {
+                setDragColumnId(null);
+                setDropColumnId(null);
+              }}
+            />
+          ))}
           <SortHeader sort="links" align="center">Links</SortHeader>
           <div>Address</div>
           <SortHeader sort="rate" align="right">Rate</SortHeader>
@@ -1470,12 +1639,14 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
             candidate={candidate}
             group={group}
             dates={dates}
+            customColumns={visibleColumns}
             gridColumns={gridColumns}
             onOpenPhotos={() => setPhotoCandidate(candidate)}
             onUpdateCandidate={onUpdateCandidate}
             onLinkBlackbook={onLinkBlackbook}
             onOpenBlackbook={onOpenBlackbook}
             onUpdateCandidateDate={onUpdateCandidateDate}
+            onUpdateColumnValue={onUpdateColumnValue}
             onUploadPhoto={onUploadPhoto}
             onUploadPdf={onUploadPdf}
             isReorderDragging={dragCandidateId === candidate.id}
@@ -2203,16 +2374,196 @@ function DeckBlockContent({ matrix, group, dates, candidate, block }: {
   );
 }
 
-function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, isReorderDragging, isReorderTarget, onReorderDragStart, onReorderDragOver, onReorderDrop, onReorderDragEnd, onDeleteCandidate }: {
+function optionColumnTypeLabel(type: OptionColumnType): string {
+  return OPTION_COLUMN_TYPES.find((item) => item.value === type)?.label ?? type;
+}
+
+function customColumnValue(candidate: OptionCandidate, columnId: string): unknown {
+  return candidate.columnValues.find((item) => item.columnId === columnId)?.value ?? null;
+}
+
+function customColumnDisplay(value: unknown, type: OptionColumnType): string {
+  if (value === null || value === undefined) return "";
+  if (type === "CHECKBOX") return value === true ? "Yes" : "";
+  if (typeof value === "number") return type === "PERCENT" ? `${value}%` : value.toString();
+  if (typeof value === "boolean") return value ? "Yes" : "";
+  if (Array.isArray(value)) return value.map((item) => String(item)).join(", ");
+  if (typeof value === "object") return "";
+  return String(value);
+}
+
+function normalizeColumnValue(value: string, type: OptionColumnType): unknown {
+  if (type === "NUMBER" || type === "CURRENCY" || type === "PERCENT") {
+    const parsed = Number(value);
+    return value.trim() === "" || !Number.isFinite(parsed) ? null : parsed;
+  }
+  return value.trim() || null;
+}
+
+function CustomColumnHeader({ column, isDropTarget, onUpdate, onDelete, onDragStart, onDragOver, onDrop, onDragEnd }: {
+  column: OptionColumn;
+  isDropTarget: boolean;
+  onUpdate: (columnId: string, patch: Partial<Pick<OptionColumn, "label" | "type" | "width" | "hidden" | "locked" | "order" | "config">>) => Promise<void>;
+  onDelete: (columnId: string) => Promise<void>;
+  onDragStart: () => void;
+  onDragOver: () => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(column.label);
+  const startX = useRef(0);
+  const startWidth = useRef(column.width);
+
+  useEffect(() => setLabel(column.label), [column.label]);
+
+  function beginResize(event: React.MouseEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    startX.current = event.clientX;
+    startWidth.current = column.width;
+    let latestWidth = column.width;
+    const move = (moveEvent: MouseEvent) => {
+      latestWidth = Math.max(80, Math.min(420, Math.round(startWidth.current + moveEvent.clientX - startX.current)));
+    };
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      void onUpdate(column.id, { width: latestWidth }).catch((err: Error) => window.alert(err.message));
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  }
+
+  return (
+    <div
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", column.id);
+        onDragStart();
+      }}
+      onDragOver={(event) => {
+        event.preventDefault();
+        onDragOver();
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDrop();
+      }}
+      onDragEnd={onDragEnd}
+      className={`relative flex h-full min-w-0 items-center gap-1 border-l border-gray-100 pl-2 pr-3 ${isDropTarget ? "bg-blue-50" : ""}`}
+      title={`${column.label} · ${optionColumnTypeLabel(column.type)}`}
+    >
+      {editing ? (
+        <input
+          value={label}
+          autoFocus
+          onChange={(event) => setLabel(event.target.value)}
+          onBlur={() => {
+            setEditing(false);
+            if (label.trim() && label.trim() !== column.label) void onUpdate(column.id, { label: label.trim() });
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+            if (event.key === "Escape") {
+              setLabel(column.label);
+              setEditing(false);
+            }
+          }}
+          className="min-w-0 flex-1 bg-transparent text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-700 outline-none"
+        />
+      ) : (
+        <button onDoubleClick={() => setEditing(true)} className="min-w-0 flex-1 truncate text-left">
+          {column.label}
+        </button>
+      )}
+      <button onClick={() => setMenuOpen((open) => !open)} className="text-gray-300 hover:text-gray-700">▾</button>
+      <div onMouseDown={beginResize} className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-gray-300" />
+      {menuOpen && (
+        <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-gray-200 bg-white p-2 text-[11px] normal-case tracking-normal shadow-xl">
+          <label className="mb-2 block text-gray-500">
+            Type
+            <select
+              value={column.type}
+              onChange={(event) => {
+                void onUpdate(column.id, { type: event.target.value as OptionColumnType });
+                setMenuOpen(false);
+              }}
+              className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-gray-800 outline-none"
+            >
+              {OPTION_COLUMN_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+            </select>
+          </label>
+          <button onClick={() => { setEditing(true); setMenuOpen(false); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50">Rename</button>
+          <button onClick={() => { void onUpdate(column.id, { hidden: true }); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50">Hide field</button>
+          <button onClick={() => { void onDelete(column.id); }} className="block w-full rounded px-2 py-1.5 text-left text-red-600 hover:bg-red-50">Delete field</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomColumnCell({ column, candidate, onSave }: {
+  column: OptionColumn;
+  candidate: OptionCandidate;
+  onSave: (value: unknown) => Promise<void>;
+}) {
+  const value = customColumnValue(candidate, column.id);
+  const display = customColumnDisplay(value, column.type);
+  if (column.type === "CHECKBOX") {
+    return (
+      <label className="flex items-center justify-center">
+        <input
+          type="checkbox"
+          checked={value === true}
+          onChange={(event) => { void onSave(event.target.checked); }}
+          className="h-3.5 w-3.5 rounded border-gray-300 text-gray-900"
+        />
+      </label>
+    );
+  }
+  if (column.type === "LONG_TEXT") {
+    return (
+      <NoteCell
+        value={display}
+        onSave={(next) => onSave(next.trim() || null)}
+        placeholder={column.label}
+        tone="custom"
+      />
+    );
+  }
+  if (column.type === "URL" && display) {
+    return (
+      <div className="min-w-0 truncate text-[11px]">
+        <a href={display} target="_blank" rel="noreferrer" className="text-gray-600 underline underline-offset-2 hover:text-gray-900">{display}</a>
+      </div>
+    );
+  }
+  const alignRight = column.type === "NUMBER" || column.type === "CURRENCY" || column.type === "PERCENT";
+  return (
+    <EditableText
+      value={display}
+      onSave={(next) => onSave(normalizeColumnValue(next, column.type))}
+      className={`truncate text-[12px] ${alignRight ? "pr-1 text-right tabular-nums" : "text-gray-600"}`}
+      placeholder={column.type === "CURRENCY" ? "—" : column.label}
+    />
+  );
+}
+
+function CandidateRow({ candidate, group, dates, customColumns, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUpdateColumnValue, onUploadPhoto, onUploadPdf, isReorderDragging, isReorderTarget, onReorderDragStart, onReorderDragOver, onReorderDrop, onReorderDragEnd, onDeleteCandidate }: {
   candidate: OptionCandidate;
   group: OptionGroup;
   dates: MatrixDate[];
+  customColumns: OptionColumn[];
   gridColumns: string;
   onOpenPhotos: () => void;
   onUpdateCandidate: (candidateId: string, patch: Partial<OptionCandidate>) => Promise<void>;
   onLinkBlackbook: (candidateId: string, payload: { entryId?: string | null; createFromCandidate?: boolean; create?: CreateBlackbookPayload }) => Promise<void>;
   onOpenBlackbook: (entryId: string) => void;
   onUpdateCandidateDate: (candidateId: string, dateId: string, status: HoldStatus | null) => Promise<void>;
+  onUpdateColumnValue: (candidateId: string, columnId: string, value: unknown) => Promise<void>;
   onUploadPhoto: (candidateId: string, file: File) => Promise<void>;
   onUploadPdf: (candidateId: string, file: File) => Promise<void>;
   isReorderDragging: boolean;
@@ -2324,6 +2675,14 @@ function CandidateRow({ candidate, group, dates, gridColumns, onOpenPhotos, onUp
         placeholder="Internal note"
         tone="internal"
       />
+      {customColumns.map((column) => (
+        <CustomColumnCell
+          key={column.id}
+          column={column}
+          candidate={candidate}
+          onSave={(value) => onUpdateColumnValue(candidate.id, column.id, value)}
+        />
+      ))}
       <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />
       <CandidateAddressCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />
       <EditableText value={candidate.rate && candidate.rate > 0 ? candidate.rate.toString() : ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className={`pr-1 text-right tabular-nums ${candidate.rate && candidate.rate > 0 ? "text-gray-700" : "text-gray-300"}`} placeholder="—" />
