@@ -123,7 +123,7 @@ function displaySectionTotals(section: BudgetSection) {
   };
 }
 
-export default function BudgetView({ entity, onBack }: { entity: Entity; onBack: () => void }) {
+export default function BudgetView({ entity, onBack, embedded = false }: { entity: Entity; onBack: () => void; embedded?: boolean }) {
   const [budget, setBudget] = useState<Budget | null>(null);
   const [revision, setRevision] = useState<BudgetRevision | null>(null);
   const [revisions, setRevisions] = useState<BudgetRevisionSummary[]>([]);
@@ -228,13 +228,13 @@ export default function BudgetView({ entity, onBack }: { entity: Entity; onBack:
   const entityLabel = entity.label ?? budget?.jobName ?? (entity.type === "production" ? "Production" : "Opportunity");
 
   if (!budget || !revision) {
-    return <div className="flex min-h-screen items-center justify-center text-sm text-gray-500">Loading budget...</div>;
+    return <div className="flex min-h-full items-center justify-center text-sm text-gray-500">Loading budget...</div>;
   }
 
   const showTemplatePicker = revision.sections.length === 0 && !blankStarted;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white text-[#1a1a1f]">
+    <div className={`${embedded ? "flex h-full min-h-0" : "fixed inset-0 z-50 flex"} flex-col bg-white text-[#1a1a1f]`}>
       {toast && (
         <button onClick={() => setToast(null)} className="fixed bottom-4 right-4 z-[70] rounded-md bg-[#1a1a1f] px-3 py-2 text-xs text-white shadow-lg">
           {toast}

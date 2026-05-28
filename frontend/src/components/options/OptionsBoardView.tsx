@@ -1080,7 +1080,7 @@ function BlackbookLinkControl({ group, candidate, onLink, onOpenBlackbook, mode 
   );
 }
 
-export default function OptionsBoardView({ productionId, onBack }: { productionId: string; onBack: () => void }) {
+export default function OptionsBoardView({ productionId, onBack, embedded = false }: { productionId: string; onBack: () => void; embedded?: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [matrix, setMatrix] = useState<MatrixResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1281,30 +1281,25 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
 
   const selectedGroup = matrix.groups.find((group) => group.id === selectedGroupId) ?? null;
 
-  return (
-    <div className="flex h-full min-h-0 flex-col bg-white text-[#1f1f1f]">
-      <ProjectWorkspaceHeader
-        matrix={matrix}
-        activeModule="options"
-        onBack={onBack}
-        onNavigateModule={navigateModule}
-        rightActions={(
-          <>
-            {!selectedGroup && <button onClick={() => setShowDateForm(true)} className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">+ Date</button>}
-            {!selectedGroup && <button onClick={() => setShowRoleForm(true)} className="h-9 rounded-md bg-[#0f172a] px-3 text-[13px] font-semibold text-white shadow-sm">+ Role / service</button>}
-            {selectedGroup && (
-              <button
-                onClick={() => exportGroupPdf(selectedGroup.id).catch((err: Error) => window.alert(err.message))}
-                disabled={exportingGroupId === selectedGroup.id}
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60"
-              >
-                <Download size={14} /> {exportingGroupId === selectedGroup.id ? "Generating..." : "Export PDF"}
-              </button>
-            )}
-            {selectedGroup && <button onClick={() => addCandidate(selectedGroup.id)} className="h-9 rounded-md bg-[#0f172a] px-3 text-[13px] font-semibold text-white shadow-sm">+ Candidate</button>}
-          </>
-        )}
-      />
+  const actions = (
+    <>
+      {!selectedGroup && <button onClick={() => setShowDateForm(true)} className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">+ Date</button>}
+      {!selectedGroup && <button onClick={() => setShowRoleForm(true)} className="h-9 rounded-md bg-[#0f172a] px-3 text-[13px] font-semibold text-white shadow-sm">+ Role / service</button>}
+      {selectedGroup && (
+        <button
+          onClick={() => exportGroupPdf(selectedGroup.id).catch((err: Error) => window.alert(err.message))}
+          disabled={exportingGroupId === selectedGroup.id}
+          className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60"
+        >
+          <Download size={14} /> {exportingGroupId === selectedGroup.id ? "Generating..." : "Export PDF"}
+        </button>
+      )}
+      {selectedGroup && <button onClick={() => addCandidate(selectedGroup.id)} className="h-9 rounded-md bg-[#0f172a] px-3 text-[13px] font-semibold text-white shadow-sm">+ Candidate</button>}
+    </>
+  );
+
+  const content = (
+    <>
       <OptionsSheetTabs
         groups={matrix.groups}
         selectedGroupId={selectedGroupId}
@@ -1351,7 +1346,6 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
           )}
         </div>
       </div>
-
       {showRoleForm && <RoleForm productionId={productionId} onClose={() => setShowRoleForm(false)} onSaved={(data) => { setMatrix(data); setShowRoleForm(false); }} />}
       {showDateForm && <DateForm productionId={productionId} onClose={() => setShowDateForm(false)} onSaved={(data) => { setMatrix(data); setShowDateForm(false); }} />}
       {openBlackbookEntryId && (
@@ -1364,6 +1358,23 @@ export default function OptionsBoardView({ productionId, onBack }: { productionI
           }}
         />
       )}
+    </>
+  );
+
+  if (embedded) {
+    return <div className="flex h-full min-h-0 flex-col bg-white text-[#1f1f1f]">{content}</div>;
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-white text-[#1f1f1f]">
+      <ProjectWorkspaceHeader
+        matrix={matrix}
+        activeModule="options"
+        onBack={onBack}
+        onNavigateModule={navigateModule}
+        rightActions={actions}
+      />
+      {content}
     </div>
   );
 }

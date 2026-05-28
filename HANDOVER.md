@@ -1,3 +1,56 @@
+# HANDOVER - 2026-05-28 - Production Modules Moved Into Shared Workspace Shell
+
+## Built This Session
+- Moved the main production modules into the Airtable-style project workspace.
+- Selecting a production now opens a full project workspace instead of the old right-side detail panel.
+- Shared workspace header now contains:
+  - project name,
+  - `Data / Automations / Interfaces / Forms`,
+  - module tabs for `Overview`, `Options`, `Budget`, `Dates`, `Crew List`, `POs`, `Comms`, and `Files`.
+- Options now runs embedded inside the shared workspace shell, keeping its own second-level sheet tabs.
+- Budget now supports an embedded mode so it can render inside the workspace instead of always taking over as a fixed full-screen view.
+- Dates, Crew, POs, Comms, Files, and Overview render inside the shared workspace frame with a left view rail.
+
+## Frontend
+- Updated `frontend/src/pages/Productions.tsx`.
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Updated `frontend/src/components/budgets/BudgetView.tsx`.
+- Added:
+  - `ProductionWorkspace`
+  - `WorkspaceViewRail`
+  - embedded `OptionsBoardView`
+  - embedded `BudgetView`
+
+## Backend
+- No backend or schema changes in this pass.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- All primary production modules are now accessible inside one project workspace frame.
+- Options has the most complete Airtable-like treatment.
+- Other modules are now contained by the frame but still retain much of their older internal layout.
+
+## Known Gaps / Technical Debt
+- The old `ProductionDetail` component still exists in `Productions.tsx` and can be removed in a cleanup pass.
+- Budget still has its own internal budget header/action bars inside the workspace.
+- Dates/Crew/POs/Comms/Files need visual tightening to match the new Airtable-style shell.
+- The left rail is still partly placeholder for non-options modules.
+- Mobile needs a dedicated workspace navigation pass.
+
+## Exact Next Steps
+1. Remove the old `ProductionDetail` path and dead helper functions.
+2. Tighten Budget/Dates/Crew/POs/Comms/Files to use the shared toolbar/view patterns.
+3. Make the left rail real per module: saved views, settings, filters, and page notes.
+4. Add saved views and gallery/table/calendar mode support where appropriate.
+
+---
+
 # HANDOVER - 2026-05-28 - Airtable-Style Project Workspace Shell for Options
 
 ## Built This Session

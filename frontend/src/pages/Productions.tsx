@@ -33,6 +33,7 @@ import {
   formatCurrency,
 } from "../lib/types";
 import {
+  ArrowLeft,
   Check,
   ChevronDown,
   ExternalLink,
@@ -135,8 +136,6 @@ export default function Productions() {
   useEffect(() => { load(); }, [load]);
 
   const selected = productions.find((p) => p.id === selectedId) ?? null;
-  const budgetViewOpen = searchParams.get("view") === "budget" && Boolean(selectedId);
-  const optionsViewOpen = searchParams.get("tab")?.toLowerCase() === "options" && Boolean(selectedId);
 
   function selectProduction(id: string | null) {
     setSelectedId(id);
@@ -163,13 +162,6 @@ export default function Productions() {
     setSearchParams(next, { replace: true });
   }
 
-  function closeBudget() {
-    const next = new URLSearchParams(searchParams);
-    next.delete("view");
-    next.set("tab", "Budget");
-    setSearchParams(next, { replace: true });
-  }
-
   function openOptions(id: string) {
     const next = new URLSearchParams(searchParams);
     next.set("production", id);
@@ -179,24 +171,17 @@ export default function Productions() {
     setSearchParams(next, { replace: true });
   }
 
-  function closeOptions() {
-    const next = new URLSearchParams(searchParams);
-    next.set("tab", "Overview");
-    next.delete("optionGroup");
-    setSearchParams(next, { replace: true });
-  }
-
-  if (budgetViewOpen && selectedId) {
+  if (selectedId) {
     return (
-      <BudgetView
-        entity={{ type: "production", id: selectedId, data: selected ?? undefined }}
-        onBack={closeBudget}
+      <ProductionWorkspace
+        productionId={selectedId}
+        selectedListProduction={selected ?? undefined}
+        initialTab={tabFromQuery(searchParams.get("tab"))}
+        onClose={() => selectProduction(null)}
+        onSaved={load}
+        onInvoicePrompt={setInvoicePrompt}
       />
     );
-  }
-
-  if (optionsViewOpen && selectedId) {
-    return <OptionsBoardView productionId={selectedId} onBack={closeOptions} />;
   }
 
   return (
@@ -359,6 +344,155 @@ function ProductionForm({ onClose, onSaved }: { onClose: () => void; onSaved: (p
         </div>
       </div>
     </div>
+  );
+}
+
+function ProductionWorkspace({ productionId, selectedListProduction, initialTab, onClose, onSaved, onInvoicePrompt }: {
+  productionId: string;
+  selectedListProduction?: Production;
+  initialTab: Tab;
+  onClose: () => void;
+  onSaved: () => void;
+  onInvoicePrompt: (production: Production) => void;
+}) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [production, setProduction] = useState<Production | null>(selectedListProduction ?? null);
+  const [tab, setTab] = useState<Tab>(initialTab);
+
+  const reload = useCallback(() => {
+    api.get<Production>(`/api/productions/${productionId}`).then(setProduction).catch(console.error);
+  }, [productionId]);
+
+  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => setTab(initialTab), [initialTab]);
+
+  if (!production) return <div className="grid h-full place-items-center text-sm text-gray-400">Loading project...</div>;
+
+  async function saveOverview(data: Partial<Production>) {
+    const res = await api.patch<{ production: Production; invoicePrompt: boolean }>(`/api/productions/${productionId}`, data);
+    setProduction(res.production);
+    if (res.invoicePrompt) onInvoicePrompt(res.production);
+    onSaved();
+  }
+
+  function selectModule(nextTab: Tab) {
+    const next = new URLSearchParams(searchParams);
+    next.set("production", productionId);
+    next.set("tab", nextTab);
+    if (nextTab !== "Options") next.delete("optionGroup");
+    next.delete("view");
+    setTab(nextTab);
+    setSearchParams(next);
+  }
+
+  const projectName = [production.brand, production.clientName].filter(Boolean).join(" x ") || production.title || production.jobCode || "Project";
+  const modules: Tab[] = ["Overview", "Options", "Budget", "Dates", "Crew", "POs", "Comms", "Files"];
+  const moduleLabel: Record<Tab, string> = {
+    Overview: "Overview",
+    Options: "Options",
+    Budget: "Budget",
+    Dates: "Dates",
+    Crew: "Crew List",
+    POs: "POs",
+    Comms: "Comms",
+    Files: "Files",
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-white text-[#1f1f1f]">
+      <div className="shrink-0 border-b border-[#dcdfe3] bg-white">
+        <div className="grid h-[54px] grid-cols-[minmax(260px,1fr)_auto_minmax(260px,1fr)] items-center gap-4 px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Back to projects">
+              <ArrowLeft size={17} />
+            </button>
+            <div className="grid h-8 w-8 place-items-center rounded-md bg-[#0f8f7f] text-sm font-bold text-white shadow-sm">◆</div>
+            <button className="flex min-w-0 items-center gap-1.5 text-left">
+              <span className="truncate text-[19px] font-semibold tracking-[-0.01em] text-[#1f1f1f]">{projectName}</span>
+              <ChevronDown size={16} className="shrink-0 text-gray-500" />
+            </button>
+          </div>
+          <div className="flex h-full items-center gap-7 text-[14px] font-medium text-gray-600">
+            <button className="relative h-full text-[#111827]">
+              Data
+              <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#0f8f7f]" />
+            </button>
+            <button className="h-full hover:text-gray-900">Automations</button>
+            <button className="h-full hover:text-gray-900">Interfaces</button>
+            <button className="h-full hover:text-gray-900">Forms</button>
+          </div>
+          <div className="flex min-w-0 items-center justify-end gap-2">
+            <button className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">Launch</button>
+            <button className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">Share</button>
+          </div>
+        </div>
+        <div className="flex h-[38px] items-center justify-between border-t border-[#e7ecef] bg-[#e6fbf7] px-4">
+          <div className="flex h-full min-w-0 items-center gap-1 overflow-x-auto">
+            {modules.map((item) => (
+              <button
+                key={item}
+                onClick={() => selectModule(item)}
+                className={`flex h-full shrink-0 items-center border-r border-[#c7ebe4] px-3 text-[14px] ${
+                  tab === item ? "bg-white font-semibold text-[#111827]" : "font-medium text-gray-600 hover:bg-white/60 hover:text-gray-900"
+                }`}
+              >
+                {moduleLabel[item]}
+              </button>
+            ))}
+          </div>
+          <button className="h-8 rounded px-2 text-[13px] font-medium text-gray-600 hover:bg-white/70">Tools <ChevronDown size={14} className="ml-1 inline" /></button>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {tab === "Options" ? (
+          <OptionsBoardView productionId={production.id} onBack={() => selectModule("Overview")} embedded />
+        ) : tab === "Budget" ? (
+          <BudgetView entity={{ type: "production", id: production.id, data: production }} onBack={() => selectModule("Overview")} embedded />
+        ) : (
+          <div className="flex h-full min-h-0 bg-white">
+            <WorkspaceViewRail tab={tab} />
+            <div className="min-w-0 flex-1 overflow-auto p-4">
+              {tab === "Overview" && <OverviewTab production={production} onSave={saveOverview} onStatusSaved={(p) => { setProduction(p); onSaved(); }} onInvoicePrompt={onInvoicePrompt} onOpenBudget={() => selectModule("Budget")} />}
+              {tab === "Dates" && <DatesTab production={production} onReload={reload} />}
+              {tab === "Crew" && <CrewTab production={production} onReload={reload} />}
+              {tab === "Comms" && <CommsTab production={production} onReload={reload} />}
+              {tab === "Files" && <FileBrowser productionId={production.id} />}
+              {tab === "POs" && <PurchaseOrdersTab production={production} />}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceViewRail({ tab }: { tab: Tab }) {
+  return (
+    <aside className="hidden w-[260px] shrink-0 border-r border-gray-200 bg-[#fbfbfa] lg:flex lg:flex-col">
+      <div className="border-b border-gray-200 p-3">
+        <button className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-gray-700 hover:bg-gray-100">
+          <Plus size={18} /> Create new...
+        </button>
+        <button className="mt-1 flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-gray-500 hover:bg-gray-100">
+          <Search size={16} /> Find a view
+        </button>
+      </div>
+      <div className="space-y-1 p-3">
+        <button className="flex h-9 w-full items-center gap-2 rounded-md bg-[#eeeeec] px-2 text-left text-[14px] font-semibold text-gray-800">
+          <span className="grid h-4 w-4 place-items-center rounded border border-blue-400 text-[10px] text-blue-600">▦</span>
+          {tab === "Files" ? "File view" : tab === "Comms" ? "Timeline" : "Grid view"}
+        </button>
+        <button className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-gray-600 hover:bg-gray-100">
+          <span className="grid h-4 w-4 place-items-center rounded border border-violet-300 text-[10px] text-violet-500">▧</span>
+          Secondary view
+        </button>
+      </div>
+      <div className="mt-auto border-t border-gray-200 p-4 text-[12px] leading-5 text-gray-500">
+        <div className="mb-2 font-semibold uppercase tracking-[0.05em] text-gray-400">{tab} settings</div>
+        <p>This space will hold saved views, filters, notes, and page-specific project settings.</p>
+      </div>
+    </aside>
   );
 }
 
