@@ -1,3 +1,34 @@
+# HANDOVER - 2026-05-28 - Options Sheet Wrapper Removed
+
+## Built This Session
+- Removed the card-style wrapper around candidate sheets.
+- Candidate grids now sit directly on the workspace canvas, closer to Airtable:
+  - no rounded sheet container,
+  - no box shadow,
+  - no outer card border,
+  - header row is the sheet boundary.
+- Kept overflow visible so row popovers and right-click menus are not clipped on sparse sheets.
+- Kept a full-height sheet surface so one-row boards still feel like a proper grid, not a small inset table.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Options candidate sheets are cleaner and less boxed-in.
+- Menus/popovers should still escape the grid cleanly.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Sparse Sheet Popover Clipping Fix
 
 ## Built This Session
