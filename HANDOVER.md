@@ -1,3 +1,48 @@
+# HANDOVER - 2026-05-28 - Options Expanded Record Panel
+
+## Built This Session
+- Made the row context menu `Expand record` action real.
+- Added a right-side expanded candidate record panel for option sheets.
+- The panel edits the same candidate record as the grid and includes:
+  - candidate name,
+  - subtitle,
+  - active state,
+  - rate,
+  - date availability statuses,
+  - Blackbook/contact controls,
+  - links,
+  - address,
+  - deck and internal notes,
+  - custom sheet fields.
+- The panel can open the candidate photo manager.
+- The panel delete action removes the record after confirmation.
+- Existing grid updates remain API-backed; no new backend/schema work was needed.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Option candidates can now be opened in a focused side panel from the right-click menu.
+- Duplicate record, copy record link, and real filtering/grouping remain pending.
+
+## Exact Next Steps
+1. Add duplicate-record backend support and wire the context menu.
+2. Add a proper field manager drawer for field type/visibility/order settings.
+3. Implement real filters and saved views.
+4. Build Gallery view from the same field definitions.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Airtable Grid Interaction Pass
 
 ## Built This Session

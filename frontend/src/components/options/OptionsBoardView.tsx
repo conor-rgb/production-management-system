@@ -1643,7 +1643,9 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
   const [designerOpen, setDesignerOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ candidate: OptionCandidate; x: number; y: number } | null>(null);
+  const [expandedCandidateId, setExpandedCandidateId] = useState<string | null>(null);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
+  const expandedCandidate = expandedCandidateId ? group.candidates.find((candidate) => candidate.id === expandedCandidateId) ?? null : null;
   const visibleColumns = group.columns.filter((column) => !column.hidden).sort((a, b) => a.order - b.order);
   const rowControlWidth = 58;
   const rowActionWidth = 34;
@@ -1911,6 +1913,10 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
             setPhotoCandidate(contextMenu.candidate);
             setContextMenu(null);
           }}
+          onExpand={() => {
+            setExpandedCandidateId(contextMenu.candidate.id);
+            setContextMenu(null);
+          }}
           onOpenBlackbook={() => {
             if (contextMenu.candidate.blackbookEntryId) onOpenBlackbook(contextMenu.candidate.blackbookEntryId);
             setContextMenu(null);
@@ -1919,6 +1925,26 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
             const candidate = contextMenu.candidate;
             setContextMenu(null);
             if (window.confirm(`Delete ${candidate.name}?`)) void onDeleteCandidate(candidate.id).catch((err: Error) => window.alert(err.message));
+          }}
+        />
+      )}
+      {expandedCandidate && (
+        <CandidateRecordPanel
+          candidate={expandedCandidate}
+          group={group}
+          dates={dates}
+          customColumns={visibleColumns.filter((column) => !column.locked)}
+          onClose={() => setExpandedCandidateId(null)}
+          onOpenPhotos={() => setPhotoCandidate(expandedCandidate)}
+          onUpdateCandidate={onUpdateCandidate}
+          onLinkBlackbook={onLinkBlackbook}
+          onOpenBlackbook={onOpenBlackbook}
+          onUpdateCandidateDate={onUpdateCandidateDate}
+          onUpdateColumnValue={onUpdateColumnValue}
+          onUploadPdf={onUploadPdf}
+          onDeleteCandidate={async (candidateId) => {
+            setExpandedCandidateId(null);
+            await onDeleteCandidate(candidateId);
           }}
         />
       )}
@@ -2870,13 +2896,14 @@ function ToolbarButton({ icon, label, onClick, disabled = false }: {
   );
 }
 
-function CandidateContextMenu({ candidate, x, y, onClose, onAddCandidate, onOpenPhotos, onOpenBlackbook, onDelete }: {
+function CandidateContextMenu({ candidate, x, y, onClose, onAddCandidate, onOpenPhotos, onExpand, onOpenBlackbook, onDelete }: {
   candidate: OptionCandidate;
   x: number;
   y: number;
   onClose: () => void;
   onAddCandidate: () => void;
   onOpenPhotos: () => void;
+  onExpand: () => void;
   onOpenBlackbook: () => void;
   onDelete: () => void;
 }) {
@@ -2895,7 +2922,7 @@ function CandidateContextMenu({ candidate, x, y, onClose, onAddCandidate, onOpen
       </button>
       <ContextMenuItem icon={<Plus size={16} />} label="Insert record below" onClick={onAddCandidate} />
       <ContextMenuItem icon={<Copy size={16} />} label="Duplicate record" disabled />
-      <ContextMenuItem icon={<Maximize2 size={16} />} label="Expand record" disabled />
+      <ContextMenuItem icon={<Maximize2 size={16} />} label="Expand record" onClick={onExpand} />
       <div className="my-1 border-t border-gray-100" />
       <ContextMenuItem icon={<ImageIcon size={16} />} label="Manage photos" onClick={onOpenPhotos} />
       <ContextMenuItem icon={<BookOpen size={16} />} label={candidate.blackbookEntryId ? "Open Blackbook record" : "No Blackbook record"} onClick={candidate.blackbookEntryId ? onOpenBlackbook : undefined} disabled={!candidate.blackbookEntryId} />
@@ -2928,6 +2955,150 @@ function ContextMenuItem({ icon, label, onClick, disabled = false, destructive =
       <span className="text-gray-500">{icon}</span>
       <span>{label}</span>
     </button>
+  );
+}
+
+function CandidateRecordPanel({ candidate, group, dates, customColumns, onClose, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUpdateColumnValue, onUploadPdf, onDeleteCandidate }: {
+  candidate: OptionCandidate;
+  group: OptionGroup;
+  dates: MatrixDate[];
+  customColumns: OptionColumn[];
+  onClose: () => void;
+  onOpenPhotos: () => void;
+  onUpdateCandidate: (candidateId: string, patch: Partial<OptionCandidate>) => Promise<void>;
+  onLinkBlackbook: (candidateId: string, payload: { entryId?: string | null; createFromCandidate?: boolean; create?: CreateBlackbookPayload }) => Promise<void>;
+  onOpenBlackbook: (entryId: string) => void;
+  onUpdateCandidateDate: (candidateId: string, dateId: string, status: HoldStatus | null) => Promise<void>;
+  onUpdateColumnValue: (candidateId: string, columnId: string, value: unknown) => Promise<void>;
+  onUploadPdf: (candidateId: string, file: File) => Promise<void>;
+  onDeleteCandidate: (candidateId: string) => Promise<void>;
+}) {
+  return (
+    <div className="fixed bottom-10 right-0 top-0 z-[930] flex w-[440px] flex-col border-l border-gray-200 bg-white shadow-2xl">
+      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-gray-200 px-4">
+        <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Close">
+          <X size={16} />
+        </button>
+        <div className="min-w-0 flex-1">
+          <EditableText
+            value={candidate.name}
+            onSave={(name) => onUpdateCandidate(candidate.id, { name })}
+            className="text-[15px] font-semibold text-gray-950"
+            placeholder="Candidate name"
+          />
+          <div className="mt-0.5 text-[11px] text-gray-400">{group.name} record</div>
+        </div>
+        <button onClick={onOpenPhotos} className="rounded-md border border-gray-200 px-2.5 py-1.5 text-[12px] font-medium text-gray-700 hover:bg-gray-50">
+          Photos
+        </button>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto p-4">
+        <RecordSection title="Core details">
+          <RecordField label="Subtitle">
+            <EditableText value={candidate.subtitle ?? ""} onSave={(subtitle) => onUpdateCandidate(candidate.id, { subtitle })} className="text-gray-800" placeholder="Subtitle" />
+          </RecordField>
+          <RecordField label="State">
+            <PillDropdown
+              value={candidate.activeState}
+              options={["ACTIVE", "PARKED", "RELEASED"] as const}
+              onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()}
+              classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"}
+            />
+          </RecordField>
+          <RecordField label="Rate">
+            <EditableText value={candidate.rate && candidate.rate > 0 ? candidate.rate.toString() : ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className="tabular-nums text-gray-800" placeholder="-" />
+          </RecordField>
+        </RecordSection>
+
+        <RecordSection title="Availability">
+          <div className="grid gap-2">
+            {dates.length === 0 && <div className="text-[12px] text-gray-400">No project dates yet.</div>}
+            {dates.map((date) => {
+              const status = statusFor(candidate, date.id)?.status ?? null;
+              return (
+                <div key={date.id} className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-md border border-gray-100 px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-[12px] font-medium text-gray-700">{date.label}</div>
+                    <div className="text-[10px] text-gray-400">{dateLabel(date)}</div>
+                  </div>
+                  <PillDropdown
+                    value={status}
+                    options={HOLD_STATUSES}
+                    onChange={(nextStatus) => onUpdateCandidateDate(candidate.id, date.id, nextStatus)}
+                    classNameForValue={holdClass}
+                    placeholder="blank"
+                    compact
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </RecordSection>
+
+        <RecordSection title="Blackbook and contact">
+          <RecordField label="Contact">
+            <CandidateContactCell
+              group={group}
+              candidate={candidate}
+              onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)}
+              onLink={(payload) => onLinkBlackbook(candidate.id, payload)}
+              onOpenBlackbook={onOpenBlackbook}
+            />
+          </RecordField>
+          <RecordField label="Links">
+            <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />
+          </RecordField>
+          <RecordField label="Address">
+            <CandidateAddressCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />
+          </RecordField>
+        </RecordSection>
+
+        <RecordSection title="Notes">
+          <RecordField label="Deck">
+            <NoteCell value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} placeholder="Deck note" tone="deck" />
+          </RecordField>
+          <RecordField label="Internal">
+            <NoteCell value={candidate.internalNotes ?? ""} onSave={(internalNotes) => onUpdateCandidate(candidate.id, { internalNotes })} placeholder="Internal note" tone="internal" />
+          </RecordField>
+        </RecordSection>
+
+        {customColumns.length > 0 && (
+          <RecordSection title="Sheet fields">
+            {customColumns.map((column) => (
+              <RecordField key={column.id} label={column.label}>
+                <CustomColumnCell column={column} candidate={candidate} onSave={(value) => onUpdateColumnValue(candidate.id, column.id, value)} />
+              </RecordField>
+            ))}
+          </RecordSection>
+        )}
+      </div>
+
+      <div className="flex h-12 shrink-0 items-center justify-between border-t border-gray-200 px-4">
+        <button onClick={() => { if (window.confirm(`Delete ${candidate.name}?`)) void onDeleteCandidate(candidate.id).catch((err: Error) => window.alert(err.message)); }} className="text-[12px] font-medium text-rose-600 hover:underline">
+          Delete record
+        </button>
+        <button onClick={onClose} className="rounded-md bg-gray-900 px-3 py-1.5 text-[12px] font-medium text-white">Done</button>
+      </div>
+    </div>
+  );
+}
+
+function RecordSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mb-5">
+      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-400">{title}</h3>
+      <div className="rounded-lg border border-gray-100 bg-white">{children}</div>
+    </section>
+  );
+}
+
+function RecordField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[92px_1fr] items-start gap-3 border-b border-gray-100 px-3 py-2.5 last:border-b-0">
+      <div className="pt-0.5 text-[11px] font-medium text-gray-400">{label}</div>
+      <div className="min-w-0 text-[12px] text-gray-700">{children}</div>
+    </div>
   );
 }
 
