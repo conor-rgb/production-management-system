@@ -91,6 +91,28 @@ type OptionColumnValueBody = {
   value?: Prisma.InputJsonValue | null;
 };
 
+type CoreOptionColumnDefinition = {
+  key: string;
+  label: string;
+  type: OptionColumnType;
+  width: number;
+  order: number;
+  config?: Prisma.InputJsonValue;
+};
+
+const CORE_OPTION_COLUMNS: CoreOptionColumnDefinition[] = [
+  { key: "image", label: "Img", type: "ATTACHMENT", width: 56, order: 0 },
+  { key: "option", label: "Option", type: "SINGLE_LINE_TEXT", width: 320, order: 10 },
+  { key: "date_statuses", label: "Dates", type: "SINGLE_SELECT", width: 92, order: 20 },
+  { key: "contact", label: "Contact", type: "BLACKBOOK_LINK", width: 160, order: 30 },
+  { key: "clientNotes", label: "Deck notes", type: "LONG_TEXT", width: 230, order: 40 },
+  { key: "internalNotes", label: "Internal", type: "LONG_TEXT", width: 170, order: 50 },
+  { key: "links", label: "Links", type: "URL", width: 82, order: 60 },
+  { key: "address", label: "Address", type: "SINGLE_LINE_TEXT", width: 190, order: 70 },
+  { key: "rate", label: "Rate", type: "CURRENCY", width: 58, order: 80 },
+  { key: "activeState", label: "State", type: "SINGLE_SELECT", width: 88, order: 90 },
+];
+
 type AddressFieldBody = {
   type?: BlackbookAddressType;
   label?: string | null;
@@ -779,12 +801,45 @@ async function optionPhotoDirectory(optionId: string): Promise<string> {
   return dir;
 }
 
+async function ensureCoreOptionColumns(productionId: string): Promise<void> {
+  const groups = await prisma.optionGroup.findMany({
+    where: { productionId },
+    select: { id: true, columns: { select: { key: true, locked: true } } },
+  });
+  const writes = groups.flatMap((group) => {
+    const existing = new Set(group.columns.map((column) => column.key));
+    const hasCoreColumns = group.columns.some((column) => column.locked);
+    const shiftExistingCustomColumns = !hasCoreColumns && group.columns.length > 0
+      ? [prisma.optionColumn.updateMany({ where: { groupId: group.id, locked: false }, data: { order: { increment: 100 } } })]
+      : [];
+    return [
+      ...shiftExistingCustomColumns,
+      ...CORE_OPTION_COLUMNS
+      .filter((column) => !existing.has(column.key))
+      .map((column) => prisma.optionColumn.create({
+        data: {
+          groupId: group.id,
+          key: column.key,
+          label: column.label,
+          type: column.type,
+          width: column.width,
+          order: column.order,
+          locked: true,
+          config: column.config,
+        },
+      })),
+    ];
+  });
+  if (writes.length > 0) await prisma.$transaction(writes);
+}
+
 async function matrixResponse(productionId: string) {
   const production = await prisma.production.findUnique({
     where: { id: productionId },
     select: { id: true, title: true, jobCode: true, clientName: true, brand: true },
   });
   if (!production) return null;
+  await ensureCoreOptionColumns(productionId);
 
   const [dates, groups] = await Promise.all([
     prisma.productionDate.findMany({
@@ -1760,13 +1815,13 @@ router.patch("/matrix/columns/:columnId", async (req: Request, res: Response): P
     data.label = label;
   }
   const type = optionColumnType(body.type);
-  if (type !== undefined) data.type = type;
+  if (type !== undefined && !column.locked) data.type = type;
   const width = optionColumnWidth(body.width);
   if (width !== undefined) data.width = width;
   const order = asNumber(body.order);
   if (typeof order === "number") data.order = Math.max(0, Math.floor(order));
   if (body.hidden !== undefined) data.hidden = body.hidden;
-  if (body.locked !== undefined) data.locked = body.locked;
+  if (body.locked !== undefined && !column.locked) data.locked = body.locked;
   const config = optionColumnConfig(body.config);
   if (config !== undefined) data.config = config;
   await prisma.optionColumn.update({ where: { id: column.id }, data });

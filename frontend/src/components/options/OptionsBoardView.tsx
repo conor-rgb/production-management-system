@@ -1480,12 +1480,13 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   const [fieldType, setFieldType] = useState<OptionColumnType>("SINGLE_LINE_TEXT");
   const [dragColumnId, setDragColumnId] = useState<string | null>(null);
   const [dropColumnId, setDropColumnId] = useState<string | null>(null);
+  const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
   const [designerOpen, setDesignerOpen] = useState(false);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
   const visibleColumns = group.columns.filter((column) => !column.hidden).sort((a, b) => a.order - b.order);
-  const gridColumns = `56px 320px ${dates.map(() => "92px").join(" ")} 160px 230px 170px ${visibleColumns.map((column) => `${column.width}px`).join(" ")} 82px 190px 58px 88px 34px`;
+  const gridColumns = `${visibleColumns.flatMap((column) => column.key === "date_statuses" ? dates.map(() => `${column.width}px`) : [`${column.width}px`]).join(" ")} 34px`;
   const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
-  const minimumSheetWidth = 1346 + (dates.length * 92) + visibleColumns.reduce((sum, column) => sum + column.width, 0);
+  const minimumSheetWidth = 34 + visibleColumns.reduce((sum, column) => sum + (column.key === "date_statuses" ? Math.max(1, dates.length) * column.width : column.width), 0);
 
   function setSort(nextKey: CandidateSortKey) {
     if (sortKey === nextKey) {
@@ -1533,19 +1534,6 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
     setDropColumnId(null);
   }
 
-  function SortHeader({ sort, children, align = "left" }: { sort: CandidateSortKey; children: React.ReactNode; align?: "left" | "center" | "right" }) {
-    const active = sortKey === sort;
-    return (
-      <button
-        onClick={() => setSort(sort)}
-        className={`truncate ${align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left"} ${active ? "font-semibold text-gray-700" : ""}`}
-        title="Sort"
-      >
-        {children}{active ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
-      </button>
-    );
-  }
-
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-white p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -1555,6 +1543,9 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           <span>Core Blackbook fields stay synced. Custom fields live on this sheet.</span>
         </div>
         <div className="relative flex items-center gap-2">
+          <button onClick={() => setFieldManagerOpen((open) => !open)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+            Hide fields
+          </button>
           <button onClick={() => setFieldFormOpen((open) => !open)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
             + Field
           </button>
@@ -1588,49 +1579,78 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
               </div>
             </div>
           )}
+          {fieldManagerOpen && (
+            <div className="absolute right-0 top-full z-40 mt-2 w-[340px] rounded-xl border border-gray-200 bg-white p-3 shadow-xl">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Fields</div>
+                <div className="text-[10px] text-gray-400">Core + custom</div>
+              </div>
+              <div className="max-h-[360px] overflow-auto pr-1">
+                {group.columns.slice().sort((a, b) => a.order - b.order).map((column) => (
+                  <label key={column.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={!column.hidden}
+                      onChange={(event) => { void onUpdateColumn(column.id, { hidden: !event.target.checked }); }}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-gray-900"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{column.label}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] ${column.locked ? "bg-gray-100 text-gray-500" : "bg-blue-50 text-blue-600"}`}>
+                      {column.locked ? "Blackbook/core" : "Custom"}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="inline-block overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm" style={{ minWidth: minimumSheetWidth }}>
         <div className="sticky top-0 z-20 grid h-8 items-center gap-x-2 border-b border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
-          <button onClick={() => setSort("manual")} className={`pl-1 text-left ${sortKey === "manual" ? "font-semibold text-gray-700" : ""}`}>Img{sortKey === "manual" ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}</button>
-          <SortHeader sort="name">Option</SortHeader>
-          {dates.map((date) => {
-            const parts = compactDateLabel(date);
-            return (
-              <SortHeader key={date.id} sort={`date:${date.id}`} align="center">
-                <span className="block truncate text-[10px] font-semibold leading-3 text-gray-600">{parts.top}</span>
-                <span className="block truncate text-[9px] leading-3 tracking-normal text-gray-400">{parts.bottom}</span>
-              </SortHeader>
-            );
-          })}
-          <div>Contact</div>
-          <SortHeader sort="notes">Deck notes</SortHeader>
-          <div>Internal</div>
-          {visibleColumns.map((column) => (
-            <CustomColumnHeader
-              key={column.id}
-              column={column}
-              isDropTarget={dropColumnId === column.id && dragColumnId !== column.id}
-              onUpdate={onUpdateColumn}
-              onDelete={onDeleteColumn}
-              onDragStart={() => {
+          {visibleColumns.flatMap((column) => {
+            const shared = {
+              isDropTarget: dropColumnId === column.id && dragColumnId !== column.id,
+              onUpdate: onUpdateColumn,
+              onDelete: onDeleteColumn,
+              onDragStart: () => {
                 setDragColumnId(column.id);
                 setDropColumnId(null);
-              }}
-              onDragOver={() => {
+              },
+              onDragOver: () => {
                 if (dragColumnId && dragColumnId !== column.id) setDropColumnId(column.id);
-              }}
-              onDrop={() => { void dropColumn(column.id).catch((err: Error) => window.alert(err.message)); }}
-              onDragEnd={() => {
+              },
+              onDrop: () => { void dropColumn(column.id).catch((err: Error) => window.alert(err.message)); },
+              onDragEnd: () => {
                 setDragColumnId(null);
                 setDropColumnId(null);
-              }}
-            />
-          ))}
-          <SortHeader sort="links" align="center">Links</SortHeader>
-          <div>Address</div>
-          <SortHeader sort="rate" align="right">Rate</SortHeader>
-          <SortHeader sort="state">State</SortHeader>
+              },
+            };
+            if (column.key === "date_statuses") {
+              return dates.map((date, index) => (
+                <DateStatusColumnHeader
+                  key={`${column.id}:${date.id}`}
+                  column={column}
+                  date={date}
+                  showControls={index === 0}
+                  sortKey={sortKey}
+                  sortDirection={sortDirection}
+                  onSort={() => setSort(`date:${date.id}`)}
+                  {...shared}
+                />
+              ));
+            }
+            return (
+              <CustomColumnHeader
+                key={column.id}
+                column={column}
+                sortKey={column.key === "image" ? "manual" : column.key === "option" ? "name" : column.key === "clientNotes" ? "notes" : column.key === "links" ? "links" : column.key === "rate" ? "rate" : column.key === "activeState" ? "state" : undefined}
+                activeSortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={setSort}
+                {...shared}
+              />
+            );
+          })}
           <div />
         </div>
         {candidates.map((candidate) => (
@@ -2400,9 +2420,13 @@ function normalizeColumnValue(value: string, type: OptionColumnType): unknown {
   return value.trim() || null;
 }
 
-function CustomColumnHeader({ column, isDropTarget, onUpdate, onDelete, onDragStart, onDragOver, onDrop, onDragEnd }: {
+function CustomColumnHeader({ column, isDropTarget, sortKey, activeSortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDrop, onDragEnd }: {
   column: OptionColumn;
   isDropTarget: boolean;
+  sortKey?: CandidateSortKey;
+  activeSortKey?: CandidateSortKey;
+  sortDirection?: SortDirection;
+  onSort?: (key: CandidateSortKey) => void;
   onUpdate: (columnId: string, patch: Partial<Pick<OptionColumn, "label" | "type" | "width" | "hidden" | "locked" | "order" | "config">>) => Promise<void>;
   onDelete: (columnId: string) => Promise<void>;
   onDragStart: () => void;
@@ -2415,6 +2439,7 @@ function CustomColumnHeader({ column, isDropTarget, onUpdate, onDelete, onDragSt
   const [label, setLabel] = useState(column.label);
   const startX = useRef(0);
   const startWidth = useRef(column.width);
+  const active = sortKey !== undefined && activeSortKey === sortKey;
 
   useEffect(() => setLabel(column.label), [column.label]);
 
@@ -2456,7 +2481,7 @@ function CustomColumnHeader({ column, isDropTarget, onUpdate, onDelete, onDragSt
       className={`relative flex h-full min-w-0 items-center gap-1 border-l border-gray-100 pl-2 pr-3 ${isDropTarget ? "bg-blue-50" : ""}`}
       title={`${column.label} · ${optionColumnTypeLabel(column.type)}`}
     >
-      {editing ? (
+      {editing && !column.locked ? (
         <input
           value={label}
           autoFocus
@@ -2475,32 +2500,79 @@ function CustomColumnHeader({ column, isDropTarget, onUpdate, onDelete, onDragSt
           className="min-w-0 flex-1 bg-transparent text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-700 outline-none"
         />
       ) : (
-        <button onDoubleClick={() => setEditing(true)} className="min-w-0 flex-1 truncate text-left">
-          {column.label}
+        <button
+          onClick={() => { if (sortKey && onSort) onSort(sortKey); }}
+          onDoubleClick={() => { if (!column.locked) setEditing(true); }}
+          className={`min-w-0 flex-1 truncate text-left ${active ? "font-semibold text-gray-700" : ""}`}
+        >
+          {column.label}{active ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
         </button>
       )}
       <button onClick={() => setMenuOpen((open) => !open)} className="text-gray-300 hover:text-gray-700">▾</button>
       <div onMouseDown={beginResize} className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-gray-300" />
       {menuOpen && (
         <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-gray-200 bg-white p-2 text-[11px] normal-case tracking-normal shadow-xl">
-          <label className="mb-2 block text-gray-500">
-            Type
-            <select
-              value={column.type}
-              onChange={(event) => {
-                void onUpdate(column.id, { type: event.target.value as OptionColumnType });
-                setMenuOpen(false);
-              }}
-              className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-gray-800 outline-none"
-            >
-              {OPTION_COLUMN_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
-            </select>
-          </label>
-          <button onClick={() => { setEditing(true); setMenuOpen(false); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50">Rename</button>
+          {!column.locked && (
+            <label className="mb-2 block text-gray-500">
+              Type
+              <select
+                value={column.type}
+                onChange={(event) => {
+                  void onUpdate(column.id, { type: event.target.value as OptionColumnType });
+                  setMenuOpen(false);
+                }}
+                className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-gray-800 outline-none"
+              >
+                {OPTION_COLUMN_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+              </select>
+            </label>
+          )}
+          {!column.locked && <button onClick={() => { setEditing(true); setMenuOpen(false); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50">Rename</button>}
           <button onClick={() => { void onUpdate(column.id, { hidden: true }); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50">Hide field</button>
-          <button onClick={() => { void onDelete(column.id); }} className="block w-full rounded px-2 py-1.5 text-left text-red-600 hover:bg-red-50">Delete field</button>
+          {!column.locked && <button onClick={() => { void onDelete(column.id); }} className="block w-full rounded px-2 py-1.5 text-left text-red-600 hover:bg-red-50">Delete field</button>}
         </div>
       )}
+    </div>
+  );
+}
+
+function DateStatusColumnHeader({ column, date, showControls, isDropTarget, sortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDrop, onDragEnd }: {
+  column: OptionColumn;
+  date: MatrixDate;
+  showControls: boolean;
+  isDropTarget: boolean;
+  sortKey: CandidateSortKey;
+  sortDirection: SortDirection;
+  onSort: () => void;
+  onUpdate: (columnId: string, patch: Partial<Pick<OptionColumn, "label" | "type" | "width" | "hidden" | "locked" | "order" | "config">>) => Promise<void>;
+  onDelete: (columnId: string) => Promise<void>;
+  onDragStart: () => void;
+  onDragOver: () => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
+}) {
+  const parts = compactDateLabel(date);
+  const active = sortKey === `date:${date.id}`;
+  return (
+    <div className={`relative flex h-full min-w-0 items-center justify-center border-l border-gray-100 px-1 ${isDropTarget ? "bg-blue-50" : ""}`}>
+      {showControls && (
+        <div className="absolute left-0 top-0 h-full w-full opacity-0 transition hover:opacity-100">
+          <CustomColumnHeader
+            column={column}
+            isDropTarget={isDropTarget}
+            onUpdate={onUpdate}
+            onDelete={onDelete}
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            onDragEnd={onDragEnd}
+          />
+        </div>
+      )}
+      <button onClick={onSort} className={`min-w-0 text-center ${active ? "font-semibold text-gray-700" : ""}`} title="Sort by this date">
+        <span className="block truncate text-[10px] font-semibold leading-3 text-gray-600">{parts.top}{active ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}</span>
+        <span className="block truncate text-[9px] leading-3 tracking-normal text-gray-400">{parts.bottom}</span>
+      </button>
     </div>
   );
 }
@@ -2634,59 +2706,67 @@ function CandidateRow({ candidate, group, dates, customColumns, gridColumns, onO
           Drop image{dropUploading ? " - uploading..." : "s here to add to this option"}
         </div>
       )}
-      <PhotoThumb candidate={candidate} onOpen={onOpenPhotos} />
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
-          <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="text-[13px] font-semibold text-gray-900" placeholder="Candidate" />
-        </div>
-        {candidate.subtitle && <div className="mt-1 truncate text-[11px] text-gray-400">{candidate.subtitle}</div>}
-      </div>
-      {dates.map((date) => {
-        const status = statusFor(candidate, date.id)?.status ?? null;
-        return (
-          <div key={date.id} className="flex justify-center border-l border-gray-100/80 pl-2">
-            <PillDropdown
-              value={status}
-              options={HOLD_STATUSES}
-              onChange={(nextStatus) => onUpdateCandidateDate(candidate.id, date.id, nextStatus)}
-              classNameForValue={holdClass}
-              placeholder="blank"
-              compact
+      {customColumns.flatMap((column) => {
+        if (column.key === "image") return [<PhotoThumb key={column.id} candidate={candidate} onOpen={onOpenPhotos} />];
+        if (column.key === "option") {
+          return [(
+            <div key={column.id} className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="text-[13px] font-semibold text-gray-900" placeholder="Candidate" />
+              </div>
+              {candidate.subtitle && <div className="mt-1 truncate text-[11px] text-gray-400">{candidate.subtitle}</div>}
+            </div>
+          )];
+        }
+        if (column.key === "date_statuses") {
+          return dates.map((date) => {
+            const status = statusFor(candidate, date.id)?.status ?? null;
+            return (
+              <div key={`${column.id}:${date.id}`} className="flex justify-center border-l border-gray-100/80 pl-2">
+                <PillDropdown
+                  value={status}
+                  options={HOLD_STATUSES}
+                  onChange={(nextStatus) => onUpdateCandidateDate(candidate.id, date.id, nextStatus)}
+                  classNameForValue={holdClass}
+                  placeholder="blank"
+                  compact
+                />
+              </div>
+            );
+          });
+        }
+        if (column.key === "contact") {
+          return [(
+            <CandidateContactCell
+              key={column.id}
+              group={group}
+              candidate={candidate}
+              onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)}
+              onLink={(payload) => onLinkBlackbook(candidate.id, payload)}
+              onOpenBlackbook={onOpenBlackbook}
             />
-          </div>
-        );
+          )];
+        }
+        if (column.key === "clientNotes") {
+          return [<NoteCell key={column.id} value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} placeholder="Deck note" tone="deck" />];
+        }
+        if (column.key === "internalNotes") {
+          return [<NoteCell key={column.id} value={candidate.internalNotes ?? ""} onSave={(internalNotes) => onUpdateCandidate(candidate.id, { internalNotes })} placeholder="Internal note" tone="internal" />];
+        }
+        if (column.key === "links") {
+          return [<CandidateLinksCell key={column.id} candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />];
+        }
+        if (column.key === "address") {
+          return [<CandidateAddressCell key={column.id} candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />];
+        }
+        if (column.key === "rate") {
+          return [<EditableText key={column.id} value={candidate.rate && candidate.rate > 0 ? candidate.rate.toString() : ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className={`pr-1 text-right tabular-nums ${candidate.rate && candidate.rate > 0 ? "text-gray-700" : "text-gray-300"}`} placeholder="—" />];
+        }
+        if (column.key === "activeState") {
+          return [<PillDropdown key={column.id} value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />];
+        }
+        return [<CustomColumnCell key={column.id} column={column} candidate={candidate} onSave={(value) => onUpdateColumnValue(candidate.id, column.id, value)} />];
       })}
-      <CandidateContactCell
-        group={group}
-        candidate={candidate}
-        onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)}
-        onLink={(payload) => onLinkBlackbook(candidate.id, payload)}
-        onOpenBlackbook={onOpenBlackbook}
-      />
-      <NoteCell
-        value={candidate.clientNotes ?? ""}
-        onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })}
-        placeholder="Deck note"
-        tone="deck"
-      />
-      <NoteCell
-        value={candidate.internalNotes ?? ""}
-        onSave={(internalNotes) => onUpdateCandidate(candidate.id, { internalNotes })}
-        placeholder="Internal note"
-        tone="internal"
-      />
-      {customColumns.map((column) => (
-        <CustomColumnCell
-          key={column.id}
-          column={column}
-          candidate={candidate}
-          onSave={(value) => onUpdateColumnValue(candidate.id, column.id, value)}
-        />
-      ))}
-      <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />
-      <CandidateAddressCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />
-      <EditableText value={candidate.rate && candidate.rate > 0 ? candidate.rate.toString() : ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className={`pr-1 text-right tabular-nums ${candidate.rate && candidate.rate > 0 ? "text-gray-700" : "text-gray-300"}`} placeholder="—" />
-      <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />
       <div className="flex items-center justify-center gap-0.5 opacity-45 transition hover:opacity-100">
         <button
           draggable

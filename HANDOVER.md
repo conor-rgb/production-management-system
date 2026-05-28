@@ -1,3 +1,67 @@
+# HANDOVER - 2026-05-28 - Options Field Layout Controls for Core and Blackbook Fields
+
+## Built This Session
+- Extended the options V1.1 field system so core fields and Blackbook-backed fields are now part of the same ordered sheet layout as custom fields.
+- Core fields are seeded as locked `OptionColumn` records per option group:
+  - Img
+  - Option
+  - Dates
+  - Contact
+  - Deck notes
+  - Internal
+  - Links
+  - Address
+  - Rate
+  - State
+- All visible fields now render from `group.columns` order rather than hard-coded React column order.
+- Added show/hide controls for both core/Blackbook fields and custom fields.
+- Added resize and drag reorder controls to core fields as well as custom fields.
+- Locked core fields can be hidden, reordered, and resized, but cannot be deleted or type-changed.
+
+## Backend
+- Updated `backend/src/routes/options.ts`.
+- Added core field seeding in `matrixResponse()` via `ensureCoreOptionColumns()`.
+- Existing custom fields are shifted after core fields the first time core fields are seeded for a group.
+- No schema migration was needed in this pass because the previous `OptionColumn.locked` and `OptionColumn.hidden` fields already support this.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Candidate sheet grid template is now generated from visible columns.
+- The date status block can be hidden/reordered/resized as one field, with each production date rendered inside that block.
+- `Hide fields` opens a field visibility manager showing:
+  - Blackbook/core fields,
+  - Custom fields.
+- Field menus now respect locking:
+  - core fields: hide, resize, reorder,
+  - custom fields: hide, resize, reorder, rename, type-change, delete.
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Options sheets now behave much closer to Airtable for field layout.
+- Blackbook-backed contact/address/link fields still sync to the Blackbook database; layout changes only affect this sheet view.
+- Custom fields remain option-sheet-specific and do not pollute Blackbook records.
+
+## Known Gaps / Technical Debt
+- Individual production date columns share one width via the `Dates` field; per-date width persistence is not implemented yet.
+- Hidden fields can be shown again from the `Hide fields` popover, but there is no full field manager drawer yet.
+- Select/multi-select custom fields still need a proper options editor.
+- Sorting/filtering/grouping across all fields is still pending.
+
+## Exact Next Steps
+1. Add a full field manager drawer with per-field descriptions, select options, and hidden field management.
+2. Add proper sorting/filtering/grouping using both core fields and custom field values.
+3. Add per-date column width overrides if needed.
+4. Add gallery/card view driven by the same field definitions.
+
+---
+
 # HANDOVER - 2026-05-28 - Options V1.1 Custom Columns and Airtable-Style Sheet Foundation
 
 ## Built This Session
