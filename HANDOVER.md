@@ -1,3 +1,39 @@
+# HANDOVER - 2026-05-28 - Options Grid Active Cell Pass
+
+## Built This Session
+- Added Airtable-style active cell selection to the options grid view.
+- Clicking or focusing a cell now shows a clear blue active-cell outline.
+- Keyboard navigation now works in the grid:
+  - Arrow keys move between cells,
+  - Tab / Shift+Tab move horizontally and wrap between rows,
+  - Enter activates the current cell editor/dropdown/link,
+  - Escape clears the active cell.
+- Active-cell support is wired through:
+  - core option fields,
+  - project date status columns,
+  - notes,
+  - links,
+  - address,
+  - rate/state,
+  - custom fields.
+- No backend or schema changes.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Options grid now has a proper spreadsheet interaction foundation.
+- Next useful pass: copy/paste support, multi-cell selection, and persistent active row detail preview.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Column Drag Feedback
 
 ## Built This Session

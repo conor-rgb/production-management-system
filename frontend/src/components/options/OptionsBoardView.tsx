@@ -34,6 +34,7 @@ type OptionColumnType =
   | "ATTACHMENT"
   | "BLACKBOOK_LINK";
 type SelectOptionColor = "gray" | "blue" | "green" | "amber" | "purple" | "pink";
+type OptionsGridActiveCell = { candidateId: string; cellKey: string };
 
 interface SelectOptionConfig {
   label: string;
@@ -1942,6 +1943,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   const [contextMenu, setContextMenu] = useState<{ candidate: OptionCandidate; x: number; y: number } | null>(null);
   const [expandedCandidateId, setExpandedCandidateId] = useState<string | null>(null);
   const [previewColumnWidths, setPreviewColumnWidths] = useState<Record<string, number>>({});
+  const [activeCell, setActiveCell] = useState<OptionsGridActiveCell | null>(null);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
   const expandedCandidate = expandedCandidateId ? group.candidates.find((candidate) => candidate.id === expandedCandidateId) ?? null : null;
   const activeColumnState = savedViewColumnState(activeSavedView?.columnState);
@@ -1974,6 +1976,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
 
   useEffect(() => {
     setPreviewColumnWidths({});
+    setActiveCell(null);
   }, [group.id, activeSavedView?.id]);
 
   useEffect(() => {
@@ -2079,6 +2082,76 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
     const [moved] = next.splice(index, 1);
     next.splice(nextIndex, 0, moved);
     return next;
+  }
+
+  function gridCellKeys(): string[] {
+    return visibleColumns.flatMap((column) => {
+      if (column.key === "date_statuses") return dates.map((date) => `date:${date.id}`);
+      return [column.id];
+    });
+  }
+
+  function focusGridCell(candidateId: string, cellKey: string) {
+    window.requestAnimationFrame(() => {
+      const cell = document.querySelector<HTMLElement>(`[data-options-candidate-id="${candidateId}"][data-options-cell-key="${cellKey}"]`);
+      cell?.focus({ preventScroll: false });
+    });
+  }
+
+  function moveGridCell(candidateId: string, cellKey: string, rowDelta: number, columnDelta: number, wrap = false) {
+    const rows = candidates.map((candidate) => candidate.id);
+    const columns = gridCellKeys();
+    const rowIndex = rows.indexOf(candidateId);
+    const columnIndex = columns.indexOf(cellKey);
+    if (rowIndex < 0 || columnIndex < 0 || rows.length === 0 || columns.length === 0) return;
+    let nextRow = rowIndex + rowDelta;
+    let nextColumn = columnIndex + columnDelta;
+    if (wrap && nextColumn >= columns.length) {
+      nextColumn = 0;
+      nextRow += 1;
+    } else if (wrap && nextColumn < 0) {
+      nextColumn = columns.length - 1;
+      nextRow -= 1;
+    }
+    nextRow = Math.max(0, Math.min(rows.length - 1, nextRow));
+    nextColumn = Math.max(0, Math.min(columns.length - 1, nextColumn));
+    const next = { candidateId: rows[nextRow], cellKey: columns[nextColumn] };
+    setActiveCell(next);
+    focusGridCell(next.candidateId, next.cellKey);
+  }
+
+  function activateGridCell(candidateId: string, cellKey: string) {
+    const cell = document.querySelector<HTMLElement>(`[data-options-candidate-id="${candidateId}"][data-options-cell-key="${cellKey}"]`);
+    const target = cell?.querySelector<HTMLElement>("button:not([draggable]), input, textarea, a[href]");
+    target?.click();
+    target?.focus();
+  }
+
+  function handleGridCellKeyDown(event: KeyboardEvent<HTMLDivElement>, candidateId: string, cellKey: string) {
+    if (event.defaultPrevented || event.currentTarget !== event.target) return;
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      moveGridCell(candidateId, cellKey, 0, 1);
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      moveGridCell(candidateId, cellKey, 0, -1);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveGridCell(candidateId, cellKey, 1, 0);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveGridCell(candidateId, cellKey, -1, 0);
+    } else if (event.key === "Tab") {
+      event.preventDefault();
+      moveGridCell(candidateId, cellKey, 0, event.shiftKey ? -1 : 1, true);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      activateGridCell(candidateId, cellKey);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setActiveCell(null);
+      event.currentTarget.blur();
+    }
   }
 
   return (
@@ -2344,6 +2417,9 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
               onUpdateColumnValue={onUpdateColumnValue}
               onUploadPhoto={onUploadPhoto}
               onUploadPdf={onUploadPdf}
+              activeCell={activeCell}
+              onActivateCell={(cellKey) => setActiveCell({ candidateId: candidate.id, cellKey })}
+              onCellKeyDown={(event, cellKey) => handleGridCellKeyDown(event, candidate.id, cellKey)}
               isReorderDragging={dragCandidateId === candidate.id}
               isReorderTarget={dropCandidateId === candidate.id && dragCandidateId !== candidate.id}
               onReorderDragStart={(event) => {
@@ -4000,7 +4076,33 @@ function RecordField({ label, children }: { label: string; children: ReactNode }
   );
 }
 
-function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUpdateColumnValue, onUploadPhoto, onUploadPdf, isReorderDragging, isReorderTarget, onReorderDragStart, onReorderDragOver, onReorderDrop, onReorderDragEnd, onDeleteCandidate, onContextMenuOpen }: {
+function OptionsGridCell({ candidateId, cellKey, active, onActivate, onKeyDown, className = "", children }: {
+  candidateId: string;
+  cellKey: string;
+  active: boolean;
+  onActivate: () => void;
+  onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-options-candidate-id={candidateId}
+      data-options-cell-key={cellKey}
+      tabIndex={0}
+      onFocus={onActivate}
+      onMouseDownCapture={onActivate}
+      onKeyDown={onKeyDown}
+      className={`relative flex min-h-[38px] min-w-0 items-center outline-none transition ${
+        active ? "z-10 bg-blue-50/20 ring-2 ring-inset ring-blue-500" : "focus:bg-blue-50/10 focus:ring-1 focus:ring-inset focus:ring-blue-300"
+      } ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUpdateColumnValue, onUploadPhoto, onUploadPdf, activeCell, onActivateCell, onCellKeyDown, isReorderDragging, isReorderTarget, onReorderDragStart, onReorderDragOver, onReorderDrop, onReorderDragEnd, onDeleteCandidate, onContextMenuOpen }: {
   candidate: OptionCandidate;
   rowIndex: number;
   group: OptionGroup;
@@ -4015,6 +4117,9 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
   onUpdateColumnValue: (candidateId: string, columnId: string, value: unknown) => Promise<void>;
   onUploadPhoto: (candidateId: string, file: File) => Promise<void>;
   onUploadPdf: (candidateId: string, file: File) => Promise<void>;
+  activeCell: OptionsGridActiveCell | null;
+  onActivateCell: (cellKey: string) => void;
+  onCellKeyDown: (event: KeyboardEvent<HTMLDivElement>, cellKey: string) => void;
   isReorderDragging: boolean;
   isReorderTarget: boolean;
   onReorderDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
@@ -4042,6 +4147,22 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
       setDropUploading(false);
       setDragActive(false);
     }
+  }
+
+  function cell(cellKey: string, children: ReactNode, className = "") {
+    return (
+      <OptionsGridCell
+        key={cellKey}
+        candidateId={candidate.id}
+        cellKey={cellKey}
+        active={activeCell?.candidateId === candidate.id && activeCell.cellKey === cellKey}
+        onActivate={() => onActivateCell(cellKey)}
+        onKeyDown={(event) => onCellKeyDown(event, cellKey)}
+        className={className}
+      >
+        {children}
+      </OptionsGridCell>
+    );
   }
 
   return (
@@ -4102,22 +4223,21 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
         <span className="w-5 text-center text-[11px] tabular-nums group-hover:hidden">{rowIndex}</span>
       </div>
       {customColumns.flatMap((column) => {
-        if (column.key === "image") return [<PhotoThumb key={column.id} candidate={candidate} onOpen={onOpenPhotos} />];
+        if (column.key === "image") return [cell(column.id, <PhotoThumb candidate={candidate} onOpen={onOpenPhotos} />, "justify-center")];
         if (column.key === "option") {
-          return [(
-            <div key={column.id} className="min-w-0">
+          return [cell(column.id, (
+            <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="text-[13px] font-semibold text-gray-900" placeholder="Candidate" />
               </div>
               {candidate.subtitle && <div className="mt-1 truncate text-[11px] text-gray-400">{candidate.subtitle}</div>}
             </div>
-          )];
+          ), "px-1")];
         }
         if (column.key === "date_statuses") {
           return dates.map((date) => {
             const status = statusFor(candidate, date.id)?.status ?? null;
-            return (
-              <div key={`${column.id}:${date.id}`} className="flex justify-center border-l border-gray-100/80 pl-2">
+            return cell(`date:${date.id}`, (
                 <PillDropdown
                   value={status}
                   options={HOLD_STATUSES}
@@ -4126,41 +4246,39 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
                   placeholder="blank"
                   compact
                 />
-              </div>
-            );
+            ), "justify-center border-l border-gray-100/80 pl-2");
           });
         }
         if (column.key === "contact") {
-          return [(
+          return [cell(column.id, (
             <CandidateContactCell
-              key={column.id}
               group={group}
               candidate={candidate}
               onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)}
               onLink={(payload) => onLinkBlackbook(candidate.id, payload)}
               onOpenBlackbook={onOpenBlackbook}
             />
-          )];
+          ), "px-1")];
         }
         if (column.key === "clientNotes") {
-          return [<NoteCell key={column.id} value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} placeholder="Deck note" tone="deck" />];
+          return [cell(column.id, <NoteCell value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} placeholder="Deck note" tone="deck" />, "px-1")];
         }
         if (column.key === "internalNotes") {
-          return [<NoteCell key={column.id} value={candidate.internalNotes ?? ""} onSave={(internalNotes) => onUpdateCandidate(candidate.id, { internalNotes })} placeholder="Internal note" tone="internal" />];
+          return [cell(column.id, <NoteCell value={candidate.internalNotes ?? ""} onSave={(internalNotes) => onUpdateCandidate(candidate.id, { internalNotes })} placeholder="Internal note" tone="internal" />, "px-1")];
         }
         if (column.key === "links") {
-          return [<CandidateLinksCell key={column.id} candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />];
+          return [cell(column.id, <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />, "px-1")];
         }
         if (column.key === "address") {
-          return [<CandidateAddressCell key={column.id} candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />];
+          return [cell(column.id, <CandidateAddressCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />, "px-1")];
         }
         if (column.key === "rate") {
-          return [<EditableText key={column.id} value={candidate.rate && candidate.rate > 0 ? candidate.rate.toString() : ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className={`pr-1 text-right tabular-nums ${candidate.rate && candidate.rate > 0 ? "text-gray-700" : "text-gray-300"}`} placeholder="—" />];
+          return [cell(column.id, <EditableText value={candidate.rate && candidate.rate > 0 ? candidate.rate.toString() : ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className={`pr-1 text-right tabular-nums ${candidate.rate && candidate.rate > 0 ? "text-gray-700" : "text-gray-300"}`} placeholder="—" />, "px-1")];
         }
         if (column.key === "activeState") {
-          return [<PillDropdown key={column.id} value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />];
+          return [cell(column.id, <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />, "justify-center px-1")];
         }
-        return [<CustomColumnCell key={column.id} column={column} candidate={candidate} onSave={(value) => onUpdateColumnValue(candidate.id, column.id, value)} />];
+        return [cell(column.id, <CustomColumnCell column={column} candidate={candidate} onSave={(value) => onUpdateColumnValue(candidate.id, column.id, value)} />, "px-1")];
       })}
       <div className="flex items-center justify-center gap-0.5 opacity-0 transition hover:opacity-100 group-hover:opacity-50">
         <button onClick={() => onDeleteCandidate(candidate.id)} title="Delete" className="grid h-7 w-4 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={12} /></button>
