@@ -61,6 +61,7 @@ const SHEET_LINE = "border-[#ededeb]";
 const SHEET_HOVER = "hover:bg-[#fbfbf8]";
 const EDIT_FOCUS = "focus:ring-[#13a18d]/25";
 const BUDGET_HIDDEN_COLUMNS_KEY = "budget.hiddenColumns.v1";
+const FROZEN_COLUMN_KEYS: BudgetColumnKey[] = ["dot", "code", "description"];
 
 const INTERNAL_COLUMNS: BudgetColumn[] = [
   { key: "dot", label: "", width: "24px", align: "center" },
@@ -134,6 +135,22 @@ function cellAlignClass(column: BudgetColumn) {
   if (column.align === "right") return "justify-end text-right";
   if (column.align === "center") return "justify-center text-center";
   return "";
+}
+
+function frozenLeft(column: BudgetColumn, columns: BudgetColumn[]) {
+  if (!FROZEN_COLUMN_KEYS.includes(column.key)) return null;
+  let left = 0;
+  for (const current of columns) {
+    if (current.key === column.key) return left;
+    if (current.key === "dot") left += 24;
+    if (current.key === "code") left += 52;
+  }
+  return left;
+}
+
+function frozenCellStyle(column: BudgetColumn, columns: BudgetColumn[], zIndex = 12): CSSProperties {
+  const left = frozenLeft(column, columns);
+  return left === null ? {} : { position: "sticky", left, zIndex, background: "inherit" };
 }
 
 function statusSymbol(active: boolean) {
@@ -414,8 +431,6 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
         </div>
       </div>
 
-      <SummaryBar revision={revision} firstAdvance={firstAdvance} onRevisionPatch={patchRevision} />
-
       <main className="min-h-0 flex-1 overflow-auto">
         {showTemplatePicker ? (
           <TemplatePicker templates={templates} onApply={applyTemplate} onBlank={() => setBlankStarted(true)} />
@@ -436,6 +451,8 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
           />
         )}
       </main>
+
+      <SummaryBar revision={revision} firstAdvance={firstAdvance} onRevisionPatch={patchRevision} />
 
       {panel === "cover" && <CoverPanel budget={budget} onClose={() => setPanel(null)} onSave={patchBudget} />}
       {panel === "advances" && <AdvancesPanel budget={budget} totals={revision.totals} onClose={() => setPanel(null)} onChanged={load} />}
@@ -459,15 +476,15 @@ function SummaryBar({ revision, firstAdvance, onRevisionPatch }: {
   const counts = stateCounts(revision);
   const hasOpenCounts = counts.YELLOW + counts.PURPLE + counts.BLUE + counts.LIGHT_GREEN > 0;
   return (
-    <div className="shrink-0 border-b border-[#e6e6e1] bg-[#fbfbf8] px-4 py-2.5">
-      <div className="grid grid-cols-2 gap-y-2 md:grid-cols-5">
+    <div className="shrink-0 border-t border-[#e1e1dc] bg-[#fffefa] px-4 py-2 shadow-[0_-8px_24px_rgba(20,20,20,0.04)]">
+      <div className="grid grid-cols-2 items-center gap-x-6 gap-y-1 md:grid-cols-5">
         <Metric label="Subtotal" value={money(totals.subtotal)} />
         <EditableMetric label={`Production fee ${percentLabel(revision.productionFeePercent)}`} value={money(totals.productionFee)} current={revision.productionFeePercent} onSubmit={(value) => onRevisionPatch({ productionFeePercent: value })} />
         <EditableMetric label={`Insurance ${percentLabel(revision.insurancePercent)}`} value={money(totals.insurance)} current={revision.insurancePercent} onSubmit={(value) => onRevisionPatch({ insurancePercent: value })} />
         <Metric label="Grand total" value={money(totals.grandTotal)} grand />
         <Metric label="Advance due" value={firstAdvance !== null ? money(firstAdvance) : "None"} />
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] leading-4">
         {counts.YELLOW > 0 && <StateCount color={DOT_COLORS.YELLOW} className="text-[#d97706]" label={`${counts.YELLOW} need POs`} />}
         {counts.PURPLE > 0 && <StateCount color={DOT_COLORS.PURPLE} className="text-[#8b5cf6]" label={`${counts.PURPLE} POs outstanding`} />}
         {counts.BLUE > 0 && <StateCount color={DOT_COLORS.BLUE} className="text-[#3b82f6]" label={`${counts.BLUE} invoices to pay`} />}
@@ -491,7 +508,7 @@ function Metric({ label, value, grand = false }: { label: string; value: string;
   return (
     <div className="min-w-0">
       <p className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-[#a6a6a0]">{label}</p>
-      <p className={`tabular-nums ${grand ? "text-xl font-semibold text-[#1a1a1f]" : "text-base font-medium text-[#1a1a1f]"}`}>{value}</p>
+      <p className={`tabular-nums ${grand ? "text-lg font-semibold text-[#1a1a1f]" : "text-sm font-medium text-[#1a1a1f]"}`}>{value}</p>
     </div>
   );
 }
@@ -537,6 +554,7 @@ function BudgetTable(props: {
     }
   });
   const [poPanelLine, setPoPanelLine] = useState<BudgetLineItem | null>(null);
+  const [costPanelLine, setCostPanelLine] = useState<BudgetLineItem | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
   const internal = props.mode === "internal";
   const columns = budgetColumns(props.mode, hiddenColumns);
@@ -614,9 +632,13 @@ function BudgetTable(props: {
         if (event.key === "Escape") setActiveCell(null);
       }}
     >
-      <div className="budget-table-inner min-h-full min-w-[980px] bg-white shadow-[inset_1px_0_0_#ededeb]" style={{ width: "100%" }}>
+      <div className="budget-table-inner min-h-full min-w-[1180px] bg-white shadow-[inset_1px_0_0_#ededeb]" style={{ width: "100%" }}>
       <div className="sticky top-0 z-30 flex h-9 items-center justify-between border-b border-[#e6e6e1] bg-[#fbfbf8] px-3 text-[12px] text-gray-500">
-        <span>{columns.length} fields visible</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="font-medium text-[#1a1a1f]">Grid view</span>
+          <span className="text-gray-300">·</span>
+          <span>{columns.length} fields visible</span>
+        </div>
         <div className="relative">
           <button onClick={() => setColumnsOpen(!columnsOpen)} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#e1e1dc] bg-white px-2 text-[11px] font-medium text-gray-700 shadow-sm hover:bg-[#f7f7f3]">
             <Columns3 size={13} /> Hide fields
@@ -635,7 +657,7 @@ function BudgetTable(props: {
       </div>
       <div className={`sticky top-9 z-20 grid h-8 items-center border-b ${SHEET_BORDER} ${SHEET_HEADER_BG} text-[10px] font-medium uppercase tracking-[0.08em] text-[#9b9b95]`} style={gridStyle}>
         {columns.map((column) => (
-          <HeaderCell key={column.key} column={column} title={column.key === "clo" ? "Close this line when fully settled" : undefined}>
+          <HeaderCell key={column.key} column={column} columns={columns} title={column.key === "clo" ? "Close this line when fully settled" : undefined}>
             {column.key === "estimated" && !internal ? "Budget" : column.label}
           </HeaderCell>
         ))}
@@ -665,6 +687,7 @@ function BudgetTable(props: {
             }}
             onOpenParentMenu={(line, x, y) => setParentMenu({ lineId: line.id, x, y })}
             onOpenPoPanel={setPoPanelLine}
+            onOpenCostPanel={setCostPanelLine}
             internal={internal}
             {...props}
           />
@@ -702,13 +725,23 @@ function BudgetTable(props: {
           }}
         />
       )}
+      {costPanelLine && (
+        <CostLinesPanel
+          line={props.revision.sections.flatMap((section) => section.lineItems).find((line) => line.id === costPanelLine.id) ?? costPanelLine}
+          productionId={props.productionId}
+          onClose={() => setCostPanelLine(null)}
+          onRevision={props.onRevision}
+          onError={props.onError}
+          onOpenPoPanel={setPoPanelLine}
+        />
+      )}
       </div>
     </div>
   );
 }
 
-function HeaderCell({ children, column, title }: { children?: ReactNode; column: BudgetColumn; title?: string }) {
-  return <div title={title} className={`flex min-w-0 items-center truncate px-2 ${cellAlignClass(column)}`}>{children}</div>;
+function HeaderCell({ children, column, columns, title }: { children?: ReactNode; column: BudgetColumn; columns: BudgetColumn[]; title?: string }) {
+  return <div title={title} style={frozenCellStyle(column, columns, 24)} className={`flex min-w-0 items-center truncate px-2 ${cellAlignClass(column)}`}>{children}</div>;
 }
 
 function sectionTint(index: number) {
@@ -728,6 +761,7 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
   onToggleCostLines: (lineId: string) => void;
   onOpenParentMenu: (line: BudgetLineItem, x: number, y: number) => void;
   onOpenPoPanel: (line: BudgetLineItem) => void;
+  onOpenCostPanel: (line: BudgetLineItem) => void;
   internal: boolean;
 } & Omit<Parameters<typeof BudgetTable>[0], "mode">) {
   const sectionTotal = props.revision.totals.sectionTotals.find((item) => item.sectionId === section.id);
@@ -789,17 +823,19 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
           activeCell={props.activeCell}
           onActivateCell={props.onActivateCell}
           onOpenPoPanel={props.onOpenPoPanel}
+          onOpenCostPanel={props.onOpenCostPanel}
         />
       ))}
 
       {internal && sectionTotal && estimated !== 0 && (
         <div className="grid h-8 items-center border-t border-[#e0e0dc] bg-[#f8f8f4] text-[11px] text-gray-500" style={props.gridStyle}>
           {props.columns.map((column) => {
-            if (column.key === "description") return <div key={column.key} className="flex items-center px-2 italic">Section total</div>;
-            if (column.key === "estimated") return <div key={column.key} className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(estimated)}</div>;
-            if (column.key === "actuals") return <div key={column.key} className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(actual)}</div>;
-            if (column.key === "remaining") return <div key={column.key} className={`flex items-center justify-end px-2 font-medium not-italic tabular-nums ${remainingClass(remaining, estimated)}`}>{money(remaining)}</div>;
-            return <div key={column.key} />;
+            let content: ReactNode = null;
+            if (column.key === "description") content = <div className="flex items-center px-2 italic">Section total</div>;
+            if (column.key === "estimated") content = <div className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(estimated)}</div>;
+            if (column.key === "actuals") content = <div className="flex items-center justify-end px-2 font-medium not-italic tabular-nums text-[#1a1a1f]">{money(actual)}</div>;
+            if (column.key === "remaining") content = <div className={`flex items-center justify-end px-2 font-medium not-italic tabular-nums ${remainingClass(remaining, estimated)}`}>{money(remaining)}</div>;
+            return <div key={column.key} style={frozenCellStyle(column, props.columns)}>{content}</div>;
           })}
         </div>
       )}
@@ -818,6 +854,7 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
   onToggleCostLines: () => void;
   onOpenParentMenu: (line: BudgetLineItem, x: number, y: number) => void;
   onOpenPoPanel: (line: BudgetLineItem) => void;
+  onOpenCostPanel: (line: BudgetLineItem) => void;
 } & Omit<Parameters<typeof BudgetTable>[0], "revision" | "mode">) {
   const state = getDotState(line);
   const hasSubCosts = line.subCosts.length > 0;
@@ -882,7 +919,15 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
       case "estimated":
         return <EstimatedCell line={line} />;
       case "actuals":
-        return internal ? <ReadMoney value={displayActual} className={actualClass} title={hasSubCosts ? undefined : "No cost lines yet; showing estimated value as a placeholder"} /> : <div />;
+        return internal ? (
+          <button
+            onClick={() => props.onOpenCostPanel(line)}
+            className={`flex min-h-[38px] w-full items-center justify-end rounded px-2 text-right tabular-nums transition hover:bg-[#f2f2ed] hover:underline ${actualClass}`}
+            title={hasSubCosts ? "Open cost lines" : "No cost lines yet; showing estimated value as a placeholder"}
+          >
+            {money(displayActual)}
+          </button>
+        ) : <div />;
       case "remaining":
         return internal ? <ReadMoney value={displayRemaining} className={remainingClass(displayRemaining, line.estimatedTotal)} /> : <div />;
       case "clo":
@@ -903,7 +948,7 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
           props.onOpenParentMenu(line, event.clientX, event.clientY);
         }}
       >
-        {props.columns.map((column) => <div key={column.key} className="min-w-0">{renderCell(column)}</div>)}
+        {props.columns.map((column) => <div key={column.key} style={frozenCellStyle(column, props.columns)} className="min-w-0">{renderCell(column)}</div>)}
         {internal && (
           <div className="absolute inset-y-0 right-0 flex items-center justify-end gap-1 bg-[#fffefa]/95 px-2 opacity-0 shadow-[-16px_0_18px_rgba(255,254,250,0.95)] transition group-hover:opacity-100">
             {props.productionId && <button onClick={() => props.onOpenPoPanel(line)} className="h-7 rounded px-2 text-[11px] font-medium text-[#7c3aed] hover:bg-[#fbf8ff]" title="Create multi-line PO">PO</button>}
@@ -1290,7 +1335,7 @@ function SubCostRow({ subCost, closed, columns, gridStyle, onRevision, onError }
 
   return (
     <div className="grid min-h-[34px] border-b border-[#f0f0ed] text-[12px]" style={{ ...gridStyle, background, opacity: closed ? 0.55 : 1 }}>
-      {columns.map((column) => <div key={column.key} className="min-w-0">{renderCell(column)}</div>)}
+      {columns.map((column) => <div key={column.key} style={frozenCellStyle(column, columns)} className="min-w-0">{renderCell(column)}</div>)}
     </div>
   );
 }
@@ -1374,7 +1419,7 @@ function SubCostDraftRow({ lineId, initialLineType, columns, gridStyle, onCancel
 
   return (
     <div className="grid min-h-[34px] border-b border-[#f0f0ed] bg-[#fbfbf8] text-[12px]" style={gridStyle}>
-      {columns.map((column) => <div key={column.key} className="min-w-0">{renderCell(column)}</div>)}
+      {columns.map((column) => <div key={column.key} style={frozenCellStyle(column, columns)} className="min-w-0">{renderCell(column)}</div>)}
     </div>
   );
 }
@@ -1443,6 +1488,183 @@ function VersionPanel({ currentRevision, revisions, onClose, onOpenRevision }: {
         })}
       </div>
     </SidePanel>
+  );
+}
+
+function CostLinesPanel({ line, productionId, onClose, onRevision, onError, onOpenPoPanel }: {
+  line: BudgetLineItem;
+  productionId: string | null;
+  onClose: () => void;
+  onRevision: (revision: BudgetRevision) => void;
+  onError: (message: string) => void;
+  onOpenPoPanel: (line: BudgetLineItem) => void;
+}) {
+  const [addingType, setAddingType] = useState<SubCostLineType | null>(null);
+  const actual = Number(line.actualTotal ?? 0);
+  const estimate = Number(line.estimatedTotal ?? 0);
+  const remaining = Number(line.variance ?? 0);
+
+  return (
+    <SidePanel title="Cost lines" onClose={onClose} width="520px">
+      <div className="space-y-4">
+        <section className="rounded-lg border border-[#e6e6e1] bg-[#fbfbf8] p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400">{line.lineCode}</p>
+              <h3 className="mt-1 truncate text-base font-semibold text-[#1a1a1f]">{line.description}</h3>
+            </div>
+            <StatusDot state={getDotState(line)} />
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+            <CostMetric label="Estimated" value={money(estimate)} />
+            <CostMetric label="Actuals" value={line.subCosts.length ? money(actual) : "No costs"} muted={!line.subCosts.length} />
+            <CostMetric label="Remaining" value={line.subCosts.length ? money(remaining) : money(0)} className={remainingClass(line.subCosts.length ? remaining : 0, estimate)} />
+          </div>
+          {!line.subCosts.length && (
+            <p className="mt-3 rounded-md bg-white px-3 py-2 text-[12px] leading-5 text-gray-500">
+              The grid shows the estimate as a grey placeholder until a PO, Bill, or Receipt is added, so remaining reads as zero instead of suggesting uncommitted money.
+            </p>
+          )}
+        </section>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {productionId && (
+            <button onClick={() => { onClose(); onOpenPoPanel(line); }} className="min-h-8 rounded-md border border-[#e1d7ff] bg-[#fbf8ff] px-3 text-[12px] font-medium text-[#7c3aed]">
+              Multi-line PO
+            </button>
+          )}
+          <CostLineAddButton lineType="PO" onClick={() => setAddingType("PO")} />
+          <CostLineAddButton lineType="BILL" onClick={() => setAddingType("BILL")} />
+          <CostLineAddButton lineType="RECEIPT" onClick={() => setAddingType("RECEIPT")} />
+        </div>
+
+        {addingType && (
+          <CostLinePanelForm
+            lineId={line.id}
+            lineType={addingType}
+            onCancel={() => setAddingType(null)}
+            onCreated={(revision) => { setAddingType(null); onRevision(revision); }}
+            onError={onError}
+          />
+        )}
+
+        <section className="overflow-hidden rounded-lg border border-[#e6e6e1] bg-white">
+          <div className="grid grid-cols-[72px_1fr_104px_86px_32px] items-center border-b border-[#ededeb] bg-[#f7f7f3] px-2 py-2 text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">
+            <span>Type</span>
+            <span>Description</span>
+            <span className="text-right">Amount</span>
+            <span className="text-right">Status</span>
+            <span />
+          </div>
+          {line.subCosts.length === 0 ? (
+            <div className="px-3 py-8 text-center text-sm text-gray-400">No cost lines yet.</div>
+          ) : (
+            line.subCosts.map((subCost) => (
+              <CostLinePanelRow key={subCost.id} subCost={subCost} onRevision={onRevision} onError={onError} />
+            ))
+          )}
+        </section>
+      </div>
+    </SidePanel>
+  );
+}
+
+function CostMetric({ label, value, muted = false, className = "" }: { label: string; value: string; muted?: boolean; className?: string }) {
+  return (
+    <div className="rounded-md bg-white px-3 py-2">
+      <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">{label}</p>
+      <p className={`mt-1 text-sm font-semibold tabular-nums ${muted ? "text-gray-300" : className || "text-[#1a1a1f]"}`}>{value}</p>
+    </div>
+  );
+}
+
+function CostLinePanelForm({ lineId, lineType, onCancel, onCreated, onError }: {
+  lineId: string;
+  lineType: SubCostLineType;
+  onCancel: () => void;
+  onCreated: (revision: BudgetRevision) => void;
+  onError: (message: string) => void;
+}) {
+  const [type, setType] = useState<SubCostLineType>(lineType);
+  const [description, setDescription] = useState("");
+  const [supplierName, setSupplierName] = useState("");
+  const [amount, setAmount] = useState("");
+
+  async function save() {
+    try {
+      const response = await api.post<SubCostMutationResponse>(`/api/budgets/lines/${lineId}/subcosts`, {
+        lineType: type,
+        description: description || `${lineTypeLabel(type)} cost line`,
+        supplierName: supplierName || null,
+        amount: Number(amount || 0),
+      });
+      if (response.revision) onCreated(response.revision);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Save failed");
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-[#e6e6e1] bg-[#fbfbf8] p-3">
+      <div className="grid gap-2 md:grid-cols-[86px_1fr]">
+        <div>
+          <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">Type</p>
+          <CostLineTypePill lineType={type} onChange={setType} />
+        </div>
+        <BudgetPanelInput label="Description" value={description} onChange={setDescription} />
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-[1fr_120px]">
+        <BudgetPanelInput label="Supplier" value={supplierName} onChange={setSupplierName} />
+        <label className="text-xs text-gray-500">
+          Amount
+          <input value={amount} onChange={(event) => setAmount(event.target.value)} type="number" step="0.01" className="mt-1 h-10 w-full rounded-lg border border-[#e1e1dc] px-3 text-right text-sm text-gray-900 outline-none focus:ring-2 focus:ring-[#13a18d]/25" />
+        </label>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button onClick={onCancel} className="min-h-9 rounded-md px-3 text-xs text-gray-500 hover:bg-white">Cancel</button>
+        <button onClick={save} className="min-h-9 rounded-md bg-[#1a1a1f] px-3 text-xs font-medium text-white">Add cost line</button>
+      </div>
+    </div>
+  );
+}
+
+function CostLinePanelRow({ subCost, onRevision, onError }: { subCost: SubCost; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
+  const reference = subCost.lineType === "PO" ? subCost.poNumber : subCost.lineType === "BILL" ? subCost.invoiceNumber : null;
+  const amountClass = subCost.lineType === "PO" ? "text-[#8b5cf6]" : subCost.lineType === "BILL" && !subCost.isPaid ? "text-[#3b82f6]" : "text-[#16a34a]";
+
+  async function patch(patchData: Partial<SubCost>) {
+    try {
+      const response = await api.patch<SubCostMutationResponse>(`/api/budgets/subcosts/${subCost.id}`, patchData);
+      if (response.revision) onRevision(response.revision);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Save failed");
+    }
+  }
+
+  async function remove() {
+    if (!window.confirm(`Delete ${subCost.description}?`)) return;
+    const result = await fetch(`/api/budgets/subcosts/${subCost.id}`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!result.ok) throw new Error("Delete failed");
+    const response = await result.json() as { revision: BudgetRevision | null };
+    if (response.revision) onRevision(response.revision);
+  }
+
+  return (
+    <div className="grid grid-cols-[72px_1fr_104px_86px_32px] items-center gap-2 border-b border-[#f0f0ed] px-2 py-2 text-xs last:border-b-0">
+      <CostLineTypePill lineType={subCost.lineType} onChange={(lineType) => patch({ lineType }).catch(console.error)} />
+      <div className="min-w-0">
+        {reference && <span className={`mr-2 font-semibold ${amountClass}`}>{reference}</span>}
+        <EditableCell value={subCost.description} onSave={(value) => patch({ description: String(value) })} className="inline max-w-full text-[#1a1a1f]" />
+        {subCost.supplierName && <p className="mt-0.5 truncate text-[11px] italic text-gray-400">{subCost.supplierName}</p>}
+      </div>
+      <EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={amountClass} />
+      <CostLineLifecycleCell subCost={subCost} onPatch={patch} />
+      <button onClick={() => remove().catch((err: unknown) => onError(err instanceof Error ? err.message : "Delete failed"))} className="grid h-7 w-7 place-items-center rounded text-gray-300 hover:bg-red-50 hover:text-red-600"><X size={13} /></button>
+    </div>
   );
 }
 

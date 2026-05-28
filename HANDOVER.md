@@ -1,3 +1,55 @@
+# HANDOVER - 2026-05-28 - Budget Layout and Cost Drawer Pass
+
+## Built This Session
+- Improved the budget layout and interaction flow without changing budget calculations or backend data models.
+- Moved the summary metrics out of the top stack into a compact sticky footer:
+  - the grid starts sooner,
+  - totals remain visible while working,
+  - state counts still show below the metrics.
+- Added frozen identity columns to the budget grid:
+  - status dot,
+  - code,
+  - description.
+- This keeps row identity visible while horizontally scrolling across numeric and note fields.
+- Tightened the grid toolbar so it reads more like the Options/Airtable workspace:
+  - `Grid view · fields visible`,
+  - hide-fields menu remains in the sticky toolbar.
+- Made `Actuals` the clear entry point for cost management:
+  - clicking an Actuals value opens a right-side `Cost lines` drawer,
+  - the drawer shows estimate / actuals / remaining,
+  - no-cost lines explain why the grid shows estimate as a grey placeholder and remaining as zero,
+  - users can add PO / Bill / Receipt from the drawer,
+  - existing cost lines can be edited, converted, marked paid, or deleted from the drawer.
+- Kept the existing multi-line PO workflow available from both the row action and cost drawer.
+
+## Frontend
+- Updated `frontend/src/components/budgets/BudgetView.tsx`.
+
+## Backend
+- No backend changes.
+- No schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Budget is now closer to the Options workspace in structure and daily use:
+  - cleaner top area,
+  - persistent totals,
+  - frozen row identity,
+  - cost-line management moved into a focused drawer instead of overloading the grid.
+- Useful next pass:
+  - column resizing/reordering for the budget grid,
+  - saved budget views,
+  - fuller PO supplier onboarding with AI document extraction,
+  - compare-version drawer showing line-level deltas.
+
+---
+
 # HANDOVER - 2026-05-28 - Budget Airtable Interaction Pass
 
 ## Built This Session
