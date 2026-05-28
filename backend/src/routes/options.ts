@@ -91,6 +91,17 @@ type OptionColumnValueBody = {
   value?: Prisma.InputJsonValue | null;
 };
 
+type OptionSavedViewBody = {
+  name?: string;
+  icon?: string;
+  baseView?: string;
+  filters?: Prisma.InputJsonValue | null;
+  sortKey?: string;
+  sortDirection?: string;
+  columnState?: Prisma.InputJsonValue | null;
+  order?: number | string;
+};
+
 type CoreOptionColumnDefinition = {
   key: string;
   label: string;
@@ -852,6 +863,7 @@ async function matrixResponse(productionId: string) {
       orderBy: { order: "asc" },
       include: {
         columns: { orderBy: { order: "asc" } },
+        savedViews: { orderBy: { order: "asc" } },
         requirements: {
           orderBy: { order: "asc" },
           include: { dateNeeds: true, assignments: true },
@@ -1861,6 +1873,73 @@ router.patch("/matrix/groups/:groupId/columns/reorder", async (req: Request, res
       .map((id, order) => prisma.optionColumn.update({ where: { id }, data: { order } }))
   );
   res.json(await matrixResponse(group.productionId));
+});
+
+router.post("/matrix/groups/:groupId/views", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as OptionSavedViewBody;
+  const name = body.name?.trim();
+  if (!name) {
+    res.status(400).json({ error: "name is required" });
+    return;
+  }
+  const group = await prisma.optionGroup.findUnique({ where: { id: req.params.groupId }, select: { id: true, productionId: true } });
+  if (!group) {
+    res.status(404).json({ error: "Group not found" });
+    return;
+  }
+  const order = await prisma.optionSavedView.count({ where: { groupId: group.id } });
+  await prisma.optionSavedView.create({
+    data: {
+      groupId: group.id,
+      name,
+      icon: body.icon?.trim() || "▦",
+      baseView: body.baseView?.trim() || "grid",
+      filters: body.filters ?? Prisma.JsonNull,
+      sortKey: body.sortKey?.trim() || "manual",
+      sortDirection: body.sortDirection === "desc" ? "desc" : "asc",
+      columnState: body.columnState ?? Prisma.JsonNull,
+      order,
+    },
+  });
+  res.status(201).json(await matrixResponse(group.productionId));
+});
+
+router.patch("/matrix/views/:viewId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as OptionSavedViewBody;
+  const view = await prisma.optionSavedView.findUnique({ where: { id: req.params.viewId }, include: { group: { select: { productionId: true } } } });
+  if (!view) {
+    res.status(404).json({ error: "View not found" });
+    return;
+  }
+  const data: Prisma.OptionSavedViewUpdateInput = {};
+  if (body.name !== undefined) {
+    const name = body.name.trim();
+    if (!name) {
+      res.status(400).json({ error: "name cannot be blank" });
+      return;
+    }
+    data.name = name;
+  }
+  if (body.icon !== undefined) data.icon = body.icon.trim() || "▦";
+  if (body.baseView !== undefined) data.baseView = body.baseView.trim() || "grid";
+  if (body.filters !== undefined) data.filters = body.filters ?? Prisma.JsonNull;
+  if (body.sortKey !== undefined) data.sortKey = body.sortKey.trim() || "manual";
+  if (body.sortDirection !== undefined) data.sortDirection = body.sortDirection === "desc" ? "desc" : "asc";
+  if (body.columnState !== undefined) data.columnState = body.columnState ?? Prisma.JsonNull;
+  const order = asNumber(body.order);
+  if (typeof order === "number") data.order = Math.max(0, Math.floor(order));
+  await prisma.optionSavedView.update({ where: { id: view.id }, data });
+  res.json(await matrixResponse(view.group.productionId));
+});
+
+router.delete("/matrix/views/:viewId", async (req: Request, res: Response): Promise<void> => {
+  const view = await prisma.optionSavedView.findUnique({ where: { id: req.params.viewId }, include: { group: { select: { productionId: true } } } });
+  if (!view) {
+    res.status(404).json({ error: "View not found" });
+    return;
+  }
+  await prisma.optionSavedView.delete({ where: { id: view.id } });
+  res.json(await matrixResponse(view.group.productionId));
 });
 
 router.patch("/matrix/candidates/:candidateId/columns/:columnId", async (req: Request, res: Response): Promise<void> => {

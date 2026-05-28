@@ -620,6 +620,7 @@ model OptionGroup {
   requirements OptionRequirement[]
   candidates   OptionCandidate[]
   columns      OptionColumn[]
+  savedViews   OptionSavedView[]
   deckTemplate OptionDeckTemplate?
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
@@ -641,6 +642,26 @@ model OptionDeckTemplate {
   group OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@map("pms_option_deck_templates")
+}
+
+model OptionSavedView {
+  id            String   @id @default(uuid())
+  groupId       String
+  name          String
+  icon          String   @default("▦")
+  baseView      String   @default("grid")
+  filters       Json?
+  sortKey       String   @default("manual")
+  sortDirection String   @default("asc")
+  columnState   Json?
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  group OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, order])
+  @@map("pms_option_saved_views")
 }
 
 model OptionRequirement {

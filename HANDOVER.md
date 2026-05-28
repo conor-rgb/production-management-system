@@ -1,3 +1,51 @@
+# HANDOVER - 2026-05-28 - Persisted Options Saved Views
+
+## Built This Session
+- Added persisted saved views for options candidate sheets.
+- Added new Prisma model/table:
+  - `OptionSavedView`
+  - table: `pms_option_saved_views`
+- Saved views store:
+  - name and icon,
+  - base candidate view,
+  - filters,
+  - sort key and direction,
+  - a column layout snapshot with width/order/hidden state.
+- Added options API endpoints:
+  - `POST /api/options/matrix/groups/:groupId/views`
+  - `PATCH /api/options/matrix/views/:viewId`
+  - `DELETE /api/options/matrix/views/:viewId`
+- Matrix responses now include `savedViews` for each option group.
+- The left options rail now lists saved views and allows deleting them.
+- The candidate sheet toolbar now has `Save view`, which captures the current grid state.
+- Applying a saved view updates the current render without rewriting the underlying global column layout.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- Updated `backend/prisma/schema.prisma`.
+- Added migration:
+  - `backend/prisma/migrations/20260528132000_option_saved_views/migration.sql`
+- Updated `backend/src/routes/options.ts`.
+
+## Deployment / Verification
+- Prisma migration deployed successfully.
+- Prisma client regenerated.
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Options sheets can now save and recall custom views.
+- The first version stores filters/sort/column state; view-specific editing is still intentionally lightweight.
+- Next useful pass: Gallery view powered by saved view field selections.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Select Field Configuration
 
 ## Built This Session

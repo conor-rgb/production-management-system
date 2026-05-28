@@ -230,6 +230,26 @@ interface OptionColumnValue {
   value: unknown;
 }
 
+interface OptionSavedView {
+  id: string;
+  groupId: string;
+  name: string;
+  icon: string;
+  baseView: string;
+  filters: unknown;
+  sortKey: string;
+  sortDirection: string;
+  columnState: unknown;
+  order: number;
+}
+
+interface SavedViewColumnState {
+  id: string;
+  width: number;
+  order: number;
+  hidden: boolean;
+}
+
 interface OptionRequirement {
   id: string;
   productionId: string;
@@ -349,6 +369,7 @@ interface OptionGroup {
   type: RequirementType;
   order: number;
   columns: OptionColumn[];
+  savedViews: OptionSavedView[];
   requirements: OptionRequirement[];
   candidates: OptionCandidate[];
 }
@@ -703,6 +724,54 @@ function activeFilterCount(filters: CandidateFilters): number {
   if (filters.link !== "all") count += 1;
   if (filters.photo !== "all") count += 1;
   return count;
+}
+
+function validCandidateView(value: unknown): CandidateViewKey {
+  return SAVED_CANDIDATE_VIEWS.some((view) => view.key === value) ? value as CandidateViewKey : "grid";
+}
+
+function validSortDirection(value: unknown): SortDirection {
+  return value === "desc" ? "desc" : "asc";
+}
+
+function validSortKey(value: unknown): CandidateSortKey {
+  return typeof value === "string" ? value as CandidateSortKey : "manual";
+}
+
+function savedViewFilters(value: unknown): CandidateFilters {
+  if (!value || typeof value !== "object") return DEFAULT_CANDIDATE_FILTERS;
+  const record = value as Partial<CandidateFilters>;
+  const activeStates = Array.isArray(record.activeStates)
+    ? record.activeStates.filter((state): state is CandidateState => state === "ACTIVE" || state === "PARKED" || state === "RELEASED")
+    : DEFAULT_CANDIDATE_FILTERS.activeStates;
+  const dateStatus = record.dateStatus === "any" || record.dateStatus === "BLANK" || HOLD_STATUSES.includes(record.dateStatus as HoldStatus)
+    ? record.dateStatus as CandidateFilters["dateStatus"]
+    : DEFAULT_CANDIDATE_FILTERS.dateStatus;
+  const link = record.link === "linked" || record.link === "unlinked" || record.link === "all" ? record.link : DEFAULT_CANDIDATE_FILTERS.link;
+  const photo = record.photo === "with" || record.photo === "without" || record.photo === "all" ? record.photo : DEFAULT_CANDIDATE_FILTERS.photo;
+  return {
+    activeStates: activeStates.length ? activeStates : DEFAULT_CANDIDATE_FILTERS.activeStates,
+    dateStatus,
+    link,
+    photo,
+  };
+}
+
+function savedViewColumnState(value: unknown): SavedViewColumnState[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item): SavedViewColumnState | null => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      if (typeof record.id !== "string") return null;
+      return {
+        id: record.id,
+        width: typeof record.width === "number" ? record.width : 160,
+        order: typeof record.order === "number" ? record.order : 0,
+        hidden: record.hidden === true,
+      };
+    })
+    .filter((item): item is SavedViewColumnState => item !== null);
 }
 
 type AddressLike = Pick<OptionCandidate, "addressLine1" | "addressLine2" | "city" | "region" | "postcode" | "country">;
@@ -1185,6 +1254,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   const [exportingGroupId, setExportingGroupId] = useState<string | null>(null);
   const [candidateView, setCandidateView] = useState<CandidateViewKey>("grid");
   const [candidateFilters, setCandidateFilters] = useState<CandidateFilters>(DEFAULT_CANDIDATE_FILTERS);
+  const [activeSavedViewId, setActiveSavedViewId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -1341,6 +1411,24 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
     setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/candidates/${candidateId}/columns/${columnId}`, { value }));
   }
 
+  async function createSavedView(groupId: string, payload: {
+    name: string;
+    icon?: string;
+    baseView: CandidateViewKey;
+    filters: CandidateFilters;
+    sortKey: CandidateSortKey;
+    sortDirection: SortDirection;
+    columnState: SavedViewColumnState[];
+  }) {
+    setMatrix(await api.post<MatrixResponse>(`/api/options/matrix/groups/${groupId}/views`, payload));
+  }
+
+  async function deleteSavedView(viewId: string) {
+    if (!window.confirm("Delete this saved view?")) return;
+    setMatrix(await api.delete(`/api/options/matrix/views/${viewId}`).then(() => api.get<MatrixResponse>(`/api/options/production/${productionId}/matrix`)));
+    if (activeSavedViewId === viewId) setActiveSavedViewId(null);
+  }
+
   async function updateCandidatePhoto(photoId: string, patch: Partial<OptionCandidatePhoto>) {
     setMatrix(await api.patch<MatrixResponse>(`/api/options/candidate-photos/${photoId}`, patch));
   }
@@ -1380,6 +1468,13 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   if (loading || !matrix) return <div className="grid h-full place-items-center text-sm text-gray-400">Loading options matrix...</div>;
 
   const selectedGroup = matrix.groups.find((group) => group.id === selectedGroupId) ?? null;
+  const activeSavedView = selectedGroup?.savedViews.find((view) => view.id === activeSavedViewId) ?? null;
+
+  function applySavedView(view: OptionSavedView) {
+    setCandidateView(validCandidateView(view.baseView));
+    setCandidateFilters(savedViewFilters(view.filters));
+    setActiveSavedViewId(view.id);
+  }
 
   const actions = (
     <>
@@ -1411,7 +1506,13 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
         <OptionsViewRail
           selectedGroup={selectedGroup}
           selectedView={candidateView}
-          onSelectView={setCandidateView}
+          activeSavedViewId={activeSavedViewId}
+          onSelectView={(view) => {
+            setCandidateView(view);
+            setActiveSavedViewId(null);
+          }}
+          onSelectSavedView={applySavedView}
+          onDeleteSavedView={(viewId) => deleteSavedView(viewId).catch((err: Error) => window.alert(err.message))}
           onAddCandidate={() => selectedGroup ? addCandidate(selectedGroup.id) : setShowRoleForm(true)}
         />
         <div className="flex min-w-0 flex-1 overflow-hidden">
@@ -1439,7 +1540,12 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
               onDuplicateCandidate={duplicateCandidate}
               selectedView={candidateView}
               filters={candidateFilters}
-              onFiltersChange={setCandidateFilters}
+              onFiltersChange={(filters) => {
+                setCandidateFilters(filters);
+                setActiveSavedViewId(null);
+              }}
+              activeSavedView={activeSavedView}
+              onCreateSavedView={(payload) => createSavedView(selectedGroup.id, payload)}
               onExportPdf={() => exportGroupPdf(selectedGroup.id)}
               exportingPdf={exportingGroupId === selectedGroup.id}
             />
@@ -1581,10 +1687,13 @@ function OptionsSheetTabs({ groups, selectedGroupId, onOpenMatrix, onOpenGroup, 
   );
 }
 
-function OptionsViewRail({ selectedGroup, selectedView, onSelectView, onAddCandidate }: {
+function OptionsViewRail({ selectedGroup, selectedView, activeSavedViewId, onSelectView, onSelectSavedView, onDeleteSavedView, onAddCandidate }: {
   selectedGroup: OptionGroup | null;
   selectedView: CandidateViewKey;
+  activeSavedViewId: string | null;
   onSelectView: (view: CandidateViewKey) => void;
+  onSelectSavedView: (view: OptionSavedView) => void;
+  onDeleteSavedView: (viewId: string) => void;
   onAddCandidate: () => void;
 }) {
   const counts = selectedGroup
@@ -1621,6 +1730,31 @@ function OptionsViewRail({ selectedGroup, selectedView, onSelectView, onAddCandi
           <span className="grid h-4 w-4 place-items-center rounded border border-violet-300 text-[10px] text-violet-500">▧</span>
           Gallery
         </button>
+        {selectedGroup && selectedGroup.savedViews.length > 0 && (
+          <div className="mt-4 border-t border-gray-200 pt-3">
+            <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">Saved views</div>
+            {selectedGroup.savedViews.map((view) => (
+              <div key={view.id} className="group flex h-9 items-center gap-1">
+                <button
+                  onClick={() => onSelectSavedView(view)}
+                  className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[14px] ${
+                    activeSavedViewId === view.id ? "bg-[#eeeeec] font-semibold text-gray-800" : "text-gray-600 hover:bg-gray-100"
+                  }`}
+                >
+                  <span className="grid h-4 w-4 place-items-center rounded border border-gray-300 text-[10px] text-gray-500">{view.icon || "▦"}</span>
+                  <span className="min-w-0 flex-1 truncate">{view.name}</span>
+                </button>
+                <button
+                  onClick={() => onDeleteSavedView(view.id)}
+                  className="grid h-7 w-7 place-items-center rounded text-gray-300 opacity-0 hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+                  title="Delete saved view"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className="mt-auto border-t border-gray-200 p-4 text-[12px] leading-5 text-gray-500">
         {selectedGroup ? (
@@ -1740,7 +1874,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   );
 }
 
-function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate, onCreateColumn, onUpdateColumn, onDeleteColumn, onReorderColumns, onUpdateColumnValue, onDuplicateCandidate, selectedView, filters, onFiltersChange, onExportPdf, exportingPdf }: {
+function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUploadPhoto, onUploadPdf, onReorderCandidates, onUpdatePhoto, onDeletePhoto, onDeleteCandidate, onAddCandidate, onCreateColumn, onUpdateColumn, onDeleteColumn, onReorderColumns, onUpdateColumnValue, onDuplicateCandidate, selectedView, filters, onFiltersChange, activeSavedView, onCreateSavedView, onExportPdf, exportingPdf }: {
   matrix: MatrixResponse;
   group: OptionGroup;
   dates: MatrixDate[];
@@ -1764,6 +1898,8 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   selectedView: CandidateViewKey;
   filters: CandidateFilters;
   onFiltersChange: (filters: CandidateFilters) => void;
+  activeSavedView: OptionSavedView | null;
+  onCreateSavedView: (payload: { name: string; icon?: string; baseView: CandidateViewKey; filters: CandidateFilters; sortKey: CandidateSortKey; sortDirection: SortDirection; columnState: SavedViewColumnState[] }) => Promise<void>;
   onExportPdf: () => Promise<void>;
   exportingPdf: boolean;
 }) {
@@ -1786,10 +1922,20 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   const [previewColumnWidths, setPreviewColumnWidths] = useState<Record<string, number>>({});
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
   const expandedCandidate = expandedCandidateId ? group.candidates.find((candidate) => candidate.id === expandedCandidateId) ?? null : null;
+  const activeColumnState = savedViewColumnState(activeSavedView?.columnState);
+  const activeColumnStateById = new Map(activeColumnState.map((state) => [state.id, state]));
   const orderedColumns = group.columns
     .slice()
-    .sort((a, b) => a.order - b.order)
-    .map((column) => ({ ...column, width: previewColumnWidths[column.id] ?? column.width }));
+    .map((column) => {
+      const state = activeColumnStateById.get(column.id);
+      return {
+        ...column,
+        width: previewColumnWidths[column.id] ?? state?.width ?? column.width,
+        order: state?.order ?? column.order,
+        hidden: state?.hidden ?? column.hidden,
+      };
+    })
+    .sort((a, b) => a.order - b.order);
   const visibleColumns = orderedColumns.filter((column) => !column.hidden);
   const rowControlWidth = 58;
   const rowActionWidth = 34;
@@ -1806,7 +1952,13 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
 
   useEffect(() => {
     setPreviewColumnWidths({});
-  }, [group.id]);
+  }, [group.id, activeSavedView?.id]);
+
+  useEffect(() => {
+    if (!activeSavedView) return;
+    setSortKey(validSortKey(activeSavedView.sortKey));
+    setSortDirection(validSortDirection(activeSavedView.sortDirection));
+  }, [activeSavedView]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1877,6 +2029,25 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
     setPreviewColumnWidths((current) => ({ ...current, [columnId]: width }));
   }
 
+  async function saveCurrentView() {
+    const name = window.prompt("Name this view", activeSavedView?.name ?? "Client deck");
+    if (!name?.trim()) return;
+    await onCreateSavedView({
+      name: name.trim(),
+      icon: "▦",
+      baseView: selectedView,
+      filters,
+      sortKey,
+      sortDirection,
+      columnState: orderedColumns.map((column) => ({
+        id: column.id,
+        width: column.width,
+        order: column.order,
+        hidden: column.hidden,
+      })),
+    });
+  }
+
   function orderedColumnIdsWithMove(columnId: string, direction: -1 | 1): string[] {
     const ids = orderedColumns.map((column) => column.id);
     const index = ids.indexOf(columnId);
@@ -1914,6 +2085,9 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           <span className="mx-1 hidden h-5 w-px shrink-0 bg-gray-200 sm:block" />
           <button onClick={() => setFieldFormOpen((open) => !open)} className="flex h-8 shrink-0 items-center rounded px-2 text-[13px] font-medium text-gray-700 hover:bg-gray-100">
             <Plus size={14} className="mr-1" /> Field
+          </button>
+          <button onClick={() => { void saveCurrentView().catch((err: Error) => window.alert(err.message)); }} className="hidden h-8 shrink-0 items-center rounded px-2 text-[13px] font-medium text-gray-700 hover:bg-gray-100 lg:flex">
+            Save view
           </button>
           <button onClick={onAddCandidate} className="flex h-8 shrink-0 items-center rounded px-2 text-[13px] font-medium text-gray-700 hover:bg-gray-100">
             <Plus size={14} className="mr-1" /> Candidate
