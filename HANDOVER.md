@@ -1,3 +1,61 @@
+# HANDOVER - 2026-05-28 - Options Airtable Grid Interaction Pass
+
+## Built This Session
+- Added a more Airtable-like toolbar above option candidate sheets:
+  - view menu,
+  - `Grid view` selector styling,
+  - `Hide fields`,
+  - placeholder `Filter`, `Group`, `Color`, `Share/export`, and `Search`,
+  - quieter `Field`, `Candidate`, and `Design PDF` actions.
+- Added a left row-control column:
+  - row number at rest,
+  - drag handle and checkbox on row hover,
+  - select-all checkbox in the header.
+- Added a fixed, cursor-positioned right-click context menu for option rows.
+- Row context menu currently includes:
+  - Ask Omni placeholder,
+  - insert record below,
+  - duplicate placeholder,
+  - expand placeholder,
+  - manage photos,
+  - open Blackbook record when linked,
+  - copy link placeholder,
+  - delete record.
+- Preserved existing right-click behaviour inside the Links cell so it still opens the links editor rather than the row menu.
+- Moved `+ Candidate` into the toolbar and kept the inline add-row affordance at the bottom of the sheet.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Options sheets now have the first proper Airtable-style grid interaction layer.
+- Some toolbar/context actions are intentionally visual placeholders pending dedicated implementation:
+  - Filter,
+  - Group,
+  - Color,
+  - Share/export,
+  - Duplicate,
+  - Expand record,
+  - Copy record link.
+
+## Exact Next Steps
+1. Implement real field filtering and sorting against core/custom fields.
+2. Add a real expanded record side panel for option candidates.
+3. Add duplicate-record support in the backend and wire the context menu action.
+4. Build the Gallery view from the same field definitions.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Sheet Wrapper Removed
 
 ## Built This Session

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowLeft, BookOpen, ChevronDown, Download, ExternalLink, FileText, Globe, Image as ImageIcon, Mail, Phone, Plus, Search, Share2, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, BookOpen, ChevronDown, Copy, Download, ExternalLink, EyeOff, FileText, Filter, Globe, Image as ImageIcon, Layers3, Mail, Maximize2, Menu, PaintBucket, Phone, Plus, Search, Share2, Trash2, Upload, X } from "lucide-react";
 import { api } from "../../lib/api";
 import { COUNTRY_OPTIONS, countryName } from "../../lib/countries";
 import BlackbookOverlay from "../blackbook/BlackbookOverlay";
@@ -1642,11 +1642,27 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   const [dropColumnId, setDropColumnId] = useState<string | null>(null);
   const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
   const [designerOpen, setDesignerOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ candidate: OptionCandidate; x: number; y: number } | null>(null);
   const activePhotoCandidate = photoCandidate ? group.candidates.find((candidate) => candidate.id === photoCandidate.id) ?? photoCandidate : null;
   const visibleColumns = group.columns.filter((column) => !column.hidden).sort((a, b) => a.order - b.order);
-  const gridColumns = `${visibleColumns.flatMap((column) => column.key === "date_statuses" ? dates.map(() => `${column.width}px`) : [`${column.width}px`]).join(" ")} 34px`;
+  const rowControlWidth = 58;
+  const rowActionWidth = 34;
+  const gridColumns = `${rowControlWidth}px ${visibleColumns.flatMap((column) => column.key === "date_statuses" ? dates.map(() => `${column.width}px`) : [`${column.width}px`]).join(" ")} ${rowActionWidth}px`;
   const candidates = sortedCandidates(group.candidates, sortKey, sortDirection);
-  const minimumSheetWidth = 34 + visibleColumns.reduce((sum, column) => sum + (column.key === "date_statuses" ? Math.max(1, dates.length) * column.width : column.width), 0);
+  const minimumSheetWidth = rowControlWidth + rowActionWidth + visibleColumns.reduce((sum, column) => sum + (column.key === "date_statuses" ? Math.max(1, dates.length) * column.width : column.width), 0);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    function close() {
+      setContextMenu(null);
+    }
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [contextMenu]);
 
   function setSort(nextKey: CandidateSortKey) {
     if (sortKey === nextKey) {
@@ -1695,21 +1711,36 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-white p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          <span className="font-medium text-gray-800">Grid view</span>
-          <span className="text-gray-300">·</span>
-          <span>Core Blackbook fields stay synced. Custom fields live on this sheet.</span>
+    <div className="min-h-0 flex-1 overflow-auto bg-white">
+      <div className="flex h-11 items-center justify-between gap-3 border-b border-gray-200 px-4">
+        <div className="flex min-w-0 items-center gap-3 text-sm text-gray-600">
+          <button className="grid h-8 w-8 place-items-center rounded hover:bg-gray-100" title="View menu">
+            <Menu size={17} />
+          </button>
+          <button className="flex h-8 items-center gap-2 rounded px-2 text-[13px] font-semibold text-gray-800 hover:bg-gray-100">
+            <span className="grid h-4 w-4 place-items-center rounded border border-blue-400 text-[10px] text-blue-600">▦</span>
+            Grid view
+            <ChevronDown size={14} />
+          </button>
         </div>
         <div className="relative flex items-center gap-2">
-          <button onClick={() => setFieldManagerOpen((open) => !open)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
-            Hide fields
+          <ToolbarButton icon={<EyeOff size={15} />} label="Hide fields" onClick={() => setFieldManagerOpen((open) => !open)} />
+          <ToolbarButton icon={<Filter size={15} />} label="Filter" disabled />
+          <ToolbarButton icon={<Layers3 size={15} />} label="Group" disabled />
+          <ToolbarButton label="Sort" onClick={() => setSort(sortKey === "manual" ? "name" : "manual")} />
+          <ToolbarButton icon={<PaintBucket size={15} />} label="Color" disabled />
+          <ToolbarButton icon={<Share2 size={15} />} label="Share/export" disabled />
+          <button className="grid h-8 w-8 place-items-center rounded text-gray-500 hover:bg-gray-100" title="Search">
+            <Search size={16} />
           </button>
-          <button onClick={() => setFieldFormOpen((open) => !open)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
-            + Field
+          <span className="mx-1 h-5 w-px bg-gray-200" />
+          <button onClick={() => setFieldFormOpen((open) => !open)} className="flex h-8 items-center rounded px-2 text-[13px] font-medium text-gray-700 hover:bg-gray-100">
+            <Plus size={14} className="mr-1" /> Field
           </button>
-          <button onClick={() => setDesignerOpen(true)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+          <button onClick={onAddCandidate} className="flex h-8 items-center rounded px-2 text-[13px] font-medium text-gray-700 hover:bg-gray-100">
+            <Plus size={14} className="mr-1" /> Candidate
+          </button>
+          <button onClick={() => setDesignerOpen(true)} className="h-8 rounded border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">
             Design PDF
           </button>
           {fieldFormOpen && (
@@ -1765,8 +1796,11 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           )}
         </div>
       </div>
-      <div className="inline-block min-h-[calc(100vh-260px)] overflow-visible bg-white" style={{ minWidth: minimumSheetWidth }}>
+      <div className="inline-block min-h-[calc(100vh-258px)] overflow-visible bg-white" style={{ minWidth: minimumSheetWidth }}>
         <div className="sticky top-0 z-20 grid h-8 items-center gap-x-2 border-y border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
+          <div className="flex items-center justify-center">
+            <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600" aria-label="Select all candidates" />
+          </div>
           {visibleColumns.flatMap((column) => {
             const shared = {
               isDropTarget: dropColumnId === column.id && dragColumnId !== column.id,
@@ -1813,10 +1847,11 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           })}
           <div />
         </div>
-        {candidates.map((candidate) => (
+        {candidates.map((candidate, index) => (
           <CandidateRow
             key={candidate.id}
             candidate={candidate}
+            rowIndex={index + 1}
             group={group}
             dates={dates}
             customColumns={visibleColumns}
@@ -1846,6 +1881,10 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
               setDropCandidateId(null);
             }}
             onDeleteCandidate={onDeleteCandidate}
+            onContextMenuOpen={(event) => {
+              event.preventDefault();
+              setContextMenu({ candidate, x: event.clientX, y: event.clientY });
+            }}
           />
         ))}
         {group.candidates.length === 0 && (
@@ -1853,10 +1892,36 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
             <div>No candidates on option for {group.name} yet.<br /><button onClick={onAddCandidate} className="mt-2 text-gray-900 underline">+ Add candidate</button></div>
           </div>
         )}
-        <button onClick={onAddCandidate} className="m-3 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-500 hover:border-gray-500 hover:text-gray-900">
-          <Plus size={14} className="mr-1 inline" /> Add candidate
+        <button onClick={onAddCandidate} className="flex h-9 items-center gap-2 border-b border-gray-100 px-4 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-900" style={{ width: minimumSheetWidth }}>
+          <span className="ml-[26px] text-lg leading-none">+</span>
+          Add candidate
         </button>
       </div>
+      {contextMenu && (
+        <CandidateContextMenu
+          candidate={contextMenu.candidate}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onAddCandidate={() => {
+            setContextMenu(null);
+            void onAddCandidate().catch((err: Error) => window.alert(err.message));
+          }}
+          onOpenPhotos={() => {
+            setPhotoCandidate(contextMenu.candidate);
+            setContextMenu(null);
+          }}
+          onOpenBlackbook={() => {
+            if (contextMenu.candidate.blackbookEntryId) onOpenBlackbook(contextMenu.candidate.blackbookEntryId);
+            setContextMenu(null);
+          }}
+          onDelete={() => {
+            const candidate = contextMenu.candidate;
+            setContextMenu(null);
+            if (window.confirm(`Delete ${candidate.name}?`)) void onDeleteCandidate(candidate.id).catch((err: Error) => window.alert(err.message));
+          }}
+        />
+      )}
       {activePhotoCandidate && (
         <PhotoManager
           candidate={activePhotoCandidate}
@@ -2784,8 +2849,91 @@ function CustomColumnCell({ column, candidate, onSave }: {
   );
 }
 
-function CandidateRow({ candidate, group, dates, customColumns, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUpdateColumnValue, onUploadPhoto, onUploadPdf, isReorderDragging, isReorderTarget, onReorderDragStart, onReorderDragOver, onReorderDrop, onReorderDragEnd, onDeleteCandidate }: {
+function ToolbarButton({ icon, label, onClick, disabled = false }: {
+  icon?: ReactNode;
+  label: string;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex h-8 items-center gap-1.5 rounded px-2 text-[13px] font-medium ${
+        disabled ? "cursor-not-allowed text-gray-300" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+      }`}
+      title={disabled ? `${label} coming soon` : label}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function CandidateContextMenu({ candidate, x, y, onClose, onAddCandidate, onOpenPhotos, onOpenBlackbook, onDelete }: {
   candidate: OptionCandidate;
+  x: number;
+  y: number;
+  onClose: () => void;
+  onAddCandidate: () => void;
+  onOpenPhotos: () => void;
+  onOpenBlackbook: () => void;
+  onDelete: () => void;
+}) {
+  const top = Math.min(y, window.innerHeight - 330);
+  const left = Math.min(x, window.innerWidth - 280);
+  return (
+    <div
+      className="fixed z-[960] w-[260px] rounded-lg border border-gray-200 bg-white p-2 text-[13px] text-gray-700 shadow-2xl"
+      style={{ top, left }}
+      onMouseDown={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <button className="mb-1 flex h-10 w-full items-center gap-3 rounded-md border border-blue-300 px-3 text-left font-medium text-gray-800 hover:bg-blue-50" onClick={onClose}>
+        <Search size={16} className="text-gray-500" />
+        Ask Omni
+      </button>
+      <ContextMenuItem icon={<Plus size={16} />} label="Insert record below" onClick={onAddCandidate} />
+      <ContextMenuItem icon={<Copy size={16} />} label="Duplicate record" disabled />
+      <ContextMenuItem icon={<Maximize2 size={16} />} label="Expand record" disabled />
+      <div className="my-1 border-t border-gray-100" />
+      <ContextMenuItem icon={<ImageIcon size={16} />} label="Manage photos" onClick={onOpenPhotos} />
+      <ContextMenuItem icon={<BookOpen size={16} />} label={candidate.blackbookEntryId ? "Open Blackbook record" : "No Blackbook record"} onClick={candidate.blackbookEntryId ? onOpenBlackbook : undefined} disabled={!candidate.blackbookEntryId} />
+      <ContextMenuItem icon={<Share2 size={16} />} label="Copy record link" disabled />
+      <div className="my-1 border-t border-gray-100" />
+      <ContextMenuItem icon={<Trash2 size={16} />} label="Delete record" onClick={onDelete} destructive />
+    </div>
+  );
+}
+
+function ContextMenuItem({ icon, label, onClick, disabled = false, destructive = false }: {
+  icon: ReactNode;
+  label: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex h-9 w-full items-center gap-3 rounded-md px-3 text-left ${
+        disabled
+          ? "cursor-not-allowed text-gray-300"
+          : destructive
+            ? "text-rose-600 hover:bg-rose-50"
+            : "text-gray-700 hover:bg-gray-50"
+      }`}
+    >
+      <span className="text-gray-500">{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUpdateColumnValue, onUploadPhoto, onUploadPdf, isReorderDragging, isReorderTarget, onReorderDragStart, onReorderDragOver, onReorderDrop, onReorderDragEnd, onDeleteCandidate, onContextMenuOpen }: {
+  candidate: OptionCandidate;
+  rowIndex: number;
   group: OptionGroup;
   dates: MatrixDate[];
   customColumns: OptionColumn[];
@@ -2805,6 +2953,7 @@ function CandidateRow({ candidate, group, dates, customColumns, gridColumns, onO
   onReorderDrop: () => void;
   onReorderDragEnd: () => void;
   onDeleteCandidate: (candidateId: string) => Promise<void>;
+  onContextMenuOpen: (event: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   const [dragActive, setDragActive] = useState(false);
   const [dropUploading, setDropUploading] = useState(false);
@@ -2856,7 +3005,8 @@ function CandidateRow({ candidate, group, dates, customColumns, gridColumns, onO
           onReorderDrop();
         }
       }}
-      className={`relative grid min-h-[62px] items-center gap-x-2 border-b px-2 py-2 text-xs transition ${
+      onContextMenu={onContextMenuOpen}
+      className={`group relative grid min-h-[62px] items-center gap-x-2 border-b px-2 py-2 text-xs transition ${
         dragActive ? "border-gray-400 bg-blue-50 ring-1 ring-inset ring-blue-300" : isReorderTarget ? "border-gray-300 bg-gray-100 ring-1 ring-inset ring-gray-300" : "border-gray-100 hover:bg-[#fafafa]"
       } ${candidate.activeState === "RELEASED" ? "opacity-45" : ""} ${isReorderDragging ? "opacity-45" : ""}`}
       style={{ gridTemplateColumns: gridColumns }}
@@ -2866,6 +3016,19 @@ function CandidateRow({ candidate, group, dates, customColumns, gridColumns, onO
           Drop image{dropUploading ? " - uploading..." : "s here to add to this option"}
         </div>
       )}
+      <div className="flex items-center justify-center gap-1 text-gray-400">
+        <button
+          draggable
+          onDragStart={onReorderDragStart}
+          onDragEnd={onReorderDragEnd}
+          title="Drag to reorder"
+          className="grid h-7 w-4 cursor-grab place-items-center rounded text-[12px] leading-none opacity-0 active:cursor-grabbing group-hover:opacity-100 hover:bg-white hover:text-gray-900"
+        >
+          ⋮⋮
+        </button>
+        <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600 opacity-0 group-hover:opacity-100" aria-label={`Select row ${rowIndex}`} />
+        <span className="w-5 text-center text-[11px] tabular-nums group-hover:hidden">{rowIndex}</span>
+      </div>
       {customColumns.flatMap((column) => {
         if (column.key === "image") return [<PhotoThumb key={column.id} candidate={candidate} onOpen={onOpenPhotos} />];
         if (column.key === "option") {
@@ -2927,16 +3090,7 @@ function CandidateRow({ candidate, group, dates, customColumns, gridColumns, onO
         }
         return [<CustomColumnCell key={column.id} column={column} candidate={candidate} onSave={(value) => onUpdateColumnValue(candidate.id, column.id, value)} />];
       })}
-      <div className="flex items-center justify-center gap-0.5 opacity-45 transition hover:opacity-100">
-        <button
-          draggable
-          onDragStart={onReorderDragStart}
-          onDragEnd={onReorderDragEnd}
-          title="Drag to reorder"
-          className="grid h-7 w-5 cursor-grab place-items-center rounded text-[13px] leading-none text-gray-400 active:cursor-grabbing hover:bg-white hover:text-gray-900"
-        >
-          ⋮⋮
-        </button>
+      <div className="flex items-center justify-center gap-0.5 opacity-0 transition hover:opacity-100 group-hover:opacity-50">
         <button onClick={() => onDeleteCandidate(candidate.id)} title="Delete" className="grid h-7 w-4 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={12} /></button>
       </div>
     </div>
@@ -3099,6 +3253,7 @@ function CandidateLinksCell({ candidate, onUpdate, onUploadPdf }: {
       <div
         onContextMenu={(event) => {
           event.preventDefault();
+          event.stopPropagation();
           setOpen(true);
         }}
         title={links.length ? "Click an icon to open. Right-click to edit links." : "Right-click to add links."}
@@ -3115,6 +3270,7 @@ function CandidateLinksCell({ candidate, onUpdate, onUploadPdf }: {
             onClick={(event) => event.stopPropagation()}
             onContextMenu={(event) => {
               event.preventDefault();
+              event.stopPropagation();
               setOpen(true);
             }}
             className="grid h-6 w-6 place-items-center rounded text-gray-500 hover:bg-white hover:text-gray-900 hover:shadow-sm"
