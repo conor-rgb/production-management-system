@@ -1,3 +1,43 @@
+# HANDOVER - 2026-05-28 - Options Toolbar Constraint and Horizontal Scroll Follow-up
+
+## Built This Session
+- Fixed the remaining options candidate sheet width issue where the toolbar could still stretch the workspace and prevent rightward scrolling.
+- The selected candidate sheet root is now explicitly constrained with:
+  - `min-w-0`
+  - `overflow-hidden`
+  - full-width toolbar containment
+- The grid body now owns the horizontal scroll surface with:
+  - `width: 100%`
+  - `minWidth: calculated sheet width`
+- The add-candidate row now uses the same scroll canvas width, so it lines up with the grid columns.
+- Secondary placeholder toolbar actions are hidden more aggressively at narrower widths, keeping the core controls contained:
+  - Hide fields
+  - Filter
+  - Sort
+  - Field
+  - Candidate
+  - Design PDF
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- The options toolbar should stay inside the visible sheet area.
+- The options grid should scroll horizontally when columns exceed the viewport.
+- Candidate menus/popovers should remain unclipped by the old card wrapper.
+
+---
+
 # HANDOVER - 2026-05-28 - Options Horizontal Scroll and Toolbar Clamp Fix
 
 ## Built This Session
