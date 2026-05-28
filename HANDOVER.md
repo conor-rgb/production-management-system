@@ -1,3 +1,29 @@
+# HANDOVER - 2026-05-28 - Options Sparse Sheet Popover Clipping Fix
+
+## Built This Session
+- Fixed a clipping issue on newly-created option sheets with only one candidate row.
+- Candidate sheet row menus/popovers are no longer trapped inside the bordered sheet container.
+- Added minimum sheet height so sparse sheets have enough vertical room for right-click menus, contact/link/address popovers, and inline controls.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+
+## Backend
+- No backend or schema changes.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- New option boards with one row should no longer cut off row menus or popovers.
+- Existing dense sheets are unchanged except that popovers can overflow the table shell correctly.
+
+---
+
 # HANDOVER - 2026-05-28 - Project Module Nav Moved Into Top Workspace Header
 
 ## Built This Session

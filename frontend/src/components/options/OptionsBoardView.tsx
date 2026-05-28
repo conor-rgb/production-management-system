@@ -1765,7 +1765,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           )}
         </div>
       </div>
-      <div className="inline-block overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm" style={{ minWidth: minimumSheetWidth }}>
+      <div className="inline-block min-h-[360px] overflow-visible rounded-lg border border-gray-200 bg-white shadow-sm" style={{ minWidth: minimumSheetWidth }}>
         <div className="sticky top-0 z-20 grid h-8 items-center gap-x-2 border-b border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
           {visibleColumns.flatMap((column) => {
             const shared = {
