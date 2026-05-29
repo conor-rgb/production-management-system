@@ -1862,13 +1862,13 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <div className="min-w-max">
-        <div className="sticky top-0 z-20 grid min-h-9 items-center gap-x-2 border-b border-gray-200 bg-[#f8f8f6] px-3 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
-          <div>Requirement</div>
-          <div>Type / state</div>
+        <div className="sticky top-0 z-20 grid min-h-[42px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500" style={{ gridTemplateColumns: gridColumns }}>
+          <div className="h-full border-r border-[#dcdfe3] px-3 py-2">Requirement</div>
+          <div className="h-full border-r border-[#e6e6e3] px-3 py-2">Type / state</div>
           <div />
           {matrix.dates.map((date) => (
-            <div key={date.id} className="flex flex-col items-center gap-1 py-1">
-              <span className="text-center">{dateLabel(date)}</span>
+            <div key={date.id} className="flex min-h-[42px] flex-col items-center gap-1 border-r border-[#e6e6e3] px-2 py-1.5">
+              <span className="text-center text-[11px] font-semibold normal-case tracking-normal text-gray-800">{dateLabel(date)}</span>
               <PillDropdown
                 value={date.status}
                 options={DATE_STATUSES}
@@ -1880,8 +1880,8 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
         </div>
         {sections.map((section) => (
           <div key={section.id}>
-            <div className="grid min-h-10 items-center gap-x-2 border-b border-gray-200 bg-[#f4f4f1] px-3 text-xs" style={{ gridTemplateColumns: gridColumns }}>
-              <div className="flex min-w-0 items-center gap-2">
+            <div className="grid min-h-[44px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-xs" style={{ gridTemplateColumns: gridColumns }}>
+              <div className="flex min-w-0 items-center gap-2 border-r border-[#e6e6e3] px-3 py-2">
                 <span className="h-3 w-3 rounded-full" style={{ background: section.color }} />
                 {section.workstream ? (
                   <EditableText value={section.workstream.name} onSave={(name) => onUpdateWorkstream(section.workstream!.id, { name })} className="truncate text-[13px] font-semibold text-gray-900" />
@@ -1890,14 +1890,14 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
                 )}
                 <span className="rounded bg-white px-1.5 py-0.5 text-[10px] text-gray-400">{section.groups.reduce((sum, group) => sum + group.requirements.length, 0)} slots</span>
               </div>
-              <div className="text-[11px] text-gray-400">workstream</div>
+              <div className="border-r border-[#e6e6e3] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-400">workstream</div>
               <div />
-              {matrix.dates.map((date) => <div key={date.id} className="text-center text-[10px] text-gray-400">{dateLabel(date)}</div>)}
+              {matrix.dates.map((date) => <div key={date.id} className="border-r border-[#e6e6e3] px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-400">{dateLabel(date)}</div>)}
             </div>
             {section.groups.flatMap((group) => group.requirements.map((requirement, index) => (
-              <div key={requirement.id} className={`group grid min-h-12 items-center gap-x-2 border-b border-gray-100 px-3 text-xs hover:bg-[#f8f8f6] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
-                <div className="min-w-0">
-                  <EditableText value={requirement.displayLabel} onSave={(displayLabel) => onUpdateRequirement(requirement.id, { displayLabel })} className="font-semibold text-gray-900" />
+              <div key={requirement.id} className={`group grid min-h-[54px] items-center border-b border-[#ededeb] text-xs hover:bg-[#fbfbfa] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
+                <div className="min-w-0 border-r border-[#e6e6e3] px-3 py-2">
+                  <EditableText value={requirement.displayLabel} onSave={(displayLabel) => onUpdateRequirement(requirement.id, { displayLabel })} className="text-[13px] font-semibold text-gray-900" />
                   <div className="mt-0.5 flex min-w-0 items-center gap-2">
                     <button onClick={() => onOpenGroup(group.id)} className="truncate text-[11px] text-gray-400 hover:text-gray-900">Open {group.name} sheet {"->"} {group.candidates.length} records</button>
                     {index === 0 && (
@@ -1913,7 +1913,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 border-r border-[#e6e6e3] px-3 py-2">
                   <PillDropdown
                     value={requirement.type}
                     options={REQUIREMENT_TYPES}
@@ -1936,7 +1936,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
                   return (
                     <div
                       key={date.id}
-                      className="relative mx-auto flex min-h-8 min-w-[96px] items-center justify-center gap-1"
+                      className="relative flex min-h-[54px] min-w-[96px] items-center justify-center gap-1 border-r border-[#f0f0ee] px-2 py-1.5"
                     >
                       <button
                         title={candidateSummary(group, date.id)}
@@ -2418,8 +2418,8 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
       ) : (
       <div className="min-h-0 w-full flex-1 overflow-auto overscroll-contain bg-white">
         <div className="min-h-full bg-white" style={{ width: "100%", minWidth: minimumSheetWidth }}>
-          <div className="sticky top-0 z-20 grid h-8 items-center gap-x-2 border-y border-gray-200 bg-[#f8f8f6] px-2 text-[10px] uppercase tracking-[0.05em] text-gray-400" style={{ gridTemplateColumns: gridColumns }}>
-            <div className="flex items-center justify-center">
+          <div className="sticky top-0 z-20 grid min-h-[42px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500" style={{ gridTemplateColumns: gridColumns }}>
+            <div className="flex h-full items-center justify-center border-r border-[#dcdfe3]">
               <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600" aria-label="Select all candidates" />
             </div>
             {visibleColumns.flatMap((column) => {
@@ -3463,7 +3463,7 @@ function CustomColumnHeader({ column, isDropTarget, isDragging, sortKey, activeS
         event.preventDefault();
         onDrop();
       }}
-      className={`group/column relative flex h-full min-w-0 items-center gap-1 border-l border-gray-100 pl-1.5 pr-3 transition ${
+      className={`group/column relative flex h-full min-w-0 items-center gap-1 border-r border-[#e6e6e3] px-2 transition ${
         isDropTarget ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""
       } ${isDragging ? "bg-gray-100 opacity-55" : ""}`}
       title={`${column.label} · ${optionColumnTypeLabel(column.type)}`}
@@ -3508,13 +3508,13 @@ function CustomColumnHeader({ column, isDropTarget, isDragging, sortKey, activeS
               setEditing(false);
             }
           }}
-          className="min-w-0 flex-1 bg-transparent text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-700 outline-none"
+          className="min-w-0 flex-1 bg-transparent text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-700 outline-none"
         />
       ) : (
         <button
           onClick={() => { if (sortKey && onSort) onSort(sortKey); }}
           onDoubleClick={() => { if (!column.locked) setEditing(true); }}
-          className={`min-w-0 flex-1 truncate text-left ${active ? "font-semibold text-gray-700" : ""}`}
+          className={`min-w-0 flex-1 truncate text-left text-[10px] font-semibold uppercase tracking-[0.08em] ${active ? "text-gray-800" : "text-gray-500"}`}
         >
           {column.label}{active ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
         </button>
@@ -3596,7 +3596,7 @@ function DateStatusColumnHeader({ column, date, showControls, isDropTarget, isDr
         event.preventDefault();
         onDrop();
       }}
-      className={`relative flex h-full min-w-0 items-center justify-center border-l border-gray-100 px-1 transition ${isDropTarget ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""} ${isDragging ? "bg-gray-100 opacity-55" : ""}`}
+      className={`relative flex h-full min-w-0 items-center justify-center border-r border-[#e6e6e3] px-2 transition ${isDropTarget ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""} ${isDragging ? "bg-gray-100 opacity-55" : ""}`}
     >
       {isDropTarget && (
         <div className="pointer-events-none absolute inset-y-1 left-0 z-20 w-1 rounded-r-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.18)]" />
@@ -3618,9 +3618,9 @@ function DateStatusColumnHeader({ column, date, showControls, isDropTarget, isDr
           />
         </div>
       )}
-      <button onClick={onSort} className={`min-w-0 text-center ${active ? "font-semibold text-gray-700" : ""}`} title="Sort by this date">
-        <span className="block truncate text-[10px] font-semibold leading-3 text-gray-600">{parts.top}{active ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}</span>
-        <span className="block truncate text-[9px] leading-3 tracking-normal text-gray-400">{parts.bottom}</span>
+      <button onClick={onSort} className={`min-w-0 text-center ${active ? "font-semibold text-gray-800" : ""}`} title="Sort by this date">
+        <span className="block truncate text-[11px] font-semibold leading-3 normal-case tracking-normal text-gray-800">{parts.top}{active ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}</span>
+        <span className="block truncate text-[9px] font-semibold uppercase leading-3 tracking-[0.08em] text-gray-400">{parts.bottom}</span>
       </button>
     </div>
   );

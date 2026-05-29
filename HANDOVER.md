@@ -1,3 +1,45 @@
+# HANDOVER - 2026-05-29 - Crew & Suppliers Timeline-Style Grid Polish
+
+## Built This Session
+- Applied the clearer Timeline visual language to Crew & Suppliers matrix/table surfaces.
+- Matrix headers now use:
+  - pale `#f7f7f5` header background,
+  - stronger small bold date labels,
+  - cleaner vertical grid dividers,
+  - tighter row rhythm.
+- Workstream headers now feel closer to Timeline lane headers:
+  - compact colored lane dot,
+  - bold 13px lane title,
+  - slot count badge,
+  - date labels aligned over their columns.
+- Requirement rows now use Timeline-like grid borders and hover treatment.
+- Candidate/record sheet column headers now use the same clearer small bold uppercase treatment and vertical dividers.
+
+## Files Changed
+- `frontend/src/components/options/OptionsBoardView.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Crew & Suppliers now visually aligns more closely with Timeline:
+  - quieter canvas,
+  - clearer headers,
+  - more legible small title labels,
+  - less visual clutter between columns.
+
+## Suggested Next Steps
+- Apply the same row/header treatment to Budget grid headers and section rows.
+- Add a reusable grid style helper so Timeline, Crew & Suppliers, and Budget share one visual system instead of diverging.
+- Add participant auto-suggestion for Timeline meetings based on confirmed Crew & Suppliers records.
+
+---
+
 # HANDOVER - 2026-05-29 - Crew & Suppliers Matrix Owns Workstreams
 
 ## Built This Session
