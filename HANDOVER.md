@@ -1,3 +1,29 @@
+# HANDOVER - 2026-05-29 - Crew Sheet Column Alignment Fix
+
+## Built This Session
+- Fixed Crew & Suppliers record sheet column alignment.
+- Removed hidden grid gaps and row-level padding that caused header/body columns to drift.
+- Body cells now own their vertical divider lines, matching the Timeline grid approach.
+- Row control column now has a real right border, matching the header checkbox column.
+- Date/status cells no longer add extra left padding or extra borders that offset the grid.
+
+## Files Changed
+- `frontend/src/components/options/OptionsBoardView.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Crew & Suppliers record sheets should now have continuous vertical column lines through header and rows.
+- The sheet should feel much closer to the Timeline grid structure.
+
+---
+
 # HANDOVER - 2026-05-29 - Crew & Suppliers Timeline-Style Grid Polish
 
 ## Built This Session

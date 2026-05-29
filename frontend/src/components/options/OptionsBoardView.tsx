@@ -4166,7 +4166,7 @@ function OptionsGridCell({ candidateId, cellKey, active, onActivate, onKeyDown, 
       onFocus={onActivate}
       onMouseDownCapture={onActivate}
       onKeyDown={onKeyDown}
-      className={`relative flex min-h-[38px] min-w-0 items-center outline-none transition ${
+      className={`relative flex min-h-[62px] min-w-0 items-center border-r border-[#f0f0ee] px-2 py-1.5 outline-none transition ${
         active ? "z-10 bg-blue-50/20 ring-2 ring-inset ring-blue-500" : "focus:bg-blue-50/10 focus:ring-1 focus:ring-inset focus:ring-blue-300"
       } ${className}`}
     >
@@ -4269,7 +4269,7 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
         }
       }}
       onContextMenu={onContextMenuOpen}
-      className={`group relative grid min-h-[62px] items-center gap-x-2 border-b px-2 py-2 text-xs transition ${
+      className={`group relative grid min-h-[62px] items-center border-b text-xs transition ${
         dragActive ? "border-gray-400 bg-blue-50 ring-1 ring-inset ring-blue-300" : isReorderTarget ? "border-blue-200 bg-blue-50/35" : "border-gray-100 hover:bg-[#fafafa]"
       } ${candidate.activeState === "RELEASED" ? "opacity-45" : ""} ${isReorderDragging ? "opacity-45" : ""}`}
       style={{ gridTemplateColumns: gridColumns }}
@@ -4282,7 +4282,7 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
           Drop image{dropUploading ? " - uploading..." : "s here to add to this option"}
         </div>
       )}
-      <div className="flex items-center justify-center gap-1 text-gray-400">
+      <div className="flex min-h-[62px] items-center justify-center gap-1 border-r border-[#dcdfe3] text-gray-400">
         <button
           draggable
           onDragStart={onReorderDragStart}
@@ -4305,7 +4305,7 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
               </div>
               {candidate.subtitle && <div className="mt-1 truncate text-[11px] text-gray-400">{candidate.subtitle}</div>}
             </div>
-          ), "px-1")];
+          ))];
         }
         if (column.key === "date_statuses") {
           return dates.map((date) => {
@@ -4319,7 +4319,7 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
                   placeholder="blank"
                   compact
                 />
-            ), "justify-center border-l border-gray-100/80 pl-2");
+            ), "justify-center");
           });
         }
         if (column.key === "contact") {
@@ -4331,29 +4331,29 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
               onLink={(payload) => onLinkBlackbook(candidate.id, payload)}
               onOpenBlackbook={onOpenBlackbook}
             />
-          ), "px-1")];
+          ))];
         }
         if (column.key === "clientNotes") {
-          return [cell(column.id, <NoteCell value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} placeholder="Deck note" tone="deck" />, "px-1")];
+          return [cell(column.id, <NoteCell value={candidate.clientNotes ?? ""} onSave={(clientNotes) => onUpdateCandidate(candidate.id, { clientNotes })} placeholder="Deck note" tone="deck" />)];
         }
         if (column.key === "internalNotes") {
-          return [cell(column.id, <NoteCell value={candidate.internalNotes ?? ""} onSave={(internalNotes) => onUpdateCandidate(candidate.id, { internalNotes })} placeholder="Internal note" tone="internal" />, "px-1")];
+          return [cell(column.id, <NoteCell value={candidate.internalNotes ?? ""} onSave={(internalNotes) => onUpdateCandidate(candidate.id, { internalNotes })} placeholder="Internal note" tone="internal" />)];
         }
         if (column.key === "links") {
-          return [cell(column.id, <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />, "px-1")];
+          return [cell(column.id, <CandidateLinksCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} onUploadPdf={(file) => onUploadPdf(candidate.id, file)} />)];
         }
         if (column.key === "address") {
-          return [cell(column.id, <CandidateAddressCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />, "px-1")];
+          return [cell(column.id, <CandidateAddressCell candidate={candidate} onUpdate={(patch) => onUpdateCandidate(candidate.id, patch)} />)];
         }
         if (column.key === "rate") {
-          return [cell(column.id, <EditableText value={candidate.rate && candidate.rate > 0 ? candidate.rate.toString() : ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className={`pr-1 text-right tabular-nums ${candidate.rate && candidate.rate > 0 ? "text-gray-700" : "text-gray-300"}`} placeholder="—" />, "px-1")];
+          return [cell(column.id, <EditableText value={candidate.rate && candidate.rate > 0 ? candidate.rate.toString() : ""} onSave={(rate) => onUpdateCandidate(candidate.id, { rate: rate ? Number(rate) : null })} className={`pr-1 text-right tabular-nums ${candidate.rate && candidate.rate > 0 ? "text-gray-700" : "text-gray-300"}`} placeholder="—" />)];
         }
         if (column.key === "activeState") {
-          return [cell(column.id, <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />, "justify-center px-1")];
+          return [cell(column.id, <PillDropdown value={candidate.activeState} options={["ACTIVE", "PARKED", "RELEASED"] as const} onChange={(activeState) => activeState ? onUpdateCandidate(candidate.id, { activeState }) : Promise.resolve()} classNameForValue={(state) => state === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "PARKED" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 bg-gray-50 text-gray-500"} />, "justify-center")];
         }
-        return [cell(column.id, <CustomColumnCell column={column} candidate={candidate} onSave={(value) => onUpdateColumnValue(candidate.id, column.id, value)} />, "px-1")];
+        return [cell(column.id, <CustomColumnCell column={column} candidate={candidate} onSave={(value) => onUpdateColumnValue(candidate.id, column.id, value)} />)];
       })}
-      <div className="flex items-center justify-center gap-0.5 opacity-0 transition hover:opacity-100 group-hover:opacity-50">
+      <div className="flex min-h-[62px] items-center justify-center gap-0.5 opacity-0 transition hover:opacity-100 group-hover:opacity-50">
         <button onClick={() => onDeleteCandidate(candidate.id)} title="Delete" className="grid h-7 w-4 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={12} /></button>
       </div>
     </div>
