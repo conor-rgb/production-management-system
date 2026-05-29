@@ -627,15 +627,27 @@ function pipelineFor(group: OptionGroup, requirement: OptionRequirement, dateId:
   return "NEEDED";
 }
 
-function pipelineClass(state: PipelineState): string {
-  if (state === "CONFIRMED") return "border-emerald-300 bg-emerald-100 text-emerald-800";
-  if (state === "FIRST_OPTION") return "border-lime-300 bg-lime-100 text-lime-800";
-  if (state === "SECOND_OPTION") return "border-sky-300 bg-sky-100 text-sky-800";
-  if (state === "REQUESTED") return "border-violet-300 bg-violet-100 text-violet-800";
-  if (state === "NEEDED") return "border-amber-200 bg-amber-50 text-amber-800";
-  if (state === "UNAVAILABLE") return "border-gray-300 bg-gray-100 text-gray-500";
-  if (state === "RELEASED") return "border-gray-200 bg-gray-50 text-gray-400";
-  return "border-transparent bg-transparent text-gray-300";
+function pipelineCellClass(state: PipelineState, required: boolean): string {
+  if (!required) return "bg-white text-gray-300";
+  if (state === "CONFIRMED") return "bg-emerald-50/90 text-emerald-800";
+  if (state === "FIRST_OPTION") return "bg-lime-50/95 text-lime-800";
+  if (state === "SECOND_OPTION") return "bg-sky-50/90 text-sky-800";
+  if (state === "REQUESTED") return "bg-violet-50/90 text-violet-800";
+  if (state === "NEEDED") return "bg-amber-50/85 text-amber-800";
+  if (state === "UNAVAILABLE") return "bg-gray-100/70 text-gray-600";
+  if (state === "RELEASED") return "bg-gray-50/80 text-gray-400";
+  return "bg-white text-gray-300";
+}
+
+function pipelineMatrixButtonClass(state: PipelineState, required: boolean): string {
+  if (!required) return "text-gray-200 opacity-0 group-hover/need:opacity-100";
+  if (state === "CONFIRMED") return "text-emerald-800";
+  if (state === "FIRST_OPTION") return "text-lime-800";
+  if (state === "SECOND_OPTION") return "text-sky-800";
+  if (state === "REQUESTED") return "text-violet-800";
+  if (state === "NEEDED") return "text-amber-800";
+  if (state === "UNAVAILABLE") return "text-gray-600";
+  return "text-gray-400";
 }
 
 function holdClass(status: HoldStatus | null): string {
@@ -1886,7 +1898,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   onUpdateGroup: (groupId: string, patch: Partial<OptionGroup>) => Promise<void>;
   onUpdateWorkstream: (workstreamId: string, patch: Partial<MatrixWorkstream>) => Promise<void>;
 }) {
-  const gridColumns = `260px 132px 76px ${matrix.dates.map(() => "128px").join(" ")}`;
+  const gridColumns = `320px 118px 72px ${matrix.dates.map(() => "132px").join(" ")}`;
   const sections = [
     ...matrix.workstreams.map((workstream) => ({
       id: workstream.id,
@@ -1918,49 +1930,58 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <div className="min-w-max">
-        <div className="sticky top-0 z-20 grid min-h-[42px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500" style={{ gridTemplateColumns: gridColumns }}>
-          <div className="h-full border-r border-[#dcdfe3] px-3 py-2">Requirement</div>
-          <div className="h-full border-r border-[#e6e6e3] px-3 py-2">Type / state</div>
+        <div className="sticky top-0 z-20 grid min-h-[50px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500" style={{ gridTemplateColumns: gridColumns }}>
+          <div className="flex h-full items-center border-r border-[#dcdfe3] px-4">Requirement</div>
+          <div className="flex h-full items-center border-r border-[#e6e6e3] px-3">Kind</div>
           <div />
           {matrix.dates.map((date) => (
-            <div key={date.id} className="flex min-h-[42px] flex-col items-center gap-1 border-r border-[#e6e6e3] px-2 py-1.5">
-              <span className="text-center text-[11px] font-semibold normal-case tracking-normal text-gray-800">{dateLabel(date)}</span>
+            <div key={date.id} className="flex min-h-[50px] flex-col items-center justify-center gap-1 border-r border-[#dcdfe3] bg-[#fbfbf8] px-2 py-1.5">
+              <span className="text-center text-[11px] font-semibold normal-case tracking-normal text-gray-900">{compactDateLabel(date).top}</span>
+              <span className="-mt-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-gray-400">{compactDateLabel(date).bottom}</span>
               <PillDropdown
                 value={date.status}
                 options={DATE_STATUSES}
                 onChange={(status) => status ? onUpdateDate(date.id, { status }) : Promise.resolve()}
                 classNameForValue={dateStatusClass}
+                compact
               />
             </div>
           ))}
         </div>
         {sections.map((section) => (
           <div key={section.id}>
-            <div className="grid min-h-[44px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-xs" style={{ gridTemplateColumns: gridColumns }}>
-              <div className="flex min-w-0 items-center gap-2 border-r border-[#e6e6e3] px-3 py-2">
-                <span className="h-3 w-3 rounded-full" style={{ background: section.color }} />
+            <div className="grid min-h-[46px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-xs" style={{ gridTemplateColumns: gridColumns }}>
+              <div className="flex min-w-0 items-center gap-3 border-r border-[#dcdfe3] px-4 py-2" style={{ gridColumn: "1 / 4" }}>
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: section.color }} />
                 {section.workstream ? (
                   <EditableText value={section.workstream.name} onSave={(name) => onUpdateWorkstream(section.workstream!.id, { name })} className="truncate text-[13px] font-semibold text-gray-900" />
                 ) : (
                   <span className="truncate text-[13px] font-semibold text-gray-500">Unassigned</span>
                 )}
-                <span className="rounded bg-white px-1.5 py-0.5 text-[10px] text-gray-400">{section.groups.reduce((sum, group) => sum + group.requirements.length, 0)} slots</span>
+                <span className="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-400">{section.groups.reduce((sum, group) => sum + group.requirements.length, 0)} requirements</span>
               </div>
-              <div className="border-r border-[#e6e6e3] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-400">workstream</div>
-              <div />
-              {matrix.dates.map((date) => <div key={date.id} className="border-r border-[#e6e6e3] px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-400">{dateLabel(date)}</div>)}
+              {matrix.dates.map((date) => {
+                const requiredCount = section.groups.reduce((sum, group) => (
+                  sum + group.requirements.filter((requirement) => needFor(requirement, date.id)?.isRequired).length
+                ), 0);
+                return (
+                  <div key={date.id} className="flex h-full items-center justify-center border-r border-[#e6e6e3] bg-[#fbfbf8] px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+                    {requiredCount > 0 ? `${requiredCount} needed` : ""}
+                  </div>
+                );
+              })}
             </div>
             {section.groups.flatMap((group) => group.requirements.map((requirement, index) => (
-              <div key={requirement.id} className={`group grid min-h-[54px] items-center border-b border-[#ededeb] text-xs hover:bg-[#fbfbfa] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
-                <div className="min-w-0 border-r border-[#e6e6e3] px-3 py-2">
+              <div key={requirement.id} className={`group grid min-h-[58px] items-center border-b border-[#ededeb] text-xs hover:bg-[#fbfbfa] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
+                <div className="min-w-0 border-r border-[#e6e6e3] px-4 py-2">
                   <EditableText value={requirement.displayLabel} onSave={(displayLabel) => onUpdateRequirement(requirement.id, { displayLabel })} className="text-[13px] font-semibold text-gray-900" />
-                  <div className="mt-0.5 flex min-w-0 items-center gap-2">
-                    <button onClick={() => onOpenGroup(group.id)} className="truncate text-[11px] text-gray-400 hover:text-gray-900">Open {group.name} sheet {"->"} {group.candidates.length} records</button>
+                  <div className="mt-1 flex min-w-0 items-center gap-2">
+                    <button onClick={() => onOpenGroup(group.id)} className="truncate text-[11px] font-medium text-gray-400 hover:text-gray-900">{group.candidates.length} records in {group.name}</button>
                     {index === 0 && (
                       <select
                         value={group.workstreamId ?? ""}
                         onChange={(event) => onUpdateGroup(group.id, { workstreamId: event.target.value || null })}
-                        className="h-5 max-w-[108px] rounded border border-transparent bg-transparent px-1 text-[10px] text-gray-400 hover:border-gray-200 hover:bg-white"
+                        className="h-5 max-w-[118px] rounded border border-transparent bg-transparent px-1 text-[10px] text-gray-400 hover:border-gray-200 hover:bg-white"
                         title="Move this sheet to another workstream"
                       >
                         <option value="">Unassigned</option>
@@ -1975,6 +1996,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
                     options={REQUIREMENT_TYPES}
                     onChange={(type) => type ? onUpdateRequirement(requirement.id, { type }) : Promise.resolve()}
                     classNameForValue={() => "border-gray-200 bg-gray-50 text-gray-600"}
+                    compact
                   />
                 </div>
                 <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
@@ -1992,7 +2014,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
                   return (
                     <div
                       key={date.id}
-                      className="relative flex min-h-[54px] min-w-[96px] items-center justify-center gap-1 border-r border-[#f0f0ee] px-2 py-1.5"
+                      className={`group/need relative flex min-h-[58px] min-w-[96px] items-center justify-center gap-1 border-r border-[#f0f0ee] px-2 py-1.5 ${pipelineCellClass(pipeline, isRequired)}`}
                     >
                       <button
                         title={candidateSummary(group, date.id)}
@@ -2001,9 +2023,9 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
                           event.stopPropagation();
                           onOpenGroup(group.id);
                         }}
-                        className={`inline-flex min-h-8 min-w-[82px] items-center justify-center rounded border px-2 text-[11px] font-semibold ${pipelineClass(pipeline)}`}
+                        className={`inline-flex min-h-8 min-w-[86px] items-center justify-center rounded-sm border border-transparent bg-transparent px-2 text-[11px] font-semibold hover:bg-white/45 ${pipelineMatrixButtonClass(pipeline, isRequired)}`}
                       >
-                        {isRequired ? shownCandidate?.name ?? shortPipeline(pipeline) : ""}
+                        {isRequired ? shownCandidate?.name ?? shortPipeline(pipeline) : "Set"}
                       </button>
                       {isRequired && (
                         <AssignmentDropdown

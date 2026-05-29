@@ -1,3 +1,40 @@
+# HANDOVER - 2026-05-29 - Crew Matrix Cleanup
+
+## Built This Session
+- Cleaned up the Crew & Suppliers Matrix page.
+- Removed repeated date labels inside every workstream header row.
+- Workstream headers now span the left identity columns and show a compact requirement count.
+- Top date headers now use the clearer two-line date treatment and compact date-state controls.
+- Requirement rows now have a wider, clearer name column.
+- Matrix date cells now fill with pipeline colour like the record sheets:
+  - confirmed,
+  - first option,
+  - second option,
+  - requested,
+  - needed,
+  - unavailable/released.
+- Empty/not-required cells are quieter at rest and show a subtle "Set" affordance on hover.
+
+## Files Changed
+- `frontend/src/components/options/OptionsBoardView.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Matrix should now read more like a clean master planning grid:
+  - workstreams are section dividers,
+  - requirements are clear rows,
+  - date cells carry the planning status visually,
+  - less repeated text and less button noise.
+
+---
+
 # HANDOVER - 2026-05-29 - Crew Sheet Sticky Identity Columns
 
 ## Built This Session
