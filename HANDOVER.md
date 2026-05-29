@@ -1,3 +1,105 @@
+# HANDOVER - 2026-05-29 - Project Timeline Workstreams and Calendar-Linked Actions
+
+## Built This Session
+- Added the first production timeline foundation:
+  - option groups now become project workstream lanes,
+  - dated actions/tasks can be created inside a workstream lane,
+  - actions can link to option requirements, option candidates, blackbook entries, email threads/messages, and calendar events.
+- Added Google Calendar-backed scheduling for project actions:
+  - dated actions create/update a `CalendarEvent`,
+  - the existing Google Calendar push service syncs those events out so reminders can appear on phone/calendar.
+- Added a new Production module tab:
+  - `Timeline`
+  - It shows a 14-day lane view, with option groups down the left and dates across the top.
+  - Double-clicking a lane/date cell creates an action.
+  - Clicking an action opens a right-side editor.
+- Added email-message action hooks:
+  - expanded email messages now expose a small `+ task` hover action,
+  - this creates a production action linked to that exact email message,
+  - if the thread is not linked to a production, the endpoint returns a clear error.
+
+## Backend
+- Updated `backend/prisma/schema.prisma`.
+- Added migration:
+  - `backend/prisma/migrations/20260529140000_project_workstreams_actions/migration.sql`
+- Added API route:
+  - `backend/src/routes/projectActions.ts`
+- Mounted route:
+  - `/api/project-actions`
+- New models:
+  - `ProjectWorkstream`
+  - `ProjectAction`
+- New enums:
+  - `ProjectActionType`
+  - `ProjectActionStatus`
+  - `ProjectActionVisibility`
+- New endpoints:
+  - `GET /api/project-actions/production/:productionId`
+  - `POST /api/project-actions/production/:productionId/workstreams`
+  - `PATCH /api/project-actions/workstreams/:workstreamId`
+  - `POST /api/project-actions/production/:productionId/actions`
+  - `PATCH /api/project-actions/actions/:actionId`
+  - `DELETE /api/project-actions/actions/:actionId`
+  - `POST /api/project-actions/email/messages/:messageId/actions`
+- Migration note:
+  - Prisma diff again tried to drop `pms_sessions`.
+  - That unrelated `DROP TABLE` was removed before deploy.
+
+## Frontend
+- Added:
+  - `frontend/src/components/timeline/ProductionTimelineView.tsx`
+- Updated:
+  - `frontend/src/pages/Productions.tsx`
+  - `frontend/src/pages/Email.tsx`
+  - `frontend/src/lib/types.ts`
+- Production navigation now includes `Timeline`.
+- Email message rows can create a linked project task from the exact message.
+
+## Deployment / Verification
+- Prisma migration deployed successfully.
+- Prisma client regenerated.
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- This is a working foundation, not the final Fantastical/Spark-level polish.
+- Workstream lanes are currently generated from option groups, which matches the intended structure:
+  - Photo, Styling, Locations, Catering, etc.
+- Confirmed option assignments are surfaced in the lane label area when available.
+- Project actions are the central link object for:
+  - internal tasks,
+  - client-facing timeline items,
+  - Google Calendar reminders,
+  - exact email-message context.
+
+## Suggested Next Steps
+- Build the full global Calendar workspace:
+  - layered personal diary,
+  - all project timelines,
+  - toggle visible productions/workstreams.
+- Upgrade the production Timeline view:
+  - drag actions between dates/lanes,
+  - resize multi-day items,
+  - better client/internal visibility controls,
+  - lane color settings.
+- Add a task/action inbox:
+  - overdue,
+  - due today,
+  - waiting,
+  - blocked,
+  - by project/workstream.
+- Upgrade email around this:
+  - show linked tasks under each thread,
+  - create action from selected text,
+  - open a thread with one exact linked message expanded and the rest collapsed.
+- Add client timeline PDF/export after the on-screen workflow is stable.
+
+---
+
 # HANDOVER - 2026-05-29 - Budget Transfers, Version Metadata, and Estimate PDF Polish
 
 ## Built This Session

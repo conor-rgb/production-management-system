@@ -17,6 +17,7 @@ import filesRoutes from "./routes/files";
 import emailRoutes, { googleOAuthCallbackHandler } from "./routes/email";
 import receiptsRoutes from "./routes/receipts";
 import calendarRoutes from "./routes/calendar";
+import projectActionsRoutes from "./routes/projectActions";
 import settingsRoutes from "./routes/settings";
 import optionsRoutes from "./routes/options";
 import publicOptionsRoutes from "./routes/publicOptions";
@@ -78,6 +79,7 @@ export function createServer() {
   app.use("/api/email", requireAuth, emailRoutes);
   app.use("/api/receipts", requireAuth, receiptsRoutes);
   app.use("/api/calendar", requireAuth, calendarRoutes);
+  app.use("/api/project-actions", requireAuth, projectActionsRoutes);
   app.use("/api/settings", requireAuth, settingsRoutes);
   app.use("/api/options", requireAuth, optionsRoutes);
 

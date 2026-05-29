@@ -587,6 +587,7 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
 function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onArchive, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; focusedMessageId: string | null; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onArchive: () => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
   const [expandedAttachments, setExpandedAttachments] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [actionSavingId, setActionSavingId] = useState<string | null>(null);
   const attachments = thread.attachments ?? [];
   const visibleAttachments = expandedAttachments ? attachments : attachments.slice(0, 3);
   const latestId = thread.messages[thread.messages.length - 1]?.id;
@@ -595,6 +596,21 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
     return new Set(thread.messages.filter((message) => message.id === latestId || (!message.isFromMe && !thread.isRead)).map((message) => message.id));
   }, [thread.messages, latestId, thread.isRead, focusedMessageId]);
   const participantNames = thread.participantNames?.join(", ") || thread.participants.join(", ");
+
+  async function createActionFromMessage(message: EmailMessage) {
+    setActionSavingId(message.id);
+    try {
+      await api.post(`/api/project-actions/email/messages/${message.id}/actions`, {
+        title: `Follow up: ${thread.subject}`,
+        productionId: thread.linkedProduction?.id,
+        startAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Link this thread to a production before creating a task.");
+    } finally {
+      setActionSavingId(null);
+    }
+  }
 
   return (
     <>
@@ -658,6 +674,8 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
             defaultExpanded={defaultExpanded.has(message.id)}
             focused={focusedMessageId === message.id}
             showNewDivider={index > 0 && !message.isFromMe && !thread.isRead}
+            onCreateAction={() => createActionFromMessage(message)}
+            creatingAction={actionSavingId === message.id}
           />
         ))}
       </div>
@@ -1040,7 +1058,7 @@ function AttachmentChip({ attachment, filing, onOpen }: { attachment: EmailAttac
   );
 }
 
-function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, defaultExpanded, focused, showNewDivider }: { message: EmailMessage; filingAttachment: string; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; latest: boolean; defaultExpanded: boolean; focused: boolean; showNewDivider: boolean }) {
+function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, defaultExpanded, focused, showNewDivider, onCreateAction, creatingAction }: { message: EmailMessage; filingAttachment: string; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; latest: boolean; defaultExpanded: boolean; focused: boolean; showNewDivider: boolean; onCreateAction: () => void; creatingAction: boolean }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const articleRef = useRef<HTMLElement | null>(null);
   const [showImages, setShowImages] = useState(false);
@@ -1109,6 +1127,13 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, def
           </span>
           <span className="text-xs text-gray-400">{fullTimeLabel(message.sentAt)}</span>
           <span className="flex items-center gap-1">
+            <span
+              onClick={(event) => { event.stopPropagation(); onCreateAction(); }}
+              className="hidden rounded-full bg-white px-2 py-1 text-[10px] font-medium text-gray-500 shadow-sm ring-1 ring-gray-200 hover:text-gray-900 group-hover:inline-flex"
+              title="Create timeline task from this email"
+            >
+              {creatingAction ? "Saving..." : "+ task"}
+            </span>
             <MoreHorizontal size={15} className="hidden text-gray-400 group-hover:block" />
             {expanded ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
           </span>

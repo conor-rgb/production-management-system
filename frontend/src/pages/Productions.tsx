@@ -6,6 +6,7 @@ import BudgetView from "../components/budgets/BudgetView";
 import FileBrowser from "../components/files/FileBrowser";
 import CalendarView from "../components/calendar/CalendarView";
 import OptionsBoardView from "../components/options/OptionsBoardView";
+import ProductionTimelineView from "../components/timeline/ProductionTimelineView";
 import type {
   ActivityNote,
   ActivityTask,
@@ -50,7 +51,7 @@ const JOB_TYPES: PmsJobType[] = ["STILLS", "MOTION", "EVENTS"];
 const DATE_TYPES: ProductionDateType[] = ["PPM", "RECCE", "FITTING", "MEETING", "SHOOT_DAY", "POST_DELIVERY", "OTHER"];
 const CREW_STATUSES: CrewStatus[] = ["REQUESTED", "FIRST_OPTION", "SECOND_OPTION", "CONFIRMED", "RELEASED"];
 const INVOICE_STATUSES: FreeAgentInvoiceStatus[] = ["NOT_RAISED", "DRAFT", "SENT", "VIEWED", "PAID", "OVERDUE"];
-const TABS = ["Overview", "Dates", "Crew", "Options", "Budget", "POs", "Comms", "Files"] as const;
+const TABS = ["Overview", "Options", "Budget", "Timeline", "Dates", "Crew", "POs", "Comms", "Files"] as const;
 type Tab = typeof TABS[number];
 const PO_STATUSES: PurchaseOrderStatus[] = ["DRAFT", "SENT", "ACCEPTED", "PART_BILLED", "BILLED", "PAID", "CANCELLED"];
 type ParsedBill = {
@@ -86,6 +87,7 @@ function tabFromQuery(value: string | null): Tab {
   if (normalized === "files") return "Files";
   if (normalized === "budget") return "Budget";
   if (normalized === "options") return "Options";
+  if (normalized === "timeline") return "Timeline";
   if (normalized === "pos" || normalized === "purchase-orders") return "POs";
   return "Overview";
 }
@@ -386,11 +388,12 @@ function ProductionWorkspace({ productionId, selectedListProduction, initialTab,
   }
 
   const projectName = [production.brand, production.clientName].filter(Boolean).join(" x ") || production.title || production.jobCode || "Project";
-  const modules: Tab[] = ["Overview", "Options", "Budget", "Dates", "Crew", "POs", "Comms", "Files"];
+  const modules: Tab[] = ["Overview", "Options", "Budget", "Timeline", "Dates", "Crew", "POs", "Comms", "Files"];
   const moduleLabel: Record<Tab, string> = {
     Overview: "Overview",
     Options: "Options",
     Budget: "Budget",
+    Timeline: "Timeline",
     Dates: "Dates",
     Crew: "Crew List",
     POs: "POs",
@@ -444,6 +447,7 @@ function ProductionWorkspace({ productionId, selectedListProduction, initialTab,
             <WorkspaceViewRail tab={tab} />
             <div className="min-w-0 flex-1 overflow-auto p-4">
               {tab === "Overview" && <OverviewTab production={production} onSave={saveOverview} onStatusSaved={(p) => { setProduction(p); onSaved(); }} onInvoicePrompt={onInvoicePrompt} onOpenBudget={() => selectModule("Budget")} />}
+              {tab === "Timeline" && <ProductionTimelineView productionId={production.id} />}
               {tab === "Dates" && <DatesTab production={production} onReload={reload} />}
               {tab === "Crew" && <CrewTab production={production} onReload={reload} />}
               {tab === "Comms" && <CommsTab production={production} onReload={reload} />}
@@ -541,6 +545,7 @@ function ProductionDetail({ productionId, onClose, onSaved, onInvoicePrompt, ini
       <div className="flex-1 overflow-auto p-4">
         {tab === "Overview" && <OverviewTab production={production} onSave={saveOverview} onStatusSaved={(p) => { setProduction(p); onSaved(); }} onInvoicePrompt={onInvoicePrompt} onOpenBudget={onOpenBudget} />}
         {tab === "Dates" && <DatesTab production={production} onReload={reload} />}
+        {tab === "Timeline" && <ProductionTimelineView productionId={production.id} />}
         {tab === "Crew" && <CrewTab production={production} onReload={reload} />}
         {tab === "Comms" && <CommsTab production={production} onReload={reload} />}
         {tab === "Files" && <FileBrowser productionId={production.id} />}

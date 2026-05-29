@@ -262,6 +262,36 @@ enum CalendarEventType {
   @@map("pms_calendar_event_type")
 }
 
+enum ProjectActionType {
+  TASK
+  DEADLINE
+  EVENT
+  MEETING
+  TRAVEL
+  SHOOT
+  REMINDER
+
+  @@map("pms_project_action_type")
+}
+
+enum ProjectActionStatus {
+  TODO
+  IN_PROGRESS
+  WAITING
+  DONE
+  BLOCKED
+  CANCELLED
+
+  @@map("pms_project_action_status")
+}
+
+enum ProjectActionVisibility {
+  INTERNAL
+  CLIENT
+
+  @@map("pms_project_action_visibility")
+}
+
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 model Settings {
@@ -450,6 +480,7 @@ model BlackbookEntry {
   addresses        BlackbookAddress[]
   optionCandidates OptionCandidate[]
   purchaseOrders   PurchaseOrderGroup[]
+  projectActions   ProjectAction[]
   contactId        String?
   contact          Contact?                   @relation(fields: [contactId], references: [id], onDelete: SetNull)
   categoryConfig   BlackbookConfigCategory?   @relation(fields: [categoryConfigId], references: [id], onDelete: SetNull)
@@ -588,6 +619,8 @@ model Production {
   emailDrafts            EmailDraft[]
   receiptCaptures        ReceiptCapture[]
   calendarEvents         CalendarEvent[]
+  projectWorkstreams     ProjectWorkstream[]
+  projectActions         ProjectAction[]
   optionsBoard           OptionsBoard?
   optionGroups           OptionGroup[]
   optionRequirements     OptionRequirement[]
@@ -623,6 +656,7 @@ model OptionGroup {
   columns      OptionColumn[]
   savedViews   OptionSavedView[]
   deckTemplate OptionDeckTemplate?
+  workstreams  ProjectWorkstream[]
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
 
@@ -678,6 +712,7 @@ model OptionRequirement {
   order        Int                    @default(0)
   dateNeeds    RequirementDateNeed[]
   assignments  OptionSlotAssignment[]
+  projectActions ProjectAction[]
   createdAt    DateTime               @default(now())
   updatedAt    DateTime               @updatedAt
 
@@ -749,6 +784,7 @@ model OptionCandidate {
   photos            OptionCandidatePhoto[]
   columnValues       OptionColumnValue[]
   purchaseOrders    PurchaseOrderGroup[]
+  projectActions    ProjectAction[]
   createdAt         DateTime                    @default(now())
   updatedAt         DateTime                    @updatedAt
 
@@ -1048,6 +1084,7 @@ model CalendarEvent {
   lastSyncedAt          DateTime?
   production            Production?       @relation(fields: [productionId], references: [id], onDelete: SetNull)
   opportunity           Opportunity?      @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  projectAction         ProjectAction?
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
 
@@ -1058,6 +1095,69 @@ model CalendarEvent {
   @@index([opportunityId])
   @@index([googleCalendarEventId])
   @@map("pms_calendar_events")
+}
+
+model ProjectWorkstream {
+  id                      String          @id @default(uuid())
+  productionId            String
+  optionGroupId           String?
+  name                    String
+  color                   String?
+  order                   Int             @default(0)
+  visibleOnClientTimeline Boolean         @default(true)
+  actions                 ProjectAction[]
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  production  Production   @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  optionGroup OptionGroup? @relation(fields: [optionGroupId], references: [id], onDelete: SetNull)
+
+  @@unique([productionId, optionGroupId])
+  @@index([productionId, order])
+  @@map("pms_project_workstreams")
+}
+
+model ProjectAction {
+  id                String                  @id @default(uuid())
+  productionId      String
+  workstreamId      String?
+  title             String
+  description       String?
+  actionType        ProjectActionType       @default(TASK)
+  visibility        ProjectActionVisibility @default(INTERNAL)
+  status            ProjectActionStatus     @default(TODO)
+  startAt           DateTime?
+  endAt             DateTime?
+  isAllDay          Boolean                 @default(true)
+  location          String?
+  zoomLink          String?
+  reminderMinutes   Int?
+  roleRequirementId String?
+  optionCandidateId String?
+  blackbookEntryId  String?
+  emailThreadId     String?
+  emailMessageId    String?
+  calendarEventId   String?                 @unique
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  production      Production         @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  workstream      ProjectWorkstream? @relation(fields: [workstreamId], references: [id], onDelete: SetNull)
+  roleRequirement OptionRequirement? @relation(fields: [roleRequirementId], references: [id], onDelete: SetNull)
+  optionCandidate OptionCandidate?   @relation(fields: [optionCandidateId], references: [id], onDelete: SetNull)
+  blackbookEntry  BlackbookEntry?    @relation(fields: [blackbookEntryId], references: [id], onDelete: SetNull)
+  emailThread     EmailThread?       @relation(fields: [emailThreadId], references: [id], onDelete: SetNull)
+  emailMessage    EmailMessage?      @relation(fields: [emailMessageId], references: [id], onDelete: SetNull)
+  calendarEvent   CalendarEvent?     @relation(fields: [calendarEventId], references: [id], onDelete: SetNull)
+
+  @@index([productionId, startAt])
+  @@index([workstreamId])
+  @@index([roleRequirementId])
+  @@index([optionCandidateId])
+  @@index([blackbookEntryId])
+  @@index([emailThreadId])
+  @@index([emailMessageId])
+  @@map("pms_project_actions")
 }
 
 // ─── Crew ─────────────────────────────────────────────────────────────────────
@@ -1505,6 +1605,7 @@ model EmailThread {
   linkedProductionId  String?
   linkedProduction    Production?    @relation(fields: [linkedProductionId], references: [id], onDelete: SetNull)
   messages            EmailMessage[]
+  projectActions      ProjectAction[]
   sourceJobFiles      JobFile[]      @relation("JobFileSourceEmailThread")
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
@@ -1578,6 +1679,7 @@ model EmailMessage {
   imapMailbox        String?
   imapUid            Int?
   sourceJobFiles     JobFile[]   @relation("JobFileSourceEmailMessage")
+  projectActions     ProjectAction[]
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 

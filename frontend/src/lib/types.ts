@@ -19,6 +19,9 @@ export type AdvanceCalcType = "PERCENT_OF_TOTAL" | "PERCENT_OF_PRODUCTION" | "FI
 export type ReceiptCaptureStatus = "PENDING" | "PARSING" | "PARSED" | "ASSIGNED" | "FAILED";
 export type EmailProvider = "GOOGLE" | "IMAP";
 export type CalendarEventType = "SHOOT_DAY" | "PPM" | "RECCE" | "FITTING" | "MEETING" | "POST_DELIVERY" | "FOLLOW_UP" | "GOOGLE_SYNC" | "STANDALONE" | "OTHER";
+export type ProjectActionType = "TASK" | "DEADLINE" | "EVENT" | "MEETING" | "TRAVEL" | "SHOOT" | "REMINDER";
+export type ProjectActionStatus = "TODO" | "IN_PROGRESS" | "WAITING" | "DONE" | "BLOCKED" | "CANCELLED";
+export type ProjectActionVisibility = "INTERNAL" | "CLIENT";
 
 export interface Company {
   id: string;
@@ -371,6 +374,67 @@ export interface Production {
   emailThreads: EmailThread[];
   activityNotes?: ActivityNote[];
   activityTasks?: ActivityTask[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectWorkstream {
+  id: string;
+  productionId: string;
+  optionGroupId?: string | null;
+  name: string;
+  color?: string | null;
+  order: number;
+  visibleOnClientTimeline: boolean;
+  optionGroup?: {
+    id: string;
+    name: string;
+    requirements?: Array<{
+      id: string;
+      name: string;
+      displayLabel: string;
+      activeState: string;
+      assignments?: Array<{
+        id: string;
+        dateId: string;
+        candidateId: string;
+        candidate?: { id: string; name: string; blackbookEntry?: { id: string; displayName: string } | null };
+      }>;
+    }>;
+    candidates?: Array<{
+      id: string;
+      name: string;
+      activeState: string;
+      blackbookEntry?: { id: string; displayName: string; email?: string | null; phone?: string | null } | null;
+      dateStatuses?: Array<{ id: string; dateId: string; status: string }>;
+    }>;
+  } | null;
+}
+
+export interface ProjectAction {
+  id: string;
+  productionId: string;
+  workstreamId?: string | null;
+  title: string;
+  description?: string | null;
+  actionType: ProjectActionType;
+  visibility: ProjectActionVisibility;
+  status: ProjectActionStatus;
+  startAt?: string | null;
+  endAt?: string | null;
+  isAllDay: boolean;
+  location?: string | null;
+  zoomLink?: string | null;
+  reminderMinutes?: number | null;
+  roleRequirementId?: string | null;
+  optionCandidateId?: string | null;
+  blackbookEntryId?: string | null;
+  emailThreadId?: string | null;
+  emailMessageId?: string | null;
+  calendarEventId?: string | null;
+  workstream?: ProjectWorkstream | null;
+  emailThread?: { id: string; subject: string; gmailThreadId?: string | null } | null;
+  emailMessage?: { id: string; subject: string; fromAddress: string; fromName?: string | null; sentAt: string; snippet?: string | null } | null;
   createdAt: string;
   updatedAt: string;
 }
