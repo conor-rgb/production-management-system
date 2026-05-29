@@ -1,3 +1,34 @@
+# HANDOVER - 2026-05-29 - Cost Lines Drawer Layout Tune-up
+
+## Built This Session
+- Tuned the budget `Cost lines` side drawer.
+- Fixed type dropdown clipping when only one/few cost lines exist:
+  - removed clipping from the cost-lines table card,
+  - side panel now allows horizontal overflow for floating menus,
+  - last row type dropdown opens upward so it does not disappear under the row container.
+- Cleaned up the drawer row grid:
+  - widened the type column,
+  - tightened amount/status/action columns,
+  - increased row minimum height slightly,
+  - reduced status padding so text no longer collides with delete/actions.
+- No backend or schema changes.
+
+## Frontend
+- Updated `frontend/src/components/budgets/BudgetView.tsx`.
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Cost-line type menus should no longer get hidden inside the drawer table when there are too few rows.
+- Drawer layout should read cleaner for single-line and short-list cost workflows.
+
+---
+
 # HANDOVER - 2026-05-29 - Budget Available Balance and Quick Cost Workflow
 
 ## Built This Session

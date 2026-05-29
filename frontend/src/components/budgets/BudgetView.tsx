@@ -1306,7 +1306,7 @@ function CostLineAddButton({ lineType, onClick }: { lineType: SubCostLineType; o
   );
 }
 
-function CostLineTypePill({ lineType, onChange }: { lineType: SubCostLineType; onChange: (lineType: SubCostLineType) => void }) {
+function CostLineTypePill({ lineType, onChange, menuPlacement = "bottom" }: { lineType: SubCostLineType; onChange: (lineType: SubCostLineType) => void; menuPlacement?: "top" | "bottom" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1316,13 +1316,14 @@ function CostLineTypePill({ lineType, onChange }: { lineType: SubCostLineType; o
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
   }, []);
+  const menuClass = menuPlacement === "top" ? "bottom-7" : "top-7";
   return (
     <div ref={ref} className="relative flex items-center justify-center">
-      <button onClick={() => setOpen(!open)} className={`max-w-[44px] truncate rounded border px-1 py-1 text-[10px] font-medium ${lineTypeClass(lineType)}`}>
+      <button onClick={() => setOpen(!open)} className={`max-w-[68px] truncate rounded border px-1.5 py-1 text-[10px] font-medium ${lineTypeClass(lineType)}`}>
         {lineTypeLabel(lineType)} ▾
       </button>
       {open && (
-        <div className="absolute left-0 top-7 z-40 w-24 rounded-md border border-[#e3e3dd] bg-[#fffefa] py-1 shadow-[0_10px_24px_rgba(20,20,20,0.10)]">
+        <div className={`absolute left-0 ${menuClass} z-[90] w-36 rounded-md border border-[#e3e3dd] bg-[#fffefa] py-1 shadow-[0_10px_24px_rgba(20,20,20,0.14)]`}>
           {(["PO", "BILL", "PENDING_RECEIPT", "RECEIPT"] as SubCostLineType[]).map((type) => (
             <button key={type} onClick={() => { onChange(type); setOpen(false); }} className={`block w-full px-2 py-1 text-left text-[11px] hover:bg-[#f2f2ed] ${type === lineType ? "font-semibold" : ""}`}>
               {lineTypeName(type)}
@@ -1412,7 +1413,7 @@ function SubCostRow({ subCost, closed, columns, gridStyle, onRevision, onError }
 function CostLineLifecycleCell({ subCost, onPatch }: { subCost: SubCost; onPatch: (patchData: Partial<SubCost>) => Promise<void> }) {
   if (subCost.lineType === "PO") {
     return (
-      <div className="flex min-h-[32px] items-center justify-end px-2">
+      <div className="flex min-h-[32px] items-center justify-end">
         <button
           onClick={() => onPatch({ lineType: "BILL" }).catch(console.error)}
           className="min-h-7 rounded border border-[#cfe0fb] bg-[#f5f9ff] px-2 text-[11px] font-medium text-[#2563eb]"
@@ -1443,7 +1444,7 @@ function CostLineLifecycleCell({ subCost, onPatch }: { subCost: SubCost; onPatch
   return (
     <button
       onClick={() => onPatch({ isPaid: !subCost.isPaid }).catch(console.error)}
-      className="flex min-h-[32px] items-center justify-end gap-1 px-2 text-[11px] font-medium"
+      className="flex min-h-[32px] items-center justify-end gap-1 text-[11px] font-medium"
       title="Mark bill as paid"
     >
       {subCost.isPaid ? <span className="text-[#16a34a]">Paid ✓</span> : <span className="text-[#d4d4d0]">○ Paid</span>}
@@ -1626,8 +1627,8 @@ function CostLinesPanel({ line, productionId, onClose, onRevision, onError, onOp
           />
         )}
 
-        <section className="overflow-hidden rounded-lg border border-[#e6e6e1] bg-white">
-          <div className="grid grid-cols-[72px_1fr_104px_86px_32px] items-center border-b border-[#ededeb] bg-[#f7f7f3] px-2 py-2 text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">
+        <section className="rounded-lg border border-[#e6e6e1] bg-white">
+          <div className="grid grid-cols-[86px_minmax(0,1fr)_88px_96px_28px] items-center border-b border-[#ededeb] bg-[#f7f7f3] px-3 py-2 text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">
             <span>Type</span>
             <span>Description</span>
             <span className="text-right">Amount</span>
@@ -1637,8 +1638,8 @@ function CostLinesPanel({ line, productionId, onClose, onRevision, onError, onOp
           {line.subCosts.length === 0 ? (
             <div className="px-3 py-8 text-center text-sm text-gray-400">No cost lines yet.</div>
           ) : (
-            line.subCosts.map((subCost) => (
-              <CostLinePanelRow key={subCost.id} subCost={subCost} onRevision={onRevision} onError={onError} />
+            line.subCosts.map((subCost, index) => (
+              <CostLinePanelRow key={subCost.id} subCost={subCost} menuPlacement={index === line.subCosts.length - 1 ? "top" : "bottom"} onRevision={onRevision} onError={onError} />
             ))
           )}
         </section>
@@ -1706,7 +1707,7 @@ function CostLinePanelForm({ lineId, lineType, onCancel, onCreated, onError }: {
   );
 }
 
-function CostLinePanelRow({ subCost, onRevision, onError }: { subCost: SubCost; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
+function CostLinePanelRow({ subCost, menuPlacement, onRevision, onError }: { subCost: SubCost; menuPlacement: "top" | "bottom"; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
   const reference = subCost.lineType === "PO" ? subCost.poNumber : subCost.lineType === "BILL" ? subCost.invoiceNumber : null;
   const amountClass = subCost.lineType === "PO" ? "text-[#8b5cf6]" : subCost.lineType === "PENDING_RECEIPT" ? "text-[#d97706]" : subCost.lineType === "BILL" && !subCost.isPaid ? "text-[#3b82f6]" : "text-[#16a34a]";
 
@@ -1732,15 +1733,15 @@ function CostLinePanelRow({ subCost, onRevision, onError }: { subCost: SubCost; 
   }
 
   return (
-    <div className="grid grid-cols-[72px_1fr_104px_86px_32px] items-center gap-2 border-b border-[#f0f0ed] px-2 py-2 text-xs last:border-b-0">
-      <CostLineTypePill lineType={subCost.lineType} onChange={(lineType) => patch({ lineType }).catch(console.error)} />
-      <div className="min-w-0">
+    <div className="grid min-h-[58px] grid-cols-[86px_minmax(0,1fr)_88px_96px_28px] items-center gap-2 border-b border-[#f0f0ed] px-3 py-2 text-xs last:border-b-0">
+      <CostLineTypePill lineType={subCost.lineType} menuPlacement={menuPlacement} onChange={(lineType) => patch({ lineType }).catch(console.error)} />
+      <div className="min-w-0 leading-tight">
         {reference && <span className={`mr-2 font-semibold ${amountClass}`}>{reference}</span>}
         <EditableCell value={subCost.description} onSave={(value) => patch({ description: String(value) })} className="inline max-w-full text-[#1a1a1f]" />
         {subCost.supplierName && <p className="mt-0.5 truncate text-[11px] italic text-gray-400">{subCost.supplierName}</p>}
       </div>
-      <EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={amountClass} />
-      <CostLineLifecycleCell subCost={subCost} onPatch={patch} />
+      <div className="text-right"><EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={amountClass} /></div>
+      <div className="flex justify-end"><CostLineLifecycleCell subCost={subCost} onPatch={patch} /></div>
       <button onClick={() => remove().catch((err: unknown) => onError(err instanceof Error ? err.message : "Delete failed"))} className="grid h-7 w-7 place-items-center rounded text-gray-300 hover:bg-red-50 hover:text-red-600"><X size={13} /></button>
     </div>
   );
@@ -2130,7 +2131,7 @@ function AdvanceRow({ advance, calculated, onChanged }: { advance: AdvanceInvoic
 
 function SidePanel({ title, children, onClose, width = "420px" }: { title: string; children: ReactNode; onClose: () => void; width?: string }) {
   return (
-    <aside className="fixed inset-y-0 right-0 z-[60] w-full overflow-auto border-l border-[#e8e8e4] bg-white p-5 shadow-xl md:w-auto" style={{ maxWidth: width }}>
+    <aside className="fixed inset-y-0 right-0 z-[60] w-full overflow-y-auto overflow-x-visible border-l border-[#e8e8e4] bg-white p-5 shadow-xl md:w-auto" style={{ maxWidth: width }}>
       <div className="mb-5 flex items-center justify-between">
         <h2 className="text-base font-semibold">{title}</h2>
         <button onClick={onClose} className="grid h-10 w-10 place-items-center rounded hover:bg-gray-100"><X size={18} /></button>
