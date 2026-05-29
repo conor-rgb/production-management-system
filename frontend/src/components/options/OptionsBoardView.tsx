@@ -641,6 +641,28 @@ function holdClass(status: HoldStatus | null): string {
   return "border-gray-100 bg-white text-gray-300";
 }
 
+function holdCellClass(status: HoldStatus | null): string {
+  if (status === "CONFIRMED") return "bg-emerald-100/75 border-r-emerald-200";
+  if (status === "FIRST_OPTION") return "bg-lime-100/75 border-r-lime-200";
+  if (status === "SECOND_OPTION") return "bg-sky-100/70 border-r-sky-200";
+  if (status === "REQUESTED") return "bg-violet-100/70 border-r-violet-200";
+  if (status === "UNAVAILABLE") return "bg-gray-100/90 border-r-gray-200";
+  if (status === "RELEASED") return "bg-gray-50 border-r-gray-200";
+  if (status === "NA") return "bg-gray-50/70 border-r-gray-100";
+  return "bg-white border-r-[#f0f0ee]";
+}
+
+function holdMatrixButtonClass(status: HoldStatus | null): string {
+  if (status === "CONFIRMED") return "border-emerald-200/70 bg-white/35 text-emerald-800";
+  if (status === "FIRST_OPTION") return "border-lime-200/70 bg-white/35 text-lime-800";
+  if (status === "SECOND_OPTION") return "border-sky-200/70 bg-white/35 text-sky-800";
+  if (status === "REQUESTED") return "border-violet-200/70 bg-white/35 text-violet-800";
+  if (status === "UNAVAILABLE") return "border-gray-200/70 bg-white/40 text-gray-600";
+  if (status === "RELEASED") return "border-gray-200/70 bg-white/40 text-gray-400";
+  if (status === "NA") return "border-gray-200/60 bg-white/40 text-gray-400";
+  return "border-gray-100 bg-white/55 text-gray-300";
+}
+
 function dateStatusClass(status: ProductionDateStatus | null): string {
   if (status === "CONFIRMED") return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status === "OPTIONED") return "border-lime-200 bg-lime-50 text-lime-700";
@@ -871,16 +893,19 @@ function sortedCandidates(candidates: OptionCandidate[], sortKey: CandidateSortK
   return sorted;
 }
 
-function PillDropdown<T extends string>({ value, options, onChange, classNameForValue, placeholder = "blank", compact = false }: {
+function PillDropdown<T extends string>({ value, options, onChange, classNameForValue, buttonClassNameForValue, placeholder = "blank", compact = false, fill = false }: {
   value: T | null;
   options: readonly T[];
   onChange: (value: T | null) => Promise<void>;
   classNameForValue: (value: T | null) => string;
+  buttonClassNameForValue?: (value: T | null) => string;
   placeholder?: string;
   compact?: boolean;
+  fill?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  const buttonClass = buttonClassNameForValue ?? classNameForValue;
 
   useEffect(() => {
     function close(event: MouseEvent) {
@@ -894,7 +919,7 @@ function PillDropdown<T extends string>({ value, options, onChange, classNameFor
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((current) => !current)}
-        className={`inline-flex h-7 items-center justify-center gap-1 rounded-md border text-[10px] font-semibold uppercase leading-none shadow-[inset_0_0_0_0.5px_rgba(255,255,255,0.35)] ${compact ? "w-[76px] px-1 text-[9px] tracking-[0.02em]" : "px-2"} ${classNameForValue(value)}`}
+        className={`inline-flex h-7 items-center justify-center gap-1 rounded-md border text-[10px] font-semibold uppercase leading-none shadow-[inset_0_0_0_0.5px_rgba(255,255,255,0.35)] ${fill ? "w-full px-1 text-[9px] tracking-[0.02em]" : compact ? "w-[76px] px-1 text-[9px] tracking-[0.02em]" : "px-2"} ${buttonClass(value)}`}
       >
         <span className="truncate">{compact ? compactHoldLabel(value, placeholder) : value ? label(value) : placeholder}</span>
         <span className="text-[8px] opacity-50">▾</span>
@@ -4316,10 +4341,12 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
                   options={HOLD_STATUSES}
                   onChange={(nextStatus) => onUpdateCandidateDate(candidate.id, date.id, nextStatus)}
                   classNameForValue={holdClass}
+                  buttonClassNameForValue={holdMatrixButtonClass}
                   placeholder="blank"
                   compact
+                  fill
                 />
-            ), "justify-center");
+            ), `justify-center ${holdCellClass(status)}`);
           });
         }
         if (column.key === "contact") {

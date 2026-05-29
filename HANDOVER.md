@@ -1,3 +1,36 @@
+# HANDOVER - 2026-05-29 - Crew Sheet Date Matrix Cell Fill
+
+## Built This Session
+- Updated Crew & Suppliers date status cells so availability reads as a matrix.
+- Date columns now colour the full grid cell by hold status instead of only colouring the inner pill.
+- Kept the compact dropdown label inside each coloured cell so statuses remain editable without losing scanability.
+- Added separate styles for:
+  - full date cell background,
+  - compact matrix dropdown button,
+  - existing dropdown menu options.
+
+## Files Changed
+- `frontend/src/components/options/OptionsBoardView.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Availability/date columns should now read as clear coloured blocks:
+  - requested,
+  - first option,
+  - second option,
+  - confirmed,
+  - unavailable/released.
+- The inner label remains a dropdown control, but the cell itself carries the visual weight.
+
+---
+
 # HANDOVER - 2026-05-29 - Crew Sheet Column Alignment Fix
 
 ## Built This Session
