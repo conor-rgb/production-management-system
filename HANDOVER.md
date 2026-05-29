@@ -1,3 +1,36 @@
+# HANDOVER - 2026-05-29 - Crew Sheet Sticky Identity Columns
+
+## Built This Session
+- Added frozen identity columns to Crew & Suppliers grid view.
+- Row selector, image, and option/name columns now stay pinned while horizontally scrolling across wide sheets.
+- Added compact date availability summaries into each date column header:
+  - confirmed,
+  - first option,
+  - second option,
+  - requested,
+  - unavailable/no.
+- Date header summaries are based on the currently visible/filtered records.
+- Preserved the existing editable status cells and dropdown behaviour.
+
+## Files Changed
+- `frontend/src/components/options/OptionsBoardView.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Wide Crew & Suppliers sheets should be easier to navigate:
+  - record identity remains visible,
+  - date headers show immediate availability counts,
+  - the availability matrix remains editable.
+
+---
+
 # HANDOVER - 2026-05-29 - Crew Sheet Availability Matrix Polish
 
 ## Built This Session

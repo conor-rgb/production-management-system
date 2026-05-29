@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ArrowLeft, BookOpen, ChevronDown, Copy, Download, ExternalLink, EyeOff, FileText, Filter, Globe, Image as ImageIcon, Layers3, Mail, Maximize2, Menu, PaintBucket, Phone, Plus, Search, Share2, Trash2, Upload, X } from "lucide-react";
 import { api } from "../../lib/api";
@@ -406,6 +406,14 @@ interface CandidateFilters {
   photo: PhotoFilter;
 }
 
+interface DateAvailabilityCounts {
+  confirmed: number;
+  first: number;
+  second: number;
+  requested: number;
+  unavailable: number;
+}
+
 const REQUIREMENT_TYPES: RequirementType[] = ["CREW", "SERVICE", "LOCATION", "EQUIPMENT", "TALENT", "TRANSPORT", "POST", "OTHER"];
 const DATE_TYPES: ProductionDateType[] = ["MEETING", "RECCE", "PPM", "FITTING", "SHOOT_DAY", "POST_DELIVERY", "OTHER"];
 const DATE_STATUSES: ProductionDateStatus[] = ["PROPOSED", "OPTIONED", "CONFIRMED", "RELEASED", "CANCELLED"];
@@ -703,6 +711,29 @@ function candidateSummary(group: OptionGroup, dateId: string): string {
       return status ? `${candidate.name}: ${label(status)}` : `${candidate.name}: no request`;
     });
   return lines.length ? lines.join("\n") : "No records yet";
+}
+
+function dateAvailabilityCounts(candidates: OptionCandidate[], dateId: string): DateAvailabilityCounts {
+  return candidates.reduce<DateAvailabilityCounts>((counts, candidate) => {
+    const status = statusFor(candidate, dateId)?.status;
+    if (status === "CONFIRMED") counts.confirmed += 1;
+    if (status === "FIRST_OPTION") counts.first += 1;
+    if (status === "SECOND_OPTION") counts.second += 1;
+    if (status === "REQUESTED") counts.requested += 1;
+    if (status === "UNAVAILABLE" || status === "NA") counts.unavailable += 1;
+    return counts;
+  }, { confirmed: 0, first: 0, second: 0, requested: 0, unavailable: 0 });
+}
+
+function compactDateCountLabel(counts: DateAvailabilityCounts): string {
+  const parts = [
+    counts.confirmed > 0 ? `${counts.confirmed} conf` : "",
+    counts.first > 0 ? `${counts.first} 1st` : "",
+    counts.second > 0 ? `${counts.second} 2nd` : "",
+    counts.requested > 0 ? `${counts.requested} req` : "",
+    counts.unavailable > 0 ? `${counts.unavailable} no` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.slice(0, 2).join(" · ") : "none";
 }
 
 function linkCount(candidate: OptionCandidate): number {
@@ -2071,6 +2102,14 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
   );
   const filterCount = activeFilterCount(filters);
   const minimumSheetWidth = rowControlWidth + rowActionWidth + visibleColumns.reduce((sum, column) => sum + (column.key === "date_statuses" ? Math.max(1, dates.length) * column.width : column.width), 0);
+  const frozenOffsets = new Map<string, number>();
+  let frozenLeft = rowControlWidth;
+  for (const column of visibleColumns) {
+    if (column.key === "image" || column.key === "option") {
+      frozenOffsets.set(column.id, frozenLeft);
+      frozenLeft += column.width;
+    }
+  }
 
   useEffect(() => {
     setPreviewColumnWidths({});
@@ -2444,7 +2483,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
       <div className="min-h-0 w-full flex-1 overflow-auto overscroll-contain bg-white">
         <div className="min-h-full bg-white" style={{ width: "100%", minWidth: minimumSheetWidth }}>
           <div className="sticky top-0 z-20 grid min-h-[42px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500" style={{ gridTemplateColumns: gridColumns }}>
-            <div className="flex h-full items-center justify-center border-r border-[#dcdfe3]">
+            <div className="sticky left-0 z-30 flex h-full items-center justify-center border-r border-[#dcdfe3] bg-[#f7f7f5] shadow-[1px_0_0_#dcdfe3]">
               <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600" aria-label="Select all candidates" />
             </div>
             {visibleColumns.flatMap((column) => {
@@ -2478,6 +2517,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
                     date={date}
                     index={index}
                     total={dates.length}
+                    counts={dateAvailabilityCounts(candidates, date.id)}
                     showControls={index === 0}
                     sortKey={sortKey}
                     sortDirection={sortDirection}
@@ -2490,6 +2530,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
                 <CustomColumnHeader
                   key={column.id}
                   column={column}
+                  stickyLeft={frozenOffsets.get(column.id)}
                   sortKey={column.key === "image" ? "manual" : column.key === "option" ? "name" : column.key === "clientNotes" ? "notes" : column.key === "links" ? "links" : column.key === "rate" ? "rate" : column.key === "activeState" ? "state" : undefined}
                   activeSortKey={sortKey}
                   sortDirection={sortDirection}
@@ -2509,6 +2550,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
               dates={dates}
               customColumns={visibleColumns}
               gridColumns={gridColumns}
+              frozenOffsets={frozenOffsets}
               onOpenPhotos={() => setPhotoCandidate(candidate)}
               onUpdateCandidate={onUpdateCandidate}
               onLinkBlackbook={onLinkBlackbook}
@@ -3413,8 +3455,9 @@ function normalizeColumnValue(value: string, type: OptionColumnType): unknown {
   return value.trim() || null;
 }
 
-function CustomColumnHeader({ column, isDropTarget, isDragging, sortKey, activeSortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onResizePreview }: {
+function CustomColumnHeader({ column, stickyLeft, isDropTarget, isDragging, sortKey, activeSortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onResizePreview }: {
   column: OptionColumn;
+  stickyLeft?: number;
   isDropTarget: boolean;
   isDragging: boolean;
   sortKey?: CandidateSortKey;
@@ -3437,6 +3480,7 @@ function CustomColumnHeader({ column, isDropTarget, isDragging, sortKey, activeS
   const startX = useRef(0);
   const startWidth = useRef(column.width);
   const active = sortKey !== undefined && activeSortKey === sortKey;
+  const sticky = stickyLeft !== undefined;
 
   useEffect(() => setLabel(column.label), [column.label]);
   useEffect(() => {
@@ -3490,9 +3534,10 @@ function CustomColumnHeader({ column, isDropTarget, isDragging, sortKey, activeS
         event.preventDefault();
         onDrop();
       }}
+      style={sticky ? { left: stickyLeft } : undefined}
       className={`group/column relative flex h-full min-w-0 items-center gap-1 border-r border-[#e6e6e3] px-2 transition ${
         isDropTarget ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""
-      } ${isDragging ? "bg-gray-100 opacity-55" : ""}`}
+      } ${isDragging ? "bg-gray-100 opacity-55" : ""} ${sticky ? "sticky z-30 bg-[#f7f7f5] shadow-[1px_0_0_#dcdfe3]" : ""}`}
       title={`${column.label} · ${optionColumnTypeLabel(column.type)}`}
     >
       {isDropTarget && (
@@ -3587,11 +3632,12 @@ function CustomColumnHeader({ column, isDropTarget, isDragging, sortKey, activeS
   );
 }
 
-function DateStatusColumnHeader({ column, date, index, total, showControls, isDropTarget, isDragging, sortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onResizePreview }: {
+function DateStatusColumnHeader({ column, date, index, total, counts, showControls, isDropTarget, isDragging, sortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onResizePreview }: {
   column: OptionColumn;
   date: MatrixDate;
   index: number;
   total: number;
+  counts: DateAvailabilityCounts;
   showControls: boolean;
   isDropTarget: boolean;
   isDragging: boolean;
@@ -3651,6 +3697,7 @@ function DateStatusColumnHeader({ column, date, index, total, showControls, isDr
       <button onClick={onSort} className={`min-w-0 text-center ${active ? "font-semibold text-gray-800" : ""}`} title="Sort by this date">
         <span className="block truncate text-[11px] font-semibold leading-3 normal-case tracking-normal text-gray-800">{parts.top}{active ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}</span>
         <span className="block truncate text-[9px] font-semibold uppercase leading-3 tracking-[0.08em] text-gray-400">{parts.bottom}</span>
+        <span className="mt-0.5 block truncate text-[8px] font-semibold normal-case leading-3 tracking-normal text-gray-400">{compactDateCountLabel(counts)}</span>
       </button>
     </div>
   );
@@ -4179,13 +4226,14 @@ function RecordField({ label, children }: { label: string; children: ReactNode }
   );
 }
 
-function OptionsGridCell({ candidateId, cellKey, active, onActivate, onKeyDown, className = "", children }: {
+function OptionsGridCell({ candidateId, cellKey, active, onActivate, onKeyDown, className = "", style, children }: {
   candidateId: string;
   cellKey: string;
   active: boolean;
   onActivate: () => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   className?: string;
+  style?: CSSProperties;
   children: ReactNode;
 }) {
   return (
@@ -4196,6 +4244,7 @@ function OptionsGridCell({ candidateId, cellKey, active, onActivate, onKeyDown, 
       onFocus={onActivate}
       onMouseDownCapture={onActivate}
       onKeyDown={onKeyDown}
+      style={style}
       className={`relative flex min-h-[62px] min-w-0 items-center border-r border-[#f0f0ee] px-2 py-1.5 outline-none transition ${
         active ? "z-10 bg-teal-50/15 ring-1 ring-inset ring-teal-700/75" : "focus:bg-teal-50/10 focus:ring-1 focus:ring-inset focus:ring-teal-500/35"
       } ${className}`}
@@ -4205,13 +4254,14 @@ function OptionsGridCell({ candidateId, cellKey, active, onActivate, onKeyDown, 
   );
 }
 
-function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridColumns, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUpdateColumnValue, onUploadPhoto, onUploadPdf, activeCell, onActivateCell, onCellKeyDown, isReorderDragging, isReorderTarget, onReorderDragStart, onReorderDragOver, onReorderDrop, onReorderDragEnd, onDeleteCandidate, onContextMenuOpen }: {
+function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridColumns, frozenOffsets, onOpenPhotos, onUpdateCandidate, onLinkBlackbook, onOpenBlackbook, onUpdateCandidateDate, onUpdateColumnValue, onUploadPhoto, onUploadPdf, activeCell, onActivateCell, onCellKeyDown, isReorderDragging, isReorderTarget, onReorderDragStart, onReorderDragOver, onReorderDrop, onReorderDragEnd, onDeleteCandidate, onContextMenuOpen }: {
   candidate: OptionCandidate;
   rowIndex: number;
   group: OptionGroup;
   dates: MatrixDate[];
   customColumns: OptionColumn[];
   gridColumns: string;
+  frozenOffsets: Map<string, number>;
   onOpenPhotos: () => void;
   onUpdateCandidate: (candidateId: string, patch: Partial<OptionCandidate>) => Promise<void>;
   onLinkBlackbook: (candidateId: string, payload: { entryId?: string | null; createFromCandidate?: boolean; create?: CreateBlackbookPayload }) => Promise<void>;
@@ -4252,7 +4302,8 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
     }
   }
 
-  function cell(cellKey: string, children: ReactNode, className = "") {
+  function cell(cellKey: string, children: ReactNode, className = "", stickyLeft?: number) {
+    const stickyClass = stickyLeft !== undefined ? "sticky z-20 bg-white shadow-[1px_0_0_#e6e6e3] group-hover:bg-[#fafafa]" : "";
     return (
       <OptionsGridCell
         key={cellKey}
@@ -4261,7 +4312,8 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
         active={activeCell?.candidateId === candidate.id && activeCell.cellKey === cellKey}
         onActivate={() => onActivateCell(cellKey)}
         onKeyDown={(event) => onCellKeyDown(event, cellKey)}
-        className={className}
+        className={`${className} ${stickyClass}`}
+        style={stickyLeft !== undefined ? { left: stickyLeft } : undefined}
       >
         {children}
       </OptionsGridCell>
@@ -4312,7 +4364,7 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
           Drop image{dropUploading ? " - uploading..." : "s here to add to this option"}
         </div>
       )}
-      <div className="flex min-h-[62px] items-center justify-center gap-1 border-r border-[#dcdfe3] text-gray-400">
+      <div className="sticky left-0 z-30 flex min-h-[62px] items-center justify-center gap-1 border-r border-[#dcdfe3] bg-white text-gray-400 shadow-[1px_0_0_#dcdfe3] group-hover:bg-[#fafafa]">
         <button
           draggable
           onDragStart={onReorderDragStart}
@@ -4326,7 +4378,8 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
         <span className="w-5 text-center text-[11px] tabular-nums group-hover:hidden">{rowIndex}</span>
       </div>
       {customColumns.flatMap((column) => {
-        if (column.key === "image") return [cell(column.id, <PhotoThumb candidate={candidate} onOpen={onOpenPhotos} />, "justify-center")];
+        const stickyLeft = frozenOffsets.get(column.id);
+        if (column.key === "image") return [cell(column.id, <PhotoThumb candidate={candidate} onOpen={onOpenPhotos} />, "justify-center", stickyLeft)];
         if (column.key === "option") {
           return [cell(column.id, (
             <div className="min-w-0">
@@ -4335,7 +4388,7 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
               </div>
               {candidate.subtitle && <div className="mt-1 truncate text-[11px] text-gray-400">{candidate.subtitle}</div>}
             </div>
-          ))];
+          ), "", stickyLeft)];
         }
         if (column.key === "date_statuses") {
           return dates.map((date, dateIndex) => {
