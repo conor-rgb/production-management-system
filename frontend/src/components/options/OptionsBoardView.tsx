@@ -1899,7 +1899,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   onUpdateWorkstream: (workstreamId: string, patch: Partial<MatrixWorkstream>) => Promise<void>;
 }) {
   const [matrixMenu, setMatrixMenu] = useState<{ requirement: OptionRequirement; group: OptionGroup; x: number; y: number } | null>(null);
-  const gridColumns = `360px 108px ${matrix.dates.map(() => "132px").join(" ")}`;
+  const gridColumns = `430px ${matrix.dates.map(() => "132px").join(" ")}`;
   const sections = [
     ...matrix.workstreams.map((workstream) => ({
       id: workstream.id,
@@ -1942,7 +1942,6 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
       <div className="min-w-max">
         <div className="sticky top-0 z-20 grid min-h-[50px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500" style={{ gridTemplateColumns: gridColumns }}>
           <div className="flex h-full items-center border-r border-[#dcdfe3] px-4">Requirement</div>
-          <div className="flex h-full items-center border-r border-[#e6e6e3] px-3">Kind</div>
           {matrix.dates.map((date) => (
             <div key={date.id} className="flex min-h-[50px] flex-col items-center justify-center gap-1 border-r border-[#dcdfe3] bg-[#fbfbf8] px-2 py-1.5">
               <span className="text-center text-[11px] font-semibold normal-case tracking-normal text-gray-900">{compactDateLabel(date).top}</span>
@@ -1960,7 +1959,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
         {sections.map((section) => (
           <div key={section.id}>
             <div className="grid min-h-[46px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-xs" style={{ gridTemplateColumns: gridColumns }}>
-              <div className="flex min-w-0 items-center gap-3 border-r border-[#dcdfe3] px-4 py-2" style={{ gridColumn: "1 / 3" }}>
+              <div className="flex min-w-0 items-center gap-3 border-r border-[#dcdfe3] px-4 py-2">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: section.color }} />
                 {section.workstream ? (
                   <EditableText value={section.workstream.name} onSave={(name) => onUpdateWorkstream(section.workstream!.id, { name })} className="truncate text-[13px] font-semibold text-gray-900" />
@@ -1982,17 +1981,16 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
                 style={{ gridTemplateColumns: gridColumns }}
               >
                 <div className="min-w-0 border-r border-[#e6e6e3] px-4 py-2">
-                  <div onDoubleClick={() => onOpenGroup(group.id)} className="block max-w-full truncate text-left text-[13px] font-semibold text-gray-900 hover:text-teal-700" title="Double-click to open sheet">
-                    <EditableText value={requirement.displayLabel} onSave={(displayLabel) => onUpdateRequirement(requirement.id, { displayLabel })} className="text-[13px] font-semibold text-gray-900" />
-                  </div>
+                  <button onClick={() => onOpenGroup(group.id)} className="block max-w-full truncate text-left text-[13px] font-semibold text-gray-900 hover:text-teal-700" title="Open board">
+                    {requirement.displayLabel}
+                  </button>
                   <div className="mt-1 flex min-w-0 items-center gap-2">
                     <button onClick={() => onOpenGroup(group.id)} className="truncate text-[11px] font-medium text-gray-400 hover:text-gray-900">{group.candidates.length} records</button>
                     <span className="text-gray-200">·</span>
                     <span className="truncate text-[11px] text-gray-400">{group.name}</span>
+                    <span className="text-gray-200">·</span>
+                    <span className="truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-300">{label(requirement.type)}</span>
                   </div>
-                </div>
-                <div className="flex items-center border-r border-[#e6e6e3] px-3 py-2">
-                  <span className="truncate text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500">{label(requirement.type)}</span>
                 </div>
                 {matrix.dates.map((date) => {
                   const need = needFor(requirement, date.id);

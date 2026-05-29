@@ -1,3 +1,31 @@
+# HANDOVER - 2026-05-29 - Crew Matrix Remove Kind Column
+
+## Built This Session
+- Removed the visible `Kind` column from the Crew & Suppliers Matrix.
+- Requirement name now opens the record board directly on click.
+- Requirement kind remains visible only as a small secondary metadata label under the requirement name.
+- Rename, kind changes, and workstream changes remain in the right-click requirement menu.
+- Matrix now has fewer columns and gives more space to the actual requirement/date planning grid.
+
+## Files Changed
+- `frontend/src/components/options/OptionsBoardView.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Matrix is cleaner:
+  - click a requirement name to open the board,
+  - right-click a requirement for edit/actions,
+  - type/kind no longer consumes a primary grid column.
+
+---
+
 # HANDOVER - 2026-05-29 - Crew Matrix Right Click Cleanup
 
 ## Built This Session
