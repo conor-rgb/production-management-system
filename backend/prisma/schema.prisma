@@ -206,6 +206,7 @@ enum SubCostStatus {
 enum SubCostLineType {
   PO
   BILL
+  PENDING_RECEIPT
   RECEIPT
 
   @@map("pms_sub_cost_line_type")

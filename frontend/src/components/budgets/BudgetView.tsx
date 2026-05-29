@@ -75,7 +75,7 @@ const INTERNAL_COLUMNS: BudgetColumn[] = [
   { key: "agency", label: "Agy%", width: "64px", align: "right", hideable: true },
   { key: "estimated", label: "Estimated", width: "110px", align: "right" },
   { key: "actuals", label: "Actuals", width: "96px", align: "right", hideable: true },
-  { key: "remaining", label: "Remaining", width: "110px", align: "right", hideable: true },
+  { key: "remaining", label: "Balance", width: "110px", align: "right", hideable: true },
   { key: "clo", label: "CLO", width: "44px", align: "center", hideable: true },
 ];
 
@@ -122,6 +122,19 @@ function remainingPillClass(remaining: number, estimated: number) {
   return "bg-[#16a34a] text-white";
 }
 
+function balanceLabel(line: Pick<BudgetLineItem, "isClosed" | "variance">) {
+  const balance = Number(line.variance ?? 0);
+  if (balance < 0) return "Over";
+  return line.isClosed ? "Released" : "Available";
+}
+
+function balanceClass(line: Pick<BudgetLineItem, "isClosed" | "variance" | "estimatedTotal">) {
+  const balance = Number(line.variance ?? 0);
+  if (balance < 0) return "text-[#dc2626]";
+  if (balance === 0) return "text-[#c8c8c4]";
+  return line.isClosed ? "text-[#16a34a]" : remainingClass(balance, line.estimatedTotal);
+}
+
 function budgetColumns(mode: ViewMode, hiddenColumns: Set<BudgetColumnKey>) {
   const columns = mode === "internal" ? INTERNAL_COLUMNS : CLIENT_COLUMNS;
   return columns.filter((column) => !hiddenColumns.has(column.key));
@@ -159,12 +172,21 @@ function statusSymbol(active: boolean) {
 
 function lineTypeClass(lineType: SubCostLineType) {
   if (lineType === "BILL") return "border-[#cfe0fb] bg-[#f5f9ff] text-[#2563eb]";
+  if (lineType === "PENDING_RECEIPT") return "border-[#fde68a] bg-[#fffbeb] text-[#d97706]";
   if (lineType === "RECEIPT") return "border-[#ccefd6] bg-[#f5fcf7] text-[#15803d]";
   return "border-[#e1d7ff] bg-[#fbf8ff] text-[#7c3aed]";
 }
 
 function lineTypeLabel(lineType: SubCostLineType) {
+  if (lineType === "PENDING_RECEIPT") return "QUICK";
   return lineType;
+}
+
+function lineTypeName(lineType: SubCostLineType) {
+  if (lineType === "PENDING_RECEIPT") return "Quick cost";
+  if (lineType === "BILL") return "Bill";
+  if (lineType === "RECEIPT") return "Receipt";
+  return "PO";
 }
 
 function budgetVersionLabel(revision: Pick<BudgetRevision, "revisionNumber" | "majorVersion" | "minorVersion" | "label"> | BudgetRevisionSummary) {
@@ -199,6 +221,25 @@ function stateCounts(revision: BudgetRevision) {
     }
   }
   return counts;
+}
+
+function financeSummary(revision: BudgetRevision) {
+  const lines = revision.sections.flatMap((section) => section.lineItems).filter((line) => !line.parentId);
+  const openBalance = lines.reduce((sum, line) => {
+    const balance = Number(line.variance ?? 0);
+    return !line.isClosed && balance > 0 ? sum + balance : sum;
+  }, 0);
+  const releasedMargin = lines.reduce((sum, line) => {
+    const balance = Number(line.variance ?? 0);
+    return line.isClosed && balance > 0 ? sum + balance : sum;
+  }, 0);
+  const overages = lines.reduce((sum, line) => {
+    const balance = Number(line.variance ?? 0);
+    return balance < 0 ? sum + Math.abs(balance) : sum;
+  }, 0);
+  const committed = lines.reduce((sum, line) => sum + Number(line.actualTotal ?? 0), 0);
+  const paid = lines.reduce((sum, line) => sum + line.subCosts.filter((subCost) => subCost.isPaid).reduce((lineSum, subCost) => lineSum + Number(subCost.amount ?? 0), 0), 0);
+  return { openBalance, releasedMargin, overages, committed, paid, forecastProfit: revision.totals.grandTotal - committed };
 }
 
 function displayActualForLine(line: BudgetLineItem) {
@@ -474,17 +515,24 @@ function SummaryBar({ revision, firstAdvance, onRevisionPatch }: {
 }) {
   const totals = revision.totals;
   const counts = stateCounts(revision);
+  const finance = financeSummary(revision);
   const hasOpenCounts = counts.YELLOW + counts.PURPLE + counts.BLUE + counts.LIGHT_GREEN > 0;
   return (
     <div className="shrink-0 border-t border-[#e1e1dc] bg-[#fffefa] px-4 py-2 shadow-[0_-8px_24px_rgba(20,20,20,0.04)]">
-      <div className="grid grid-cols-2 items-center gap-x-6 gap-y-1 md:grid-cols-5">
+      <div className="grid grid-cols-2 items-center gap-x-6 gap-y-1 md:grid-cols-6">
         <Metric label="Subtotal" value={money(totals.subtotal)} />
-        <EditableMetric label={`Production fee ${percentLabel(revision.productionFeePercent)}`} value={money(totals.productionFee)} current={revision.productionFeePercent} onSubmit={(value) => onRevisionPatch({ productionFeePercent: value })} />
-        <EditableMetric label={`Insurance ${percentLabel(revision.insurancePercent)}`} value={money(totals.insurance)} current={revision.insurancePercent} onSubmit={(value) => onRevisionPatch({ insurancePercent: value })} />
+        <Metric label="Committed" value={money(finance.committed)} />
+        <Metric label="Paid / known" value={money(finance.paid)} />
+        <Metric label="Open balance" value={money(finance.openBalance)} />
+        <Metric label="Released margin" value={money(finance.releasedMargin)} />
         <Metric label="Grand total" value={money(totals.grandTotal)} grand />
-        <Metric label="Advance due" value={firstAdvance !== null ? money(firstAdvance) : "None"} />
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] leading-4">
+        <EditableMetric label={`Fee ${percentLabel(revision.productionFeePercent)}`} value={money(totals.productionFee)} current={revision.productionFeePercent} onSubmit={(value) => onRevisionPatch({ productionFeePercent: value })} compact />
+        <EditableMetric label={`Insurance ${percentLabel(revision.insurancePercent)}`} value={money(totals.insurance)} current={revision.insurancePercent} onSubmit={(value) => onRevisionPatch({ insurancePercent: value })} compact />
+        <StateCount color="#16a34a" className="text-[#16a34a]" label={`forecast profit ${money(finance.forecastProfit)}`} />
+        {finance.overages > 0 && <StateCount color="#dc2626" className="text-[#dc2626]" label={`overages ${money(finance.overages)}`} />}
+        {firstAdvance !== null && <StateCount color="#9ca3af" className="text-gray-500" label={`advance due ${money(firstAdvance)}`} />}
         {counts.YELLOW > 0 && <StateCount color={DOT_COLORS.YELLOW} className="text-[#d97706]" label={`${counts.YELLOW} need POs`} />}
         {counts.PURPLE > 0 && <StateCount color={DOT_COLORS.PURPLE} className="text-[#8b5cf6]" label={`${counts.PURPLE} POs outstanding`} />}
         {counts.BLUE > 0 && <StateCount color={DOT_COLORS.BLUE} className="text-[#3b82f6]" label={`${counts.BLUE} invoices to pay`} />}
@@ -513,16 +561,16 @@ function Metric({ label, value, grand = false }: { label: string; value: string;
   );
 }
 
-function EditableMetric({ label, value, current, onSubmit }: { label: string; value: string; current: number; onSubmit: (value: number) => Promise<void> }) {
+function EditableMetric({ label, value, current, onSubmit, compact = false }: { label: string; value: string; current: number; onSubmit: (value: number) => Promise<void>; compact?: boolean }) {
   return (
     <button
       onClick={() => {
         const next = window.prompt("Percentage", String(current));
         if (next !== null) onSubmit(Number(next)).catch(console.error);
       }}
-      className="text-left"
+      className={compact ? "text-[11px] text-gray-500 hover:text-[#1a1a1f]" : "text-left"}
     >
-      <Metric label={label} value={value} />
+      {compact ? `${label}: ${value}` : <Metric label={label} value={value} />}
     </button>
   );
 }
@@ -555,6 +603,7 @@ function BudgetTable(props: {
   });
   const [poPanelLine, setPoPanelLine] = useState<BudgetLineItem | null>(null);
   const [costPanelLine, setCostPanelLine] = useState<BudgetLineItem | null>(null);
+  const [costTrackerOpen, setCostTrackerOpen] = useState(false);
   const tableRef = useRef<HTMLDivElement>(null);
   const internal = props.mode === "internal";
   const columns = budgetColumns(props.mode, hiddenColumns);
@@ -643,6 +692,9 @@ function BudgetTable(props: {
           <button onClick={() => setColumnsOpen(!columnsOpen)} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#e1e1dc] bg-white px-2 text-[11px] font-medium text-gray-700 shadow-sm hover:bg-[#f7f7f3]">
             <Columns3 size={13} /> Hide fields
           </button>
+          <button onClick={() => setCostTrackerOpen(true)} className="ml-2 inline-flex h-7 items-center gap-1.5 rounded-md border border-[#e1e1dc] bg-white px-2 text-[11px] font-medium text-gray-700 shadow-sm hover:bg-[#f7f7f3]">
+            Costs
+          </button>
           {columnsOpen && (
             <div className="absolute right-0 top-8 z-50 w-56 rounded-lg border border-[#e3e3dd] bg-[#fffefa] p-2 text-[12px] shadow-[0_10px_28px_rgba(20,20,20,0.12)]">
               {(internal ? INTERNAL_COLUMNS : CLIENT_COLUMNS).filter((column) => column.hideable).map((column) => (
@@ -702,6 +754,7 @@ function BudgetTable(props: {
           {props.productionId && <button onClick={() => { setPoPanelLine(menuLine); setParentMenu(null); }} className="min-h-7 rounded border border-[#e1d7ff] bg-[#fbf8ff] px-2 text-[11px] font-medium text-[#7c3aed]">Multi-line PO</button>}
           <CostLineAddButton lineType="PO" onClick={() => { props.onSetAddingCostLine({ lineId: menuLine.id, lineType: "PO" }); setParentMenu(null); }} />
           <CostLineAddButton lineType="BILL" onClick={() => { props.onSetAddingCostLine({ lineId: menuLine.id, lineType: "BILL" }); setParentMenu(null); }} />
+          <CostLineAddButton lineType="PENDING_RECEIPT" onClick={() => { props.onSetAddingCostLine({ lineId: menuLine.id, lineType: "PENDING_RECEIPT" }); setParentMenu(null); }} />
           <CostLineAddButton lineType="RECEIPT" onClick={() => { props.onSetAddingCostLine({ lineId: menuLine.id, lineType: "RECEIPT" }); setParentMenu(null); }} />
           <button onClick={() => { props.onDuplicate(menuLine).catch(console.error); setParentMenu(null); }} className="min-h-7 rounded border border-[#e3e3dd] bg-white px-2 text-[11px] font-medium text-gray-600">Duplicate</button>
           <button onClick={() => { props.onSaveLine(menuLine, { isClosed: !menuLine.isClosed }).catch(console.error); setParentMenu(null); }} className="min-h-7 rounded border border-[#e3e3dd] bg-white px-2 text-[11px] font-medium text-gray-600">Close</button>
@@ -733,6 +786,15 @@ function BudgetTable(props: {
           onRevision={props.onRevision}
           onError={props.onError}
           onOpenPoPanel={setPoPanelLine}
+        />
+      )}
+      {costTrackerOpen && (
+        <CostTrackerPanel
+          revision={props.revision}
+          onClose={() => setCostTrackerOpen(false)}
+          onOpenLine={(line) => setCostPanelLine(line)}
+          onRevision={props.onRevision}
+          onError={props.onError}
         />
       )}
       </div>
@@ -789,7 +851,7 @@ function SectionBlock({ section, collapsed, toggledCostLines, onToggleSection, o
         </div>
         <div className="flex items-center justify-end gap-3 text-xs">
           <span className="font-semibold tabular-nums text-[#1a1a1f]">{money(estimated)}</span>
-          {internal && <span className={`rounded-full px-2 py-0.5 text-[10px] ${remainingPillClass(remaining, estimated)}`}>Remaining {money(remaining)}</span>}
+          {internal && <span className={`rounded-full px-2 py-0.5 text-[10px] ${remainingPillClass(remaining, estimated)}`}>Balance {money(remaining)}</span>}
           <button
             onClick={(event) => { event.stopPropagation(); props.onAddLine(section).catch(console.error); }}
             className="grid h-8 w-8 place-items-center rounded text-gray-500 hover:bg-white hover:text-[#1a1a1f]"
@@ -929,7 +991,12 @@ function ParentLineRow({ line, internal, toggledCostLines, onToggleCostLines, ..
           </button>
         ) : <div />;
       case "remaining":
-        return internal ? <ReadMoney value={displayRemaining} className={remainingClass(displayRemaining, line.estimatedTotal)} /> : <div />;
+        return internal ? (
+          <div className="flex min-h-[38px] flex-col items-end justify-center px-2 text-right leading-tight">
+            <span className={`text-[12px] tabular-nums ${balanceClass(line)}`}>{money(displayRemaining)}</span>
+            <span className="text-[9px] uppercase tracking-[0.06em] text-[#b8b8b4]">{balanceLabel(line)}</span>
+          </div>
+        ) : <div />;
       case "clo":
         return internal ? <StatusButton active={line.isClosed} onClick={() => props.onSaveLine(line, { isClosed: !line.isClosed }).catch(console.error)} title="Close this line when fully settled" /> : <div />;
       default:
@@ -1233,8 +1300,8 @@ function StatusButton({ active, onClick, title }: { active: boolean; onClick?: (
 
 function CostLineAddButton({ lineType, onClick }: { lineType: SubCostLineType; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`min-h-7 rounded border px-2 text-[11px] font-medium transition hover:brightness-[0.98] ${lineTypeClass(lineType)}`} title={`Add ${lineTypeLabel(lineType)}`}>
-      + {lineTypeLabel(lineType)}
+    <button onClick={onClick} className={`min-h-7 rounded border px-2 text-[11px] font-medium transition hover:brightness-[0.98] ${lineTypeClass(lineType)}`} title={`Add ${lineTypeName(lineType)}`}>
+      + {lineTypeName(lineType)}
     </button>
   );
 }
@@ -1256,9 +1323,9 @@ function CostLineTypePill({ lineType, onChange }: { lineType: SubCostLineType; o
       </button>
       {open && (
         <div className="absolute left-0 top-7 z-40 w-24 rounded-md border border-[#e3e3dd] bg-[#fffefa] py-1 shadow-[0_10px_24px_rgba(20,20,20,0.10)]">
-          {(["PO", "BILL", "RECEIPT"] as SubCostLineType[]).map((type) => (
+          {(["PO", "BILL", "PENDING_RECEIPT", "RECEIPT"] as SubCostLineType[]).map((type) => (
             <button key={type} onClick={() => { onChange(type); setOpen(false); }} className={`block w-full px-2 py-1 text-left text-[11px] hover:bg-[#f2f2ed] ${type === lineType ? "font-semibold" : ""}`}>
-              {type}
+              {lineTypeName(type)}
             </button>
           ))}
         </div>
@@ -1275,6 +1342,8 @@ function SubCostRow({ subCost, closed, columns, gridStyle, onRevision, onError }
       : COST_LINE_BACKGROUNDS[subCost.lineType];
   const amountClass = subCost.lineType === "PO"
     ? "text-[#8b5cf6]"
+    : subCost.lineType === "PENDING_RECEIPT"
+      ? "text-[#d97706]"
     : subCost.lineType === "BILL" && !subCost.isPaid
       ? "text-[#3b82f6]"
       : "text-[#16a34a]";
@@ -1359,6 +1428,14 @@ function CostLineLifecycleCell({ subCost, onPatch }: { subCost: SubCost; onPatch
     return (
       <div className="flex min-h-[32px] items-center justify-end px-2 text-[11px] font-medium text-[#16a34a]">
         Paid ✓
+      </div>
+    );
+  }
+
+  if (subCost.lineType === "PENDING_RECEIPT") {
+    return (
+      <div className="flex min-h-[32px] items-center justify-end px-2 text-[11px] font-medium text-[#d97706]" title="Paid spend captured without receipt">
+        Receipt needed
       </div>
     );
   }
@@ -1518,11 +1595,11 @@ function CostLinesPanel({ line, productionId, onClose, onRevision, onError, onOp
           <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
             <CostMetric label="Estimated" value={money(estimate)} />
             <CostMetric label="Actuals" value={line.subCosts.length ? money(actual) : "No costs"} muted={!line.subCosts.length} />
-            <CostMetric label="Remaining" value={line.subCosts.length ? money(remaining) : money(0)} className={remainingClass(line.subCosts.length ? remaining : 0, estimate)} />
+            <CostMetric label={line.subCosts.length ? balanceLabel(line) : "Available"} value={line.subCosts.length ? money(remaining) : money(0)} className={line.subCosts.length ? balanceClass(line) : "text-[#c8c8c4]"} />
           </div>
           {!line.subCosts.length && (
             <p className="mt-3 rounded-md bg-white px-3 py-2 text-[12px] leading-5 text-gray-500">
-              The grid shows the estimate as a grey placeholder until a PO, Bill, or Receipt is added, so remaining reads as zero instead of suggesting uncommitted money.
+              No spend is committed yet. The grid shows the estimate as a grey placeholder until a PO, Bill, quick cost, or Receipt is added.
             </p>
           )}
         </section>
@@ -1535,6 +1612,7 @@ function CostLinesPanel({ line, productionId, onClose, onRevision, onError, onOp
           )}
           <CostLineAddButton lineType="PO" onClick={() => setAddingType("PO")} />
           <CostLineAddButton lineType="BILL" onClick={() => setAddingType("BILL")} />
+          <CostLineAddButton lineType="PENDING_RECEIPT" onClick={() => setAddingType("PENDING_RECEIPT")} />
           <CostLineAddButton lineType="RECEIPT" onClick={() => setAddingType("RECEIPT")} />
         </div>
 
@@ -1630,7 +1708,7 @@ function CostLinePanelForm({ lineId, lineType, onCancel, onCreated, onError }: {
 
 function CostLinePanelRow({ subCost, onRevision, onError }: { subCost: SubCost; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
   const reference = subCost.lineType === "PO" ? subCost.poNumber : subCost.lineType === "BILL" ? subCost.invoiceNumber : null;
-  const amountClass = subCost.lineType === "PO" ? "text-[#8b5cf6]" : subCost.lineType === "BILL" && !subCost.isPaid ? "text-[#3b82f6]" : "text-[#16a34a]";
+  const amountClass = subCost.lineType === "PO" ? "text-[#8b5cf6]" : subCost.lineType === "PENDING_RECEIPT" ? "text-[#d97706]" : subCost.lineType === "BILL" && !subCost.isPaid ? "text-[#3b82f6]" : "text-[#16a34a]";
 
   async function patch(patchData: Partial<SubCost>) {
     try {
@@ -1665,6 +1743,94 @@ function CostLinePanelRow({ subCost, onRevision, onError }: { subCost: SubCost; 
       <CostLineLifecycleCell subCost={subCost} onPatch={patch} />
       <button onClick={() => remove().catch((err: unknown) => onError(err instanceof Error ? err.message : "Delete failed"))} className="grid h-7 w-7 place-items-center rounded text-gray-300 hover:bg-red-50 hover:text-red-600"><X size={13} /></button>
     </div>
+  );
+}
+
+type CostTrackerFilter = "all" | "open_po" | "unpaid_bills" | "paid_bills" | "missing_receipts" | "reconciled" | "over_budget" | "released";
+
+function CostTrackerPanel({ revision, onClose, onOpenLine, onRevision, onError }: {
+  revision: BudgetRevision;
+  onClose: () => void;
+  onOpenLine: (line: BudgetLineItem) => void;
+  onRevision: (revision: BudgetRevision) => void;
+  onError: (message: string) => void;
+}) {
+  const [filter, setFilter] = useState<CostTrackerFilter>("all");
+  const lines = revision.sections.flatMap((section) => section.lineItems).filter((line) => !line.parentId);
+  const costs = lines.flatMap((line) => line.subCosts.map((subCost) => ({ subCost, line })));
+  const filtered = filter === "over_budget"
+    ? lines.filter((line) => Number(line.variance ?? 0) < 0).map((line) => ({ line, subCost: null }))
+    : filter === "released"
+      ? lines.filter((line) => line.isClosed && Number(line.variance ?? 0) > 0).map((line) => ({ line, subCost: null }))
+      : costs.filter(({ subCost }) => {
+        if (filter === "all") return true;
+        if (filter === "open_po") return subCost.lineType === "PO";
+        if (filter === "unpaid_bills") return subCost.lineType === "BILL" && !subCost.isPaid;
+        if (filter === "paid_bills") return subCost.lineType === "BILL" && subCost.isPaid;
+        if (filter === "missing_receipts") return subCost.lineType === "PENDING_RECEIPT" || (subCost.isPaid && !subCost.proofOfPayment);
+        if (filter === "reconciled") return Boolean(subCost.freeAgentTransactionId);
+        return true;
+      });
+  const totals = {
+    openPo: costs.filter(({ subCost }) => subCost.lineType === "PO").length,
+    unpaidBills: costs.filter(({ subCost }) => subCost.lineType === "BILL" && !subCost.isPaid).length,
+    missingReceipts: costs.filter(({ subCost }) => subCost.lineType === "PENDING_RECEIPT" || (subCost.isPaid && !subCost.proofOfPayment)).length,
+  };
+
+  return (
+    <SidePanel title="Cost tracker" onClose={onClose} width="720px">
+      <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <CostMetric label="Open POs" value={String(totals.openPo)} className="text-[#8b5cf6]" />
+          <CostMetric label="Bills unpaid" value={String(totals.unpaidBills)} className="text-[#3b82f6]" />
+          <CostMetric label="Receipts missing" value={String(totals.missingReceipts)} className="text-[#d97706]" />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {([
+            ["all", "All costs"],
+            ["open_po", "Open POs"],
+            ["unpaid_bills", "Bills unpaid"],
+            ["paid_bills", "Bills paid"],
+            ["missing_receipts", "Receipt missing"],
+            ["reconciled", "Reconciled"],
+            ["over_budget", "Over-budget lines"],
+            ["released", "Released margin"],
+          ] as Array<[CostTrackerFilter, string]>).map(([key, label]) => (
+            <button key={key} onClick={() => setFilter(key)} className={`min-h-8 rounded-md border px-3 text-[12px] ${filter === key ? "border-[#13a18d] bg-[#e9fbf8] text-[#166f64]" : "border-[#e6e6e1] bg-white text-gray-500 hover:bg-[#fbfbf8]"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="overflow-hidden rounded-lg border border-[#e6e6e1] bg-white">
+          <div className="grid grid-cols-[92px_1fr_110px_112px] border-b border-[#ededeb] bg-[#f7f7f3] px-3 py-2 text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">
+            <span>Stage</span>
+            <span>Line / cost</span>
+            <span className="text-right">Amount</span>
+            <span className="text-right">Balance</span>
+          </div>
+          {filtered.length === 0 ? (
+            <div className="px-3 py-8 text-center text-sm text-gray-400">Nothing in this view.</div>
+          ) : (
+            filtered.map(({ line, subCost }) => (
+              <div key={subCost?.id ?? `${filter}-${line.id}`} className="grid grid-cols-[92px_1fr_110px_112px] items-center gap-2 border-b border-[#f0f0ed] px-3 py-2 text-xs last:border-b-0">
+                <div>{subCost ? <CostLineTypePill lineType={subCost.lineType} onChange={(lineType) => {
+                  api.patch<SubCostMutationResponse>(`/api/budgets/subcosts/${subCost.id}`, { lineType })
+                    .then((response) => response.revision && onRevision(response.revision))
+                    .catch((err: unknown) => onError(err instanceof Error ? err.message : "Save failed"));
+                }} /> : <span className="rounded border border-[#e6e6e1] px-2 py-1 text-[10px] font-medium text-gray-500">{balanceLabel(line)}</span>}</div>
+                <button onClick={() => onOpenLine(line)} className="min-w-0 text-left hover:underline">
+                  <span className="font-medium text-[#1a1a1f]">{line.lineCode} {line.description}</span>
+                  {subCost && <span className="ml-2 text-gray-400">{subCost.description}</span>}
+                  {subCost?.supplierName && <p className="mt-0.5 truncate text-[11px] italic text-gray-400">{subCost.supplierName}</p>}
+                </button>
+                <span className="text-right tabular-nums text-[#1a1a1f]">{subCost ? money(subCost.amount) : "—"}</span>
+                <span className={`text-right tabular-nums ${balanceClass(line)}`}>{money(Number(line.variance ?? 0))}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </SidePanel>
   );
 }
 

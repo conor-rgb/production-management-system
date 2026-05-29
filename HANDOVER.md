@@ -1,3 +1,81 @@
+# HANDOVER - 2026-05-29 - Budget Available Balance and Quick Cost Workflow
+
+## Built This Session
+- Reworked budget balance language so open budget pots do not read as profit.
+- The old `Remaining` column is now `Balance`.
+- Parent line balance now labels itself by state:
+  - `Available` for open positive balance,
+  - `Released` for closed positive balance,
+  - `Over` for negative balance.
+- Added a new cost line type:
+  - `PENDING_RECEIPT`
+  - shown to users as `Quick cost`.
+- Quick costs are for on-the-go spend capture where the cost is known but the receipt is missing, e.g. `Uber £40`.
+- Quick costs count against the budget immediately and are treated as paid/known spend, but remain visible in the missing-receipt workflow.
+- Added Quick cost creation in:
+  - parent row right-click menu,
+  - cost-lines drawer.
+- Updated line type dropdowns and pills to include `Quick cost`.
+- Updated the budget footer summary:
+  - committed,
+  - paid / known,
+  - open balance,
+  - released margin,
+  - forecast profit,
+  - overages,
+  - existing PO / invoice attention counts.
+- Added a project-level `Cost tracker` drawer from the budget grid toolbar.
+- Cost tracker filters:
+  - All costs,
+  - Open POs,
+  - Bills unpaid,
+  - Bills paid,
+  - Receipt missing,
+  - Reconciled,
+  - Over-budget lines,
+  - Released margin.
+- The tracker provides a cleaner reconciliation command centre without crowding the budget grid.
+
+## Backend
+- Updated `backend/prisma/schema.prisma`.
+- Added migration:
+  - `backend/prisma/migrations/20260529100000_sub_cost_pending_receipt/migration.sql`
+- Updated `backend/src/routes/budgets.ts`.
+- `PENDING_RECEIPT` lifecycle:
+  - `isAgreed: true`,
+  - `isInvoiced: true`,
+  - `isPaid: true`,
+  - `datePaid` set on create/type-change,
+  - still identifiable as missing receipt through line type/proof checks.
+
+## Frontend
+- Updated `frontend/src/components/budgets/BudgetView.tsx`.
+- Updated `frontend/src/components/budgets/budgetStatus.ts`.
+- Updated `frontend/src/lib/types.ts`.
+
+## Deployment / Verification
+- Prisma migration deployed successfully.
+- Prisma client regenerated.
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Budget pots can stay open without their balance being treated as profit.
+- Closing a line now makes the remaining positive balance read as released margin.
+- Fast spend capture is possible before a receipt exists.
+- Reconciliation has a dedicated filtered drawer for the main stages.
+- Useful next pass:
+  - transfer released balance between parent pots with an audit trail,
+  - attach receipt later to convert Quick cost to Receipt,
+  - AI receipt/bill extraction directly from the cost tracker,
+  - saved reconciliation views and counts on the project nav.
+
+---
+
 # HANDOVER - 2026-05-28 - Budget Layout and Cost Drawer Pass
 
 ## Built This Session

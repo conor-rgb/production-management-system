@@ -23,6 +23,7 @@ export const STATE_BADGES: Record<DotState, { text: string; bg: string; color: s
 export const COST_LINE_BACKGROUNDS: Record<SubCostLineType, string> = {
   PO: "#fbf8ff",
   BILL: "#f5f9ff",
+  PENDING_RECEIPT: "#fffbeb",
   RECEIPT: "#f5fcf7",
 };
 

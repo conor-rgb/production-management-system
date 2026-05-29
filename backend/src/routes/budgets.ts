@@ -54,7 +54,7 @@ function normalizeLineType(value: unknown): SubCostLineType {
 }
 
 function lineTypeLifecycle(lineType: SubCostLineType): Pick<Prisma.SubCostUncheckedCreateInput, "status" | "isAgreed" | "isInvoiced" | "isPaid" | "datePaid"> {
-  if (lineType === SubCostLineType.RECEIPT) {
+  if (lineType === SubCostLineType.RECEIPT || lineType === SubCostLineType.PENDING_RECEIPT) {
     return { status: SubCostStatus.PAID, isAgreed: true, isInvoiced: true, isPaid: true, datePaid: new Date() };
   }
   if (lineType === SubCostLineType.BILL) {
@@ -546,7 +546,7 @@ router.post("/lines/:lineItemId/subcosts", async (req: Request, res: Response): 
       purchaseOrderGroupId,
       lineType,
       poNumber,
-      description: body.description as string || `${lineType === SubCostLineType.PO ? "PO" : lineType === SubCostLineType.BILL ? "Bill" : "Receipt"} cost line`,
+      description: body.description as string || `${lineType === SubCostLineType.PO ? "PO" : lineType === SubCostLineType.BILL ? "Bill" : lineType === SubCostLineType.PENDING_RECEIPT ? "Quick cost" : "Receipt"} cost line`,
       supplierName: (body.supplierName as string | null | undefined) ?? purchaseOrder?.supplierName,
       amount: Number(body.amount ?? 0),
       amountGross: numberOrNull(body.amountGross),
