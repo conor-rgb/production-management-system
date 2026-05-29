@@ -1,10 +1,16 @@
 import PDFDocument from "pdfkit";
 import prisma from "../prisma";
 import { autoFileDocument } from "./fileStorage";
-import { calculateRevisionTotalsFromRevision, FullRevision, getRevision } from "./budgetService";
+import { calculateRevisionTotalsFromRevision, FullRevision, getRevision, revisionVersionLabel } from "./budgetService";
+
+const PAGE = { left: 52, right: 543, top: 58, bottom: 780 };
+const TEXT = "#111111";
+const MUTED = "#5f5f5f";
+const LINE = "#111111";
+const PALE = "#f5f5f1";
 
 function money(value: number): string {
-  if (value === 0) return "£      -";
+  if (!value) return "£0.00";
   return `£${value.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
@@ -12,14 +18,60 @@ function percent(value: number): string {
   return `${value.toLocaleString("en-GB", { maximumFractionDigits: 2 })}%`;
 }
 
-function writePair(doc: PDFKit.PDFDocument, label: string, value: string, x: number, y: number) {
-  doc.font("Helvetica").fontSize(8).fillColor("#555").text(label, x, y, { width: 86 });
-  doc.font("Helvetica-Bold").fontSize(9).fillColor("#111").text(value || "-", x + 90, y, { width: 170 });
+function cleanLines(value?: string | null): string[] {
+  return (value ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function dateString(value?: Date | string | null): string {
+  const date = value ? new Date(value) : new Date();
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("en-GB");
+}
+
+function detailPair(doc: PDFKit.PDFDocument, label: string, value: string, x: number, y: number, width = 210) {
+  doc.font("Helvetica-Bold").fontSize(7.6).fillColor(TEXT).text(label, x, y, { width: 70 });
+  doc.font("Helvetica").fontSize(8).fillColor(TEXT).text(value || "-", x + 76, y, { width: width - 76 });
+}
+
+function drawRule(doc: PDFKit.PDFDocument, y: number) {
+  doc.moveTo(PAGE.left, y).lineTo(PAGE.right, y).lineWidth(0.65).strokeColor(LINE).stroke();
+}
+
+function footer(doc: PDFKit.PDFDocument, page: number, pageCount: number, jobCode: string) {
+  drawRule(doc, 742);
+  doc.font("Helvetica-Bold").fontSize(7).fillColor(TEXT).text("BOND UN LIMITED", PAGE.left, 758);
+  doc.font("Helvetica").fontSize(7).fillColor(TEXT).text(
+    "128 City Road | London EC1V 2NX, England, United Kingdom | www.unlimited.bond | Tel: +44 (0) 7711 825 340 | VAT Number: GB 493336372 | Company Number: 16215041",
+    PAGE.left,
+    770,
+    { width: PAGE.right - PAGE.left }
+  );
+  doc.fontSize(7).fillColor(MUTED).text(`unlimited.bond · ${jobCode} · Page ${page} of ${pageCount}`, PAGE.left, 806, { width: PAGE.right - PAGE.left, align: "center" });
+}
+
+function ensureSpace(doc: PDFKit.PDFDocument, y: number, needed: number, mode: "client" | "internal") {
+  if (y + needed <= PAGE.bottom - 30) return y;
+  doc.addPage();
+  if (mode === "internal") watermark(doc);
+  return PAGE.top;
+}
+
+function watermark(doc: PDFKit.PDFDocument) {
+  doc.save().rotate(-35, { origin: [300, 390] }).font("Helvetica-Bold").fontSize(54).fillColor("#eeeeee").text("INTERNAL", 82, 360).restore();
+}
+
+function sectionRows(revision: FullRevision, mode: "client" | "internal") {
+  return revision.sections
+    .filter((section) => section.isVisible)
+    .map((section) => ({
+      section,
+      lines: section.lineItems.filter((line) => !line.isSubItem && (mode === "internal" || line.estimatedTotal > 0)),
+    }))
+    .filter((item) => item.lines.length > 0);
 }
 
 async function renderPdf(revision: FullRevision, mode: "client" | "internal") {
   const chunks: Buffer[] = [];
-  const doc = new PDFDocument({ margin: 38, size: "A4", bufferPages: true });
+  const doc = new PDFDocument({ margin: 0, size: "A4", bufferPages: true });
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
 
   const totals = calculateRevisionTotalsFromRevision(revision);
@@ -29,175 +81,138 @@ async function renderPdf(revision: FullRevision, mode: "client" | "internal") {
   const jobCode = production?.jobCode ?? "BID";
   const client = production?.clientName ?? opportunity?.clientName ?? "Client";
   const brand = production?.brand ?? opportunity?.brand ?? "";
-  const jobName = budget.jobName ?? production?.title ?? opportunity?.title ?? brand;
-  const bidDate = new Date().toLocaleDateString("en-GB");
+  const projectName = budget.jobName ?? production?.title ?? opportunity?.title ?? brand;
+  const version = revisionVersionLabel(revision);
+  const generated = dateString(new Date());
+  const validUntil = dateString(revision.validUntil) || "";
+  const representative = revision.representative || "Conor Bond";
+  const description = revision.estimateDescription || budget.comments || "";
+  const included = cleanLines(revision.includedNotes || budget.comments);
+  const notIncluded = cleanLines(revision.notIncludedNotes || budget.caveats);
+  const assumptions = cleanLines(revision.assumptions || revision.notes);
+  const paymentTerms = revision.paymentTerms || "50% deposit required before shoot.";
 
-  doc.font("Helvetica-Bold").fontSize(20).fillColor("#111").text("unlimited.bond", 38, 38);
-  doc.fontSize(16).text(`ESTIMATE V${budget.version}`, 380, 38, { width: 170, align: "right" });
-  doc.font("Helvetica-Bold").fontSize(9).fillColor("#fff").rect(430, 62, 120, 18).fill("#1a1a1f");
-  doc.text(`STATUS: ${budget.status.replace(/_/g, " ")}`, 438, 67, { width: 104, align: "center" });
-  doc.fillColor("#111").moveDown(2);
+  doc.font("Helvetica-Bold").fontSize(29).fillColor(TEXT).text("unlimited.bond", PAGE.left, 84);
+  doc.font("Helvetica-Bold").fontSize(18).text("ESTIMATE", 420, 92, { width: 120, align: "right" });
 
-  doc.font("Helvetica-Bold").fontSize(11).text("PROJECT DETAILS", 38, 100);
-  const leftY = 126;
-  writePair(doc, "Client:", client, 38, leftY);
-  writePair(doc, "Billing Address:", "", 38, leftY + 18);
-  writePair(doc, "Contact:", "", 38, leftY + 36);
-  writePair(doc, "Phone:", "", 38, leftY + 54);
-  writePair(doc, "Email:", "", 38, leftY + 72);
-  writePair(doc, "Accounting:", budget.accountingContact ?? "", 38, leftY + 90);
-  writePair(doc, "Bid Date:", bidDate, 310, leftY);
-  writePair(doc, "Job Name/Ref:", jobName ?? "", 310, leftY + 18);
-  writePair(doc, "Location:", budget.jobLocation ?? "", 310, leftY + 36);
-  writePair(doc, "Shot Count:", budget.shotCount ?? "", 310, leftY + 54);
-  writePair(doc, "Prep/Travel:", budget.prepTravelDate ?? "", 310, leftY + 72);
-  writePair(doc, "Shoot Dates:", budget.shootDates ?? "", 310, leftY + 90);
-  writePair(doc, "Phot/Director:", budget.photographerDirector ?? "", 310, leftY + 108);
+  let y = 154;
+  const colA = PAGE.left;
+  const colB = 230;
+  const colC = 410;
+  detailPair(doc, "Client", client, colA, y, 170);
+  detailPair(doc, "Client Contact", client, colA, y + 15, 170);
+  detailPair(doc, "Client Email", "", colA, y + 30, 170);
+  detailPair(doc, "Client Notes", budget.comments ?? "", colA, y + 45, 170);
+  detailPair(doc, "Accounting Contact", budget.accountingContact ?? "", colB, y, 170);
+  detailPair(doc, "Accounting Email", "", colB, y + 15, 170);
+  detailPair(doc, "Billing Address", "", colB, y + 30, 170);
+  detailPair(doc, "Date", generated, colC, y, 140);
+  detailPair(doc, "Estimate Version", version, colC, y + 15, 140);
+  detailPair(doc, "Job Number", jobCode, colC, y + 30, 140);
+  detailPair(doc, "Representative", representative, colC, y + 45, 140);
+  detailPair(doc, "Generated", generated, colC, y + 60, 140);
+  detailPair(doc, "Valid Until", validUntil, colC, y + 75, 140);
 
-  let y = 270;
-  doc.font("Helvetica-Bold").fontSize(11).fillColor("#111").text("SUMMARY OF FIRM BID PRODUCTION EXPENSES:", 38, y);
-  y += 22;
+  drawRule(doc, 256);
+  y = 274;
+  detailPair(doc, "Artist", budget.photographerDirector ?? "", PAGE.left, y, 420);
+  detailPair(doc, "Job Name", projectName ?? "", PAGE.left, y + 15, 420);
+  detailPair(doc, "Job Location", budget.jobLocation ?? "", PAGE.left, y + 30, 420);
+  detailPair(doc, "Production Dates", budget.shootDates ?? "", PAGE.left, y + 45, 420);
+  detailPair(doc, "Prep / Travel", budget.prepTravelDate ?? "", PAGE.left, y + 60, 420);
+  detailPair(doc, "Shot Count", budget.shotCount ?? "", PAGE.left, y + 75, 420);
+  detailPair(doc, "Deliverables", description, PAGE.left, y + 90, 420);
+  detailPair(doc, "Usage", budget.usages ?? "", PAGE.left, y + 105, 420);
+
+  drawRule(doc, 410);
+  y = 432;
+  doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT).text("SUMMARY OF FIRM BID PRODUCTION EXPENSES", PAGE.left, y);
+  y += 17;
   for (const section of totals.sectionTotals.filter((item) => item.estimatedTotal > 0)) {
-    doc.font("Helvetica").fontSize(9).fillColor("#111").text(`${section.code}. ${section.name}`, 56, y, { width: 330 });
-    doc.font("Helvetica").text(money(section.estimatedTotal), 420, y, { width: 110, align: "right" });
-    y += 16;
+    doc.font("Helvetica").fontSize(8).fillColor(TEXT).text(`${section.code}. ${section.name}`, PAGE.left, y, { width: 330 });
+    doc.text(money(section.estimatedTotal), 430, y, { width: 110, align: "right" });
+    y += 13;
   }
   y += 6;
-  doc.moveTo(400, y).lineTo(532, y).strokeColor("#888").stroke();
+  doc.rect(PAGE.left, y, 490, 0.6).fill(TEXT);
   y += 10;
-  doc.font("Helvetica-Bold").fontSize(9).fillColor("#111").text("SUBTOTAL", 56, y);
-  doc.text(money(totals.subtotal), 420, y, { width: 110, align: "right" });
-  y += 16;
-  doc.text(`PRODUCTION FEE ${percent(revision.productionFeePercent)}`, 56, y);
-  doc.text(money(totals.productionFee), 420, y, { width: 110, align: "right" });
-  y += 16;
+  doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT).text("SUBTOTAL", 330, y, { width: 100, align: "right" });
+  doc.text(money(totals.subtotal), 430, y, { width: 110, align: "right" });
+  y += 13;
+  doc.text(`PRODUCTION FEE ${percent(revision.productionFeePercent)}`, 330, y, { width: 100, align: "right" });
+  doc.text(money(totals.productionFee), 430, y, { width: 110, align: "right" });
+  y += 13;
   if (revision.insurancePercent > 0) {
-    doc.text(`INSURANCE ${percent(revision.insurancePercent)}`, 56, y);
-    doc.text(money(totals.insurance), 420, y, { width: 110, align: "right" });
-    y += 16;
+    doc.text(`INSURANCE ${percent(revision.insurancePercent)}`, 330, y, { width: 100, align: "right" });
+    doc.text(money(totals.insurance), 430, y, { width: 110, align: "right" });
+    y += 13;
   }
-  doc.moveTo(400, y).lineTo(532, y).lineWidth(1.5).strokeColor("#111").stroke();
-  y += 10;
-  doc.fontSize(10).text("TOTAL ESTIMATED PRODUCTION EXPENSES", 56, y);
-  doc.text(money(totals.grandTotal), 400, y, { width: 130, align: "right" });
-  y += 22;
-  if (budget.currencySecondary && totals.currencyConverted) {
-    doc.font("Helvetica").fontSize(9).text(`TOTAL IN ${budget.currencySecondary} (@ ${budget.currencyRate ?? 0})`, 56, y);
-    doc.text(totals.currencyConverted.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 400, y, { width: 130, align: "right" });
-    y += 20;
-  }
-  for (const advance of budget.advanceInvoices) {
-    const calculated = totals.advances.find((item) => item.id === advance.id)?.calculatedAmount ?? 0;
-    doc.font("Helvetica-Bold").fontSize(9).text(advance.label.toUpperCase(), 56, y);
-    doc.text(money(calculated), 400, y, { width: 130, align: "right" });
-    y += 16;
+  doc.fontSize(9).text("TOTAL ESTIMATED PRODUCTION EXPENSES", 260, y, { width: 170, align: "right" });
+  doc.text(money(totals.grandTotal), 430, y, { width: 110, align: "right" });
+  y += 20;
+  const advanceTotal = totals.advances.reduce((sum, advance) => sum + advance.calculatedAmount, 0);
+  if (advanceTotal > 0) {
+    doc.text("ADVANCE DUE", 330, y, { width: 100, align: "right" });
+    doc.text(money(advanceTotal), 430, y, { width: 110, align: "right" });
   }
 
-  if (budget.comments) {
-    y += 16;
-    doc.font("Helvetica-Bold").fontSize(10).text("COMMENTS:", 38, y);
-    doc.font("Helvetica").fontSize(9).text(budget.comments, 38, y + 14, { width: 500 });
-  }
+  const infoTop = 620;
+  doc.rect(PAGE.left, infoTop, 490, 74).strokeColor("#222").lineWidth(0.45).stroke();
+  doc.font("Helvetica-Bold").fontSize(7).fillColor(TEXT).text("COMMENTS", PAGE.left + 8, infoTop + 10, { width: 58 });
+  doc.font("Helvetica").fontSize(7.5).fillColor(TEXT).text(
+    [...included.map((line) => `+ ${line}`), ...notIncluded.map((line) => `- ${line}`), ...assumptions.map((line) => `• ${line}`)].slice(0, 10).join("\n") || "All costs are based on current brief and confirmed teams.",
+    PAGE.left + 78,
+    infoTop + 10,
+    { width: 390, lineGap: 2 }
+  );
+  doc.font("Helvetica-Bold").fontSize(7).fillColor(TEXT).text("Payment Terms", 330, 710, { width: 90 });
+  doc.font("Helvetica").text(paymentTerms, 420, 710, { width: 120 });
 
-  doc.font("Helvetica-Bold").fontSize(10).text("CONFIRMATION:", 38, 660);
-  doc.font("Helvetica").fontSize(9).text("Signed: _________________________ Date: _____________", 38, 690);
-  doc.text("For and on behalf of: unlimited.bond / BOND UN LIMITED", 38, 708);
-  doc.text("I have read and agreed to your Terms & Conditions.", 38, 740);
-  doc.text("Signed: _________________________ Date: _____________", 38, 760);
-  doc.text(`For and on behalf of: ${client}`, 38, 778);
-
-  for (const section of revision.sections.filter((item) => item.isVisible)) {
-    const sectionTotal = totals.sectionTotals.find((item) => item.sectionId === section.id);
-    if (!sectionTotal || sectionTotal.estimatedTotal === 0) continue;
-    doc.addPage();
-    if (mode === "internal") {
-      doc.save().rotate(-35, { origin: [280, 380] }).fontSize(54).fillColor("#eeeeee").text("INTERNAL", 80, 360).restore();
-    }
-    let rowY = 44;
-    doc.rect(38, rowY, 520, 20).fill("#1a1a1f");
-    doc.font("Helvetica-Bold").fontSize(9).fillColor("#fff").text(`${section.code}. ${section.name}`, 48, rowY + 6, { width: 330 });
-    doc.text(money(sectionTotal.estimatedTotal), 430, rowY + 6, { width: 110, align: "right" });
-    rowY += 30;
-    doc.fillColor("#555").fontSize(7);
-    if (mode === "internal") {
-      doc.text("DESCRIPTION", 44, rowY);
-      doc.text("QTY", 234, rowY, { width: 28, align: "right" });
-      doc.text("UNIT", 268, rowY, { width: 50, align: "right" });
-      doc.text("RATE", 322, rowY, { width: 58, align: "right" });
-      doc.text("AGY%", 384, rowY, { width: 32, align: "right" });
-      doc.text("EST.", 420, rowY, { width: 52, align: "right" });
-      doc.text("ACT.", 476, rowY, { width: 46, align: "right" });
-      doc.text("REM.", 526, rowY, { width: 32, align: "right" });
-    } else {
-      doc.text("DESCRIPTION", 44, rowY);
-      doc.text("QTY", 310, rowY, { width: 40, align: "right" });
-      doc.text("UNIT", 354, rowY, { width: 62, align: "right" });
-      doc.text("RATE", 420, rowY, { width: 60, align: "right" });
-      doc.text("BUDGET", 486, rowY, { width: 58, align: "right" });
-    }
-    rowY += 14;
-
-    for (const line of section.lineItems.filter((item) => !item.isSubItem)) {
-      if (line.estimatedTotal === 0 && mode === "client") continue;
-      doc.fillColor("#111").font("Helvetica").fontSize(8).text(`${line.lineCode} ${line.description}`, 44, rowY, { width: mode === "internal" ? 160 : 250 });
-      if (line.clientNotes && mode === "client") {
-        doc.font("Helvetica-Oblique").fillColor("#666").text(line.clientNotes, 64, rowY + 10, { width: 230 });
-      }
-      doc.fillColor("#111").font("Helvetica").fontSize(8);
-      if (mode === "internal") {
-        doc.text(String(line.qty), 234, rowY, { width: 28, align: "right" });
-        doc.text(line.unit === "Flat Fee" ? "Flat Fee" : `${line.days} ${line.unit}`, 268, rowY, { width: 50, align: "right" });
-        doc.text(money(line.rate), 322, rowY, { width: 58, align: "right" });
-        doc.text(percent(line.agencyFeePercent ?? 0), 384, rowY, { width: 32, align: "right" });
-        doc.text(money(line.estimatedTotal), 420, rowY, { width: 52, align: "right" });
-        doc.text(money(line.actualTotal), 476, rowY, { width: 46, align: "right" });
-        doc.text(money(line.variance), 526, rowY, { width: 32, align: "right" });
-      } else {
-        doc.text(String(line.qty), 310, rowY, { width: 40, align: "right" });
-        doc.text(line.unit === "Flat Fee" ? "Flat Fee" : `${line.days} ${line.unit}`, 354, rowY, { width: 62, align: "right" });
-        doc.text(money(line.rate), 420, rowY, { width: 60, align: "right" });
-        doc.text(money(line.estimatedTotal), 486, rowY, { width: 58, align: "right" });
-      }
-      rowY += line.clientNotes && mode === "client" ? 25 : 16;
-      if (rowY > 760) {
-        doc.addPage();
-        rowY = 44;
-      }
-    }
-  }
-
+  const blocks = sectionRows(revision, mode);
   doc.addPage();
-  doc.font("Helvetica-Bold").fontSize(14).fillColor("#111").text("Summary", 38, 44);
-  let summaryY = 80;
-  for (const section of totals.sectionTotals.filter((item) => item.estimatedTotal > 0)) {
-    doc.font("Helvetica").fontSize(9).text(`${section.code}. ${section.name}`, 56, summaryY, { width: 330 });
-    doc.text(money(section.estimatedTotal), 420, summaryY, { width: 110, align: "right" });
-    summaryY += 16;
+  if (mode === "internal") watermark(doc);
+  y = PAGE.top;
+  doc.font("Helvetica-Bold").fontSize(14).fillColor(TEXT).text("Estimate breakdown", PAGE.left, y);
+  doc.font("Helvetica").fontSize(8).fillColor(MUTED).text(`${client}${brand ? ` · ${brand}` : ""} · ${version}`, PAGE.left, y + 18);
+  y += 44;
+
+  for (const { section, lines } of blocks) {
+    y = ensureSpace(doc, y, 48 + lines.length * 13, mode);
+    doc.rect(PAGE.left, y, 490, 17).fill("#111111");
+    const sectionTotal = totals.sectionTotals.find((item) => item.sectionId === section.id)?.estimatedTotal ?? 0;
+    doc.font("Helvetica-Bold").fontSize(7.5).fillColor("#ffffff").text(`${section.code}. ${section.name}`, PAGE.left + 6, y + 5, { width: 330 });
+    doc.text(money(sectionTotal), 430, y + 5, { width: 104, align: "right" });
+    y += 21;
+
+    doc.font("Helvetica-Bold").fontSize(6.5).fillColor(MUTED);
+    doc.text("DESCRIPTION", PAGE.left + 6, y);
+    doc.text("QTY", 286, y, { width: 30, align: "right" });
+    doc.text("UNIT", 322, y, { width: 54, align: "right" });
+    doc.text("RATE", 384, y, { width: 60, align: "right" });
+    doc.text(mode === "internal" ? "ACTUAL" : "BUDGET", 466, y, { width: 68, align: "right" });
+    y += 10;
+
+    for (const line of lines) {
+      y = ensureSpace(doc, y, line.clientNotes && mode === "client" ? 24 : 14, mode);
+      doc.rect(PAGE.left, y - 2, 490, 0.35).fill("#d9d9d4");
+      doc.font("Helvetica").fontSize(7.4).fillColor(TEXT).text(`${line.lineCode}  ${line.description}`, PAGE.left + 6, y, { width: 260, ellipsis: true });
+      doc.text(String(line.qty || ""), 286, y, { width: 30, align: "right" });
+      doc.text(line.unit === "Flat Fee" ? "Flat Fee" : `${line.days} ${line.unit}`, 322, y, { width: 54, align: "right" });
+      doc.text(money(line.rate), 384, y, { width: 60, align: "right" });
+      doc.font("Helvetica-Bold").text(money(mode === "internal" ? line.actualTotal : line.estimatedTotal), 466, y, { width: 68, align: "right" });
+      y += 12;
+      if (line.clientNotes && mode === "client") {
+        doc.font("Helvetica-Oblique").fontSize(6.6).fillColor(MUTED).text(line.clientNotes, PAGE.left + 22, y - 1, { width: 260, ellipsis: true });
+        y += 10;
+      }
+    }
+    y += 8;
   }
-  summaryY += 10;
-  doc.font("Helvetica-Bold").text("SUBTOTAL", 56, summaryY);
-  doc.text(money(totals.subtotal), 420, summaryY, { width: 110, align: "right" });
-  summaryY += 16;
-  doc.text(`PRODUCTION FEE ${percent(revision.productionFeePercent)}`, 56, summaryY);
-  doc.text(money(totals.productionFee), 420, summaryY, { width: 110, align: "right" });
-  summaryY += 16;
-  if (revision.insurancePercent > 0) {
-    doc.text(`INSURANCE ${percent(revision.insurancePercent)}`, 56, summaryY);
-    doc.text(money(totals.insurance), 420, summaryY, { width: 110, align: "right" });
-    summaryY += 16;
-  }
-  doc.fontSize(11).text("GRAND TOTAL", 56, summaryY);
-  doc.text(money(totals.grandTotal), 400, summaryY, { width: 130, align: "right" });
 
   const range = doc.bufferedPageRange();
-  for (let i = range.start; i < range.start + range.count; i++) {
+  for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
-    doc.font("Helvetica").fontSize(7).fillColor("#777").text(
-      `unlimited.bond | VAT GB 493336372 | ${jobCode} | R${revision.revisionNumber} | Page ${i + 1} of ${range.count}`,
-      38,
-      808,
-      { width: 520, align: "center" }
-    );
+    footer(doc, i + 1, range.count, jobCode);
   }
 
   doc.end();
@@ -215,7 +230,7 @@ export async function exportRevisionPdf(revisionId: string, mode: "client" | "in
   await prisma.budget.update({ where: { id: budget.id }, data: { version: nextVersion } });
   const pdfBuffer = await renderPdf(revision, mode);
   const jobCode = budget.production?.jobCode ?? "BID";
-  const filename = `${jobCode}_Estimate_R${revision.revisionNumber}_V${nextVersion}_${mode}.pdf`;
+  const filename = `${jobCode}_Estimate_${revisionVersionLabel(revision)}_${mode}_${new Date().toISOString().slice(0, 10)}.pdf`;
 
   if (!budget.productionId) {
     return {

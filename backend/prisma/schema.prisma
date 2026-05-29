@@ -1143,11 +1143,19 @@ model BudgetRevision {
   productionFeePercent Float           @default(10)
   insurancePercent     Float           @default(0)
   notes                String?
+  estimateDescription  String?
+  includedNotes        String?
+  notIncludedNotes     String?
+  assumptions          String?
+  paymentTerms         String?
+  validUntil           DateTime?
+  representative       String?
   sourceRevisionId     String?
   isLocked             Boolean         @default(false)
   lockedAt             DateTime?
   changeSummary        String?
   sections             BudgetSection[]
+  transfers            BudgetLineTransfer[]
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
@@ -1199,12 +1207,33 @@ model BudgetLineItem {
   children         BudgetLineItem[] @relation("SubItems")
   jobFiles         JobFile[]
   receiptCaptures  ReceiptCapture[]
+  transfersOut     BudgetLineTransfer[] @relation("BudgetTransferFrom")
+  transfersIn      BudgetLineTransfer[] @relation("BudgetTransferTo")
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
   @@index([sectionId])
   @@index([parentId])
   @@map("pms_budget_line_items")
+}
+
+model BudgetLineTransfer {
+  id             String         @id @default(uuid())
+  revisionId     String
+  fromLineItemId String
+  toLineItemId   String
+  amount         Float
+  reason         String?
+  createdAt      DateTime       @default(now())
+
+  revision       BudgetRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  fromLineItem   BudgetLineItem @relation("BudgetTransferFrom", fields: [fromLineItemId], references: [id], onDelete: Cascade)
+  toLineItem     BudgetLineItem @relation("BudgetTransferTo", fields: [toLineItemId], references: [id], onDelete: Cascade)
+
+  @@index([revisionId])
+  @@index([fromLineItemId])
+  @@index([toLineItemId])
+  @@map("pms_budget_line_transfers")
 }
 
 model SubCost {

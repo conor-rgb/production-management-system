@@ -605,14 +605,34 @@ export interface BudgetRevision {
   productionFeePercent: number;
   insurancePercent: number;
   notes?: string;
+  estimateDescription?: string | null;
+  includedNotes?: string | null;
+  notIncludedNotes?: string | null;
+  assumptions?: string | null;
+  paymentTerms?: string | null;
+  validUntil?: string | null;
+  representative?: string | null;
   sourceRevisionId?: string | null;
   isLocked: boolean;
   lockedAt?: string | null;
   changeSummary?: string | null;
   sections: BudgetSection[];
+  transfers?: BudgetLineTransfer[];
   createdAt: string;
   updatedAt: string;
   totals: BudgetTotals;
+}
+
+export interface BudgetLineTransfer {
+  id: string;
+  revisionId: string;
+  fromLineItemId: string;
+  toLineItemId: string;
+  amount: number;
+  reason?: string | null;
+  createdAt: string;
+  fromLineItem?: Pick<BudgetLineItem, "id" | "lineCode" | "description" | "estimatedTotal" | "actualTotal" | "variance">;
+  toLineItem?: Pick<BudgetLineItem, "id" | "lineCode" | "description" | "estimatedTotal" | "actualTotal" | "variance">;
 }
 
 export interface Budget {
@@ -711,6 +731,7 @@ export interface BudgetRevisionSummary {
   isLocked: boolean;
   lockedAt?: string | null;
   changeSummary?: string | null;
+  estimateDescription?: string | null;
   createdAt: string;
   updatedAt: string;
   grandTotal: number;

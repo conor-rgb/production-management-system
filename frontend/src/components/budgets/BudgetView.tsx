@@ -28,6 +28,20 @@ type AddingCostLine = { lineId: string; lineType: SubCostLineType };
 type ParentContextMenu = { lineId: string; x: number; y: number } | null;
 type BudgetColumnKey = "dot" | "code" | "description" | "clientNotes" | "internalNotes" | "qty" | "unit" | "rate" | "agency" | "estimated" | "actuals" | "remaining" | "clo";
 type ActiveBudgetCell = { rowId: string; field: string } | null;
+type BudgetCompareResult = {
+  baseRevision: { id: string; label: string; revisionNumber: number; majorVersion: number; minorVersion: number } | null;
+  currentRevision: { id: string; label: string; revisionNumber: number; majorVersion: number; minorVersion: number };
+  totalDelta: number;
+  changes: Array<{
+    type: "added" | "removed" | "changed";
+    sectionCode: string;
+    lineCode: string;
+    description: string;
+    beforeEstimated: number | null;
+    afterEstimated: number | null;
+    deltaEstimated: number;
+  }>;
+};
 
 type BudgetColumn = {
   key: BudgetColumnKey;
@@ -240,6 +254,13 @@ function financeSummary(revision: BudgetRevision) {
   const committed = lines.reduce((sum, line) => sum + Number(line.actualTotal ?? 0), 0);
   const paid = lines.reduce((sum, line) => sum + line.subCosts.filter((subCost) => subCost.isPaid).reduce((lineSum, subCost) => lineSum + Number(subCost.amount ?? 0), 0), 0);
   return { openBalance, releasedMargin, overages, committed, paid, forecastProfit: revision.totals.grandTotal - committed };
+}
+
+function transferSummaryForLine(revision: BudgetRevision, lineId: string) {
+  const transfers = revision.transfers ?? [];
+  const transferIn = transfers.filter((transfer) => transfer.toLineItemId === lineId).reduce((sum, transfer) => sum + Number(transfer.amount ?? 0), 0);
+  const transferOut = transfers.filter((transfer) => transfer.fromLineItemId === lineId).reduce((sum, transfer) => sum + Number(transfer.amount ?? 0), 0);
+  return { transferIn, transferOut, adjustedBalance: transferIn - transferOut };
 }
 
 function displayActualForLine(line: BudgetLineItem) {
@@ -498,7 +519,7 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
       {panel === "cover" && <CoverPanel budget={budget} onClose={() => setPanel(null)} onSave={patchBudget} />}
       {panel === "advances" && <AdvancesPanel budget={budget} totals={revision.totals} onClose={() => setPanel(null)} onChanged={load} />}
       {panel === "templates" && <TemplatePanel templates={templates} onClose={() => setPanel(null)} onApply={applyTemplate} />}
-      {versionPanelOpen && <VersionPanel currentRevision={revision} revisions={revisions} onClose={() => setVersionPanelOpen(false)} onOpenRevision={openRevision} />}
+      {versionPanelOpen && <VersionPanel currentRevision={revision} revisions={revisions} onClose={() => setVersionPanelOpen(false)} onOpenRevision={openRevision} onPatchRevision={patchRevision} />}
     </div>
   );
 }
@@ -780,6 +801,7 @@ function BudgetTable(props: {
       )}
       {costPanelLine && (
         <CostLinesPanel
+          revision={props.revision}
           line={props.revision.sections.flatMap((section) => section.lineItems).find((line) => line.id === costPanelLine.id) ?? costPanelLine}
           productionId={props.productionId}
           onClose={() => setCostPanelLine(null)}
@@ -1539,10 +1561,70 @@ function TemplatePanel({ templates, onClose, onApply }: { templates: SectionTemp
   );
 }
 
-function VersionPanel({ currentRevision, revisions, onClose, onOpenRevision }: { currentRevision: BudgetRevision; revisions: BudgetRevisionSummary[]; onClose: () => void; onOpenRevision: (revisionId: string) => Promise<void> }) {
+function VersionPanel({ currentRevision, revisions, onClose, onOpenRevision, onPatchRevision }: { currentRevision: BudgetRevision; revisions: BudgetRevisionSummary[]; onClose: () => void; onOpenRevision: (revisionId: string) => Promise<void>; onPatchRevision: (patch: Partial<BudgetRevision>) => Promise<void> }) {
+  const [compare, setCompare] = useState<BudgetCompareResult | null>(null);
+  const [comparisonOpen, setComparisonOpen] = useState(false);
+
+  useEffect(() => {
+    setCompare(null);
+    if (!currentRevision.sourceRevisionId) return;
+    api.get<BudgetCompareResult>(`/api/budgets/revisions/${currentRevision.id}/compare`)
+      .then(setCompare)
+      .catch(() => setCompare(null));
+  }, [currentRevision.id, currentRevision.sourceRevisionId]);
+
   return (
-    <SidePanel title="Budget versions" onClose={onClose} width="380px">
-      <div className="space-y-2">
+    <SidePanel title="Budget versions" onClose={onClose} width="460px">
+      <div className="space-y-4">
+        <section className="rounded-lg border border-[#e6e6e1] bg-[#fbfbf8] p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">Current estimate</p>
+              <h3 className="mt-1 text-sm font-semibold text-[#1a1a1f]">{budgetVersionLabel(currentRevision)} · {currentRevision.label}</h3>
+            </div>
+            <span className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase ${revisionTone(currentRevision)}`}>{STATUS_LABELS[currentRevision.status]}</span>
+          </div>
+          <div className="mt-3 space-y-3">
+            <BudgetPanelInput label="Estimate description" value={currentRevision.estimateDescription ?? ""} onChange={(value) => onPatchRevision({ estimateDescription: value }).catch(console.error)} placeholder="1 day location shoot in NY with John Munro and 2 models" />
+            <BudgetPanelInput label="Change summary" value={currentRevision.changeSummary ?? ""} onChange={(value) => onPatchRevision({ changeSummary: value }).catch(console.error)} placeholder="What changed in this version?" />
+            <BudgetPanelInput label="Representative" value={currentRevision.representative ?? ""} onChange={(value) => onPatchRevision({ representative: value }).catch(console.error)} placeholder="Conor Bond" />
+            <BudgetPanelInput label="Valid until" value={currentRevision.validUntil ? currentRevision.validUntil.slice(0, 10) : ""} onChange={(value) => onPatchRevision({ validUntil: value }).catch(console.error)} placeholder="YYYY-MM-DD" />
+            <BudgetPanelTextarea label="Included" value={currentRevision.includedNotes ?? ""} onChange={(value) => onPatchRevision({ includedNotes: value }).catch(console.error)} />
+            <BudgetPanelTextarea label="Not included" value={currentRevision.notIncludedNotes ?? ""} onChange={(value) => onPatchRevision({ notIncludedNotes: value }).catch(console.error)} />
+            <BudgetPanelTextarea label="Assumptions" value={currentRevision.assumptions ?? ""} onChange={(value) => onPatchRevision({ assumptions: value }).catch(console.error)} />
+            <BudgetPanelTextarea label="Payment terms" value={currentRevision.paymentTerms ?? ""} onChange={(value) => onPatchRevision({ paymentTerms: value }).catch(console.error)} placeholder="50% deposit required before shoot." />
+          </div>
+        </section>
+
+        {compare && (
+          <section className="rounded-lg border border-[#e6e6e1] bg-white p-3">
+            <button onClick={() => setComparisonOpen(!comparisonOpen)} className="flex w-full items-center justify-between text-left">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">Compare to source</p>
+                <p className="mt-1 text-sm font-semibold text-[#1a1a1f]">{compare.baseRevision ? budgetVersionLabel(compare.baseRevision) : "Previous"} → {budgetVersionLabel(currentRevision)}</p>
+              </div>
+              <span className={`text-sm font-semibold tabular-nums ${compare.totalDelta > 0 ? "text-[#dc2626]" : compare.totalDelta < 0 ? "text-[#16a34a]" : "text-gray-400"}`}>{compare.totalDelta > 0 ? "+" : ""}{money(compare.totalDelta)}</span>
+            </button>
+            {comparisonOpen && (
+              <div className="mt-3 max-h-56 space-y-1 overflow-auto border-t border-[#ededeb] pt-2">
+                {compare.changes.length === 0 ? (
+                  <p className="py-3 text-center text-xs text-gray-400">No line-level estimate changes.</p>
+                ) : compare.changes.map((change) => (
+                  <div key={`${change.type}-${change.sectionCode}-${change.lineCode}-${change.description}`} className="grid grid-cols-[1fr_80px] gap-2 rounded px-2 py-1.5 text-xs hover:bg-[#fbfbf8]">
+                    <div className="min-w-0">
+                      <span className="mr-2 text-[10px] uppercase text-gray-400">{change.type}</span>
+                      <span className="font-medium text-[#1a1a1f]">{change.lineCode}</span>
+                      <span className="ml-2 text-gray-600">{change.description}</span>
+                    </div>
+                    <span className={`text-right font-medium tabular-nums ${change.deltaEstimated > 0 ? "text-[#dc2626]" : "text-[#16a34a]"}`}>{change.deltaEstimated > 0 ? "+" : ""}{money(change.deltaEstimated)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        <div className="space-y-2">
         {revisions.map((revisionItem) => {
           const active = revisionItem.id === currentRevision.id;
           const source = revisionItem.sourceRevisionId ? revisions.find((item) => item.id === revisionItem.sourceRevisionId) : null;
@@ -1564,12 +1646,14 @@ function VersionPanel({ currentRevision, revisions, onClose, onOpenRevision }: {
             </button>
           );
         })}
+        </div>
       </div>
     </SidePanel>
   );
 }
 
-function CostLinesPanel({ line, productionId, onClose, onRevision, onError, onOpenPoPanel }: {
+function CostLinesPanel({ revision, line, productionId, onClose, onRevision, onError, onOpenPoPanel }: {
+  revision: BudgetRevision;
   line: BudgetLineItem;
   productionId: string | null;
   onClose: () => void;
@@ -1581,6 +1665,8 @@ function CostLinesPanel({ line, productionId, onClose, onRevision, onError, onOp
   const actual = Number(line.actualTotal ?? 0);
   const estimate = Number(line.estimatedTotal ?? 0);
   const remaining = Number(line.variance ?? 0);
+  const transfers = transferSummaryForLine(revision, line.id);
+  const adjustedBalance = remaining + transfers.adjustedBalance;
 
   return (
     <SidePanel title="Cost lines" onClose={onClose} width="520px">
@@ -1596,8 +1682,13 @@ function CostLinesPanel({ line, productionId, onClose, onRevision, onError, onOp
           <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
             <CostMetric label="Estimated" value={money(estimate)} />
             <CostMetric label="Actuals" value={line.subCosts.length ? money(actual) : "No costs"} muted={!line.subCosts.length} />
-            <CostMetric label={line.subCosts.length ? balanceLabel(line) : "Available"} value={line.subCosts.length ? money(remaining) : money(0)} className={line.subCosts.length ? balanceClass(line) : "text-[#c8c8c4]"} />
+            <CostMetric label={line.subCosts.length ? balanceLabel(line) : "Available"} value={line.subCosts.length ? money(adjustedBalance) : money(0)} className={line.subCosts.length ? (adjustedBalance < 0 ? "text-[#dc2626]" : adjustedBalance === 0 ? "text-[#c8c8c4]" : "text-[#16a34a]") : "text-[#c8c8c4]"} />
           </div>
+          {(transfers.transferIn > 0 || transfers.transferOut > 0) && (
+            <p className="mt-2 text-[11px] text-gray-500">
+              Transfers: {transfers.transferIn > 0 ? `+${money(transfers.transferIn)} in` : ""}{transfers.transferIn > 0 && transfers.transferOut > 0 ? " · " : ""}{transfers.transferOut > 0 ? `${money(transfers.transferOut)} released` : ""}
+            </p>
+          )}
           {!line.subCosts.length && (
             <p className="mt-3 rounded-md bg-white px-3 py-2 text-[12px] leading-5 text-gray-500">
               No spend is committed yet. The grid shows the estimate as a grey placeholder until a PO, Bill, quick cost, or Receipt is added.
@@ -1639,7 +1730,7 @@ function CostLinesPanel({ line, productionId, onClose, onRevision, onError, onOp
             <div className="px-3 py-8 text-center text-sm text-gray-400">No cost lines yet.</div>
           ) : (
             line.subCosts.map((subCost, index) => (
-              <CostLinePanelRow key={subCost.id} subCost={subCost} menuPlacement={index === line.subCosts.length - 1 ? "top" : "bottom"} onRevision={onRevision} onError={onError} />
+              <CostLinePanelRow key={subCost.id} revision={revision} line={line} subCost={subCost} menuPlacement={index === line.subCosts.length - 1 ? "top" : "bottom"} onRevision={onRevision} onError={onError} />
             ))
           )}
         </section>
@@ -1707,9 +1798,16 @@ function CostLinePanelForm({ lineId, lineType, onCancel, onCreated, onError }: {
   );
 }
 
-function CostLinePanelRow({ subCost, menuPlacement, onRevision, onError }: { subCost: SubCost; menuPlacement: "top" | "bottom"; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
+function CostLinePanelRow({ revision, line, subCost, menuPlacement, onRevision, onError }: { revision: BudgetRevision; line: BudgetLineItem; subCost: SubCost; menuPlacement: "top" | "bottom"; onRevision: (revision: BudgetRevision) => void; onError: (message: string) => void }) {
   const reference = subCost.lineType === "PO" ? subCost.poNumber : subCost.lineType === "BILL" ? subCost.invoiceNumber : null;
   const amountClass = subCost.lineType === "PO" ? "text-[#8b5cf6]" : subCost.lineType === "PENDING_RECEIPT" ? "text-[#d97706]" : subCost.lineType === "BILL" && !subCost.isPaid ? "text-[#3b82f6]" : "text-[#16a34a]";
+  const [converting, setConverting] = useState(false);
+  const [billAmount, setBillAmount] = useState(String(subCost.amount ?? 0));
+  const [coverFromLineItemId, setCoverFromLineItemId] = useState("");
+  const amountNumber = Number(billAmount || 0);
+  const overage = Math.max(0, amountNumber - Number(subCost.amount ?? 0));
+  const sourceLines = revision.sections.flatMap((section) => section.lineItems.map((item) => ({ ...item, sectionName: section.name })))
+    .filter((item) => !item.parentId && item.id !== line.id && (item.variance + transferSummaryForLine(revision, item.id).adjustedBalance) > 0);
 
   async function patch(patchData: Partial<SubCost>) {
     try {
@@ -1732,17 +1830,62 @@ function CostLinePanelRow({ subCost, menuPlacement, onRevision, onError }: { sub
     if (response.revision) onRevision(response.revision);
   }
 
+  async function convertToBill() {
+    try {
+      const response = await api.post<{ revision: BudgetRevision | null }>(`/api/budgets/subcosts/${subCost.id}/convert-to-bill`, {
+        amount: amountNumber,
+        coverFromLineItemId: coverFromLineItemId || null,
+        reason: overage > 0 ? `Covered ${money(overage)} overage for ${subCost.poNumber ?? subCost.description}` : null,
+      });
+      if (response.revision) onRevision(response.revision);
+      setConverting(false);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Bill conversion failed");
+    }
+  }
+
   return (
-    <div className="grid min-h-[58px] grid-cols-[86px_minmax(0,1fr)_88px_96px_28px] items-center gap-2 border-b border-[#f0f0ed] px-3 py-2 text-xs last:border-b-0">
-      <CostLineTypePill lineType={subCost.lineType} menuPlacement={menuPlacement} onChange={(lineType) => patch({ lineType }).catch(console.error)} />
-      <div className="min-w-0 leading-tight">
-        {reference && <span className={`mr-2 font-semibold ${amountClass}`}>{reference}</span>}
-        <EditableCell value={subCost.description} onSave={(value) => patch({ description: String(value) })} className="inline max-w-full text-[#1a1a1f]" />
-        {subCost.supplierName && <p className="mt-0.5 truncate text-[11px] italic text-gray-400">{subCost.supplierName}</p>}
+    <div className="border-b border-[#f0f0ed] last:border-b-0">
+      <div className="grid min-h-[58px] grid-cols-[86px_minmax(0,1fr)_88px_96px_28px] items-center gap-2 px-3 py-2 text-xs">
+        <CostLineTypePill lineType={subCost.lineType} menuPlacement={menuPlacement} onChange={(lineType) => lineType === "BILL" && subCost.lineType === "PO" ? setConverting(true) : patch({ lineType }).catch(console.error)} />
+        <div className="min-w-0 leading-tight">
+          {reference && <span className={`mr-2 font-semibold ${amountClass}`}>{reference}</span>}
+          <EditableCell value={subCost.description} onSave={(value) => patch({ description: String(value) })} className="inline max-w-full text-[#1a1a1f]" />
+          {subCost.supplierName && <p className="mt-0.5 truncate text-[11px] italic text-gray-400">{subCost.supplierName}</p>}
+        </div>
+        <div className="text-right"><EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={amountClass} /></div>
+        <div className="flex justify-end">
+          {subCost.lineType === "PO" ? (
+            <button onClick={() => setConverting(true)} className="min-h-7 rounded border border-[#cfe0fb] bg-[#f5f9ff] px-2 text-[11px] font-medium text-[#2563eb]">+ Bill</button>
+          ) : (
+            <CostLineLifecycleCell subCost={subCost} onPatch={patch} />
+          )}
+        </div>
+        <button onClick={() => remove().catch((err: unknown) => onError(err instanceof Error ? err.message : "Delete failed"))} className="grid h-7 w-7 place-items-center rounded text-gray-300 hover:bg-red-50 hover:text-red-600"><X size={13} /></button>
       </div>
-      <div className="text-right"><EditableCell value={subCost.amount} onSave={(value) => patch({ amount: Number(value ?? 0) })} kind="money" className={amountClass} /></div>
-      <div className="flex justify-end"><CostLineLifecycleCell subCost={subCost} onPatch={patch} /></div>
-      <button onClick={() => remove().catch((err: unknown) => onError(err instanceof Error ? err.message : "Delete failed"))} className="grid h-7 w-7 place-items-center rounded text-gray-300 hover:bg-red-50 hover:text-red-600"><X size={13} /></button>
+      {converting && (
+        <div className="mx-3 mb-3 rounded-lg border border-[#dce9fb] bg-[#f7fbff] p-3 text-xs">
+          <div className="grid gap-3 md:grid-cols-[120px_1fr]">
+            <BudgetPanelInput label="Bill amount" value={billAmount} onChange={setBillAmount} />
+            {overage > 0 ? (
+              <label className="text-xs text-gray-500">
+                Cover {money(overage)} overage from
+                <select value={coverFromLineItemId} onChange={(event) => setCoverFromLineItemId(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#d7e5f9] bg-white px-3 text-sm text-gray-900 outline-none">
+                  <option value="">Simple overage</option>
+                  {sourceLines.map((sourceLine) => {
+                    const available = sourceLine.variance + transferSummaryForLine(revision, sourceLine.id).adjustedBalance;
+                    return <option key={sourceLine.id} value={sourceLine.id}>{sourceLine.lineCode} {sourceLine.description} · {money(available)} available</option>;
+                  })}
+                </select>
+              </label>
+            ) : <p className="self-end pb-2 text-[11px] text-gray-500">No overage against the original PO amount.</p>}
+          </div>
+          <div className="mt-3 flex justify-end gap-2">
+            <button onClick={() => setConverting(false)} className="min-h-8 rounded-md px-3 text-xs text-gray-500 hover:bg-white">Cancel</button>
+            <button onClick={() => convertToBill().catch(console.error)} className="min-h-8 rounded-md bg-[#1a1a1f] px-3 text-xs font-medium text-white">Save as Bill</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2002,11 +2145,20 @@ function BudgetPoPanel({ productionId, initialLine, onClose, onCreated }: { prod
   );
 }
 
-function BudgetPanelInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function BudgetPanelInput({ label, value, onChange, placeholder = "" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   return (
     <label className="text-xs text-gray-500">
       {label}
-      <input value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#e1e1dc] px-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-[#13a18d]/25" />
+      <input value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#e1e1dc] px-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-[#13a18d]/25" />
+    </label>
+  );
+}
+
+function BudgetPanelTextarea({ label, value, onChange, placeholder = "" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+  return (
+    <label className="text-xs text-gray-500">
+      {label}
+      <textarea value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} rows={3} className="mt-1 w-full resize-none rounded-lg border border-[#e1e1dc] px-3 py-2 text-sm leading-5 text-gray-900 outline-none focus:ring-2 focus:ring-[#13a18d]/25" />
     </label>
   );
 }

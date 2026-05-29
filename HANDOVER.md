@@ -1,3 +1,82 @@
+# HANDOVER - 2026-05-29 - Budget Transfers, Version Metadata, and Estimate PDF Polish
+
+## Built This Session
+- Added revision-level estimate metadata so each estimate version can be described professionally:
+  - estimate description,
+  - included notes,
+  - not included notes,
+  - assumptions,
+  - payment terms,
+  - valid until,
+  - representative,
+  - change summary.
+- Added a budget line transfer ledger for covering overages from another budget pot without changing the quoted estimate or actual cost records.
+- Added API support for:
+  - `GET /api/budgets/revisions/:revisionId/compare`
+  - `POST /api/budgets/revisions/:revisionId/transfers`
+  - `POST /api/budgets/subcosts/:subCostId/convert-to-bill`
+- PO-to-Bill conversion in the cost-lines drawer now opens a small conversion form:
+  - bill amount defaults to the PO amount,
+  - if the bill is higher than the PO, it shows the overage,
+  - user can choose a source pot to cover the overage or leave it as a simple overage.
+- Cost-lines drawer now shows transfer activity on a line and uses adjusted balance when transfers exist.
+- Budget version drawer now has:
+  - editable estimate description / included / not included / assumptions / payment terms,
+  - change summary,
+  - compare-to-source section for minor versions showing line-level changes and total delta.
+- Rebuilt estimate PDF export to follow the clean Melanie Nennig / Joy Hart direction:
+  - first page with brand, estimate metadata, client/project details, summary, comments, payment terms, and company footer,
+  - compact breakdown pages that pack sections instead of creating a page per section,
+  - client export hides actuals,
+  - internal export keeps an INTERNAL watermark and actuals column,
+  - filename now uses the estimate version label and date.
+
+## Backend
+- Updated `backend/prisma/schema.prisma`.
+- Added migration:
+  - `backend/prisma/migrations/20260529110000_budget_transfers_revision_metadata/migration.sql`
+- Updated:
+  - `backend/src/services/budgetService.ts`
+  - `backend/src/routes/budgets.ts`
+  - `backend/src/services/budgetPdf.ts`
+- Important migration note:
+  - Prisma diff attempted to drop `pms_sessions` because it exists in DB but not the Prisma schema.
+  - That unrelated drop was removed from the migration before deploy.
+
+## Frontend
+- Updated:
+  - `frontend/src/components/budgets/BudgetView.tsx`
+  - `frontend/src/lib/types.ts`
+- Version drawer now functions as the estimate admin area for describing versions and reviewing what changed.
+- Cost line conversion has a clearer overage decision point.
+
+## Deployment / Verification
+- Prisma migration deployed successfully.
+- Prisma client regenerated.
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Immutable budget behavior still stands:
+  - changes to locked/sent revisions clone into a new minor version,
+  - major versions are still created from the `+` version tab.
+- Transfers are tracked separately from estimates and actual spend:
+  - actuals still mean real PO/Bill/Receipt/Quick cost amounts,
+  - transfers are just an internal pot-balancing ledger.
+- PDF styling is now much closer to the supplied estimate references, but the next pass should be visual QA against real exported PDFs.
+
+## Suggested Next Steps
+- Add a dedicated `Transfers`/`Overage cover` view in the cost tracker so pot movements are auditable in one place.
+- Add attachment/AI parsing into the single PO-to-Bill conversion form, matching the existing multi-line PO bill parser.
+- Add “Promote V1.1 to V2” action with a required reason for bigger job-format changes.
+- Add a real PDF preview/download flow so client and internal exports can be checked before sending.
+
+---
+
 # HANDOVER - 2026-05-29 - Cost Lines Drawer Layout Tune-up
 
 ## Built This Session

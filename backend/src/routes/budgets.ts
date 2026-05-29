@@ -410,7 +410,18 @@ router.post("/:budgetId/revisions", async (req: Request, res: Response): Promise
 router.patch("/revisions/:revisionId", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as Record<string, unknown>;
   const existing = await prisma.budgetRevision.findUniqueOrThrow({ where: { id: req.params.revisionId } });
-  const changesContent = body.label !== undefined || body.notes !== undefined || body.productionFeePercent !== undefined || body.insurancePercent !== undefined;
+  const changesContent = body.label !== undefined
+    || body.notes !== undefined
+    || body.productionFeePercent !== undefined
+    || body.insurancePercent !== undefined
+    || body.estimateDescription !== undefined
+    || body.includedNotes !== undefined
+    || body.notIncludedNotes !== undefined
+    || body.assumptions !== undefined
+    || body.paymentTerms !== undefined
+    || body.validUntil !== undefined
+    || body.representative !== undefined
+    || body.changeSummary !== undefined;
   const revisionId = changesContent && isRevisionImmutable(existing)
     ? await editableRevisionId(existing.id, "Revision settings changed")
     : existing.id;
@@ -423,6 +434,14 @@ router.patch("/revisions/:revisionId", async (req: Request, res: Response): Prom
       isLocked: status === RevisionStatus.SENT || status === RevisionStatus.APPROVED || status === RevisionStatus.SUPERSEDED ? true : undefined,
       lockedAt: status === RevisionStatus.SENT || status === RevisionStatus.APPROVED || status === RevisionStatus.SUPERSEDED ? new Date() : undefined,
       notes: body.notes as string | null | undefined,
+      estimateDescription: body.estimateDescription as string | null | undefined,
+      includedNotes: body.includedNotes as string | null | undefined,
+      notIncludedNotes: body.notIncludedNotes as string | null | undefined,
+      assumptions: body.assumptions as string | null | undefined,
+      paymentTerms: body.paymentTerms as string | null | undefined,
+      validUntil: dateOrNull(body.validUntil),
+      representative: body.representative as string | null | undefined,
+      changeSummary: body.changeSummary as string | null | undefined,
       productionFeePercent: numberOrUndefined(body.productionFeePercent),
       insurancePercent: numberOrUndefined(body.insurancePercent),
     },
@@ -430,6 +449,105 @@ router.patch("/revisions/:revisionId", async (req: Request, res: Response): Prom
   const totals = await calculateRevisionTotals(revision.id);
   await prisma.advanceInvoice.updateMany({ where: { budgetId: revision.budgetId }, data: {} });
   res.json({ ...await getRevision(revision.id), totals });
+});
+
+router.get("/revisions/:revisionId/compare", async (req: Request, res: Response): Promise<void> => {
+  const revision = await getRevision(req.params.revisionId);
+  if (!revision) { res.status(404).json({ error: "Revision not found" }); return; }
+  const baseId = typeof req.query.baseRevisionId === "string" ? req.query.baseRevisionId : revision.sourceRevisionId;
+  if (!baseId) { res.json({ baseRevision: null, changes: [] }); return; }
+  const baseRevision = await getRevision(baseId);
+  if (!baseRevision) { res.status(404).json({ error: "Base revision not found" }); return; }
+
+  const lineKey = (sectionCode: string, line: { lineCode: string; description: string }) => `${sectionCode}:${line.lineCode}:${line.description.toLowerCase()}`;
+  const currentLines = new Map<string, { sectionCode: string; lineCode: string; description: string; estimatedTotal: number; actualTotal: number }>();
+  const baseLines = new Map<string, { sectionCode: string; lineCode: string; description: string; estimatedTotal: number; actualTotal: number }>();
+  for (const section of revision.sections) {
+    for (const line of section.lineItems.filter((item) => !item.parentId)) {
+      currentLines.set(lineKey(section.code, line), {
+        sectionCode: section.code,
+        lineCode: line.lineCode,
+        description: line.description,
+        estimatedTotal: line.estimatedTotal,
+        actualTotal: line.actualTotal,
+      });
+    }
+  }
+  for (const section of baseRevision.sections) {
+    for (const line of section.lineItems.filter((item) => !item.parentId)) {
+      baseLines.set(lineKey(section.code, line), {
+        sectionCode: section.code,
+        lineCode: line.lineCode,
+        description: line.description,
+        estimatedTotal: line.estimatedTotal,
+        actualTotal: line.actualTotal,
+      });
+    }
+  }
+
+  const changes: Array<{
+    type: "added" | "removed" | "changed";
+    sectionCode: string;
+    lineCode: string;
+    description: string;
+    beforeEstimated: number | null;
+    afterEstimated: number | null;
+    deltaEstimated: number;
+  }> = [];
+  for (const [key, line] of currentLines) {
+    const before = baseLines.get(key);
+    if (!before) {
+      changes.push({ type: "added", sectionCode: line.sectionCode, lineCode: line.lineCode, description: line.description, beforeEstimated: null, afterEstimated: line.estimatedTotal, deltaEstimated: line.estimatedTotal });
+    } else if (Math.abs(before.estimatedTotal - line.estimatedTotal) > 0.009) {
+      changes.push({ type: "changed", sectionCode: line.sectionCode, lineCode: line.lineCode, description: line.description, beforeEstimated: before.estimatedTotal, afterEstimated: line.estimatedTotal, deltaEstimated: roundMoney(line.estimatedTotal - before.estimatedTotal) });
+    }
+  }
+  for (const [key, line] of baseLines) {
+    if (!currentLines.has(key)) {
+      changes.push({ type: "removed", sectionCode: line.sectionCode, lineCode: line.lineCode, description: line.description, beforeEstimated: line.estimatedTotal, afterEstimated: null, deltaEstimated: -line.estimatedTotal });
+    }
+  }
+  changes.sort((a, b) => `${a.sectionCode}${a.lineCode}`.localeCompare(`${b.sectionCode}${b.lineCode}`));
+  res.json({
+    baseRevision: { id: baseRevision.id, label: baseRevision.label, majorVersion: baseRevision.majorVersion, minorVersion: baseRevision.minorVersion, revisionNumber: baseRevision.revisionNumber },
+    currentRevision: { id: revision.id, label: revision.label, majorVersion: revision.majorVersion, minorVersion: revision.minorVersion, revisionNumber: revision.revisionNumber },
+    totalDelta: roundMoney(revision.totals.grandTotal - baseRevision.totals.grandTotal),
+    changes,
+  });
+});
+
+router.post("/revisions/:revisionId/transfers", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { fromLineItemId?: string; toLineItemId?: string; amount?: number; reason?: string };
+  const amount = Number(body.amount ?? 0);
+  if (!body.fromLineItemId || !body.toLineItemId || body.fromLineItemId === body.toLineItemId || !Number.isFinite(amount) || amount <= 0) {
+    res.status(400).json({ error: "fromLineItemId, toLineItemId and a positive amount are required" });
+    return;
+  }
+
+  const existing = await prisma.budgetRevision.findUniqueOrThrow({
+    where: { id: req.params.revisionId },
+    include: { sections: { include: { lineItems: true } } },
+  });
+  const lineIds = new Set(existing.sections.flatMap((section) => section.lineItems.map((line) => line.id)));
+  if (!lineIds.has(body.fromLineItemId) || !lineIds.has(body.toLineItemId)) {
+    res.status(400).json({ error: "Transfer line items must belong to this revision" });
+    return;
+  }
+
+  const clone = isRevisionImmutable(existing) ? await cloneRevisionForEdit(existing.id, "Budget balance transfer added") : null;
+  const revisionId = clone?.revisionId ?? existing.id;
+  const fromLineItemId = clone?.lineMap.get(body.fromLineItemId) ?? body.fromLineItemId;
+  const toLineItemId = clone?.lineMap.get(body.toLineItemId) ?? body.toLineItemId;
+  await prisma.budgetLineTransfer.create({
+    data: {
+      revisionId,
+      fromLineItemId,
+      toLineItemId,
+      amount: roundMoney(amount),
+      reason: body.reason?.trim() || null,
+    },
+  });
+  res.status(201).json(await getRevision(revisionId));
 });
 
 router.post("/revisions/:revisionId/apply-template", async (req: Request, res: Response): Promise<void> => {
@@ -612,6 +730,60 @@ router.patch("/subcosts/:subCostId/status", async (req: Request, res: Response):
   await recalculateAfterSubCost(existing.lineItemId);
   await syncPurchaseOrderStatus(existing.purchaseOrderGroupId);
   res.json({ subCost, revision: await lineRevision(existing.lineItemId) });
+});
+
+router.post("/subcosts/:subCostId/convert-to-bill", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { amount?: number; invoiceNumber?: string | null; invoiceDate?: string | null; coverFromLineItemId?: string | null; reason?: string | null };
+  const requestedAmount = numberOrUndefined(body.amount);
+  const source = await prisma.subCost.findUnique({
+    where: { id: req.params.subCostId },
+    include: { lineItem: { include: { section: { include: { revision: { include: { sections: { include: { lineItems: true } } } } } } } } },
+  });
+  if (!source) { res.status(404).json({ error: "Cost line not found" }); return; }
+  if (source.lineType !== SubCostLineType.PO) { res.status(400).json({ error: "Only POs can be converted with this action" }); return; }
+
+  const allLineIds = new Set(source.lineItem.section.revision.sections.flatMap((section) => section.lineItems.map((line) => line.id)));
+  if (body.coverFromLineItemId && !allLineIds.has(body.coverFromLineItemId)) {
+    res.status(400).json({ error: "Covering pot must belong to the same budget revision" });
+    return;
+  }
+
+  const clone = isRevisionImmutable(source.lineItem.section.revision) ? await cloneRevisionForEdit(source.lineItem.section.revisionId, "PO converted to bill") : null;
+  const subCostId = clone?.subCostMap.get(source.id) ?? source.id;
+  const lineItemId = clone?.lineMap.get(source.lineItemId) ?? source.lineItemId;
+  const coverFromLineItemId = body.coverFromLineItemId ? clone?.lineMap.get(body.coverFromLineItemId) ?? body.coverFromLineItemId : null;
+  const revisionId = clone?.revisionId ?? source.lineItem.section.revisionId;
+  const amount = requestedAmount ?? source.amount;
+  const overage = roundMoney(Math.max(0, amount - source.amount));
+
+  await prisma.$transaction(async (tx) => {
+    await tx.subCost.update({
+      where: { id: subCostId },
+      data: {
+        lineType: SubCostLineType.BILL,
+        status: SubCostStatus.INVOICED,
+        isInvoiced: true,
+        isPaid: false,
+        amount,
+        invoiceNumber: body.invoiceNumber ?? undefined,
+        invoiceDate: dateOrNull(body.invoiceDate),
+      },
+    });
+    if (coverFromLineItemId && overage > 0) {
+      await tx.budgetLineTransfer.create({
+        data: {
+          revisionId,
+          fromLineItemId: coverFromLineItemId,
+          toLineItemId: lineItemId,
+          amount: overage,
+          reason: body.reason?.trim() || `Cover overage converting ${source.poNumber ?? "PO"} to bill`,
+        },
+      });
+    }
+  });
+  await recalculateAfterSubCost(lineItemId);
+  await syncPurchaseOrderStatus(source.purchaseOrderGroupId);
+  res.json({ revision: await lineRevision(lineItemId) });
 });
 
 // Purchase orders

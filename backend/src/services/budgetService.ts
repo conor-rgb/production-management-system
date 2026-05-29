@@ -21,6 +21,13 @@ export const revisionInclude = {
       },
     },
   },
+  transfers: {
+    orderBy: { createdAt: "asc" as const },
+    include: {
+      fromLineItem: { select: { id: true, lineCode: true, description: true, estimatedTotal: true, actualTotal: true, variance: true } },
+      toLineItem: { select: { id: true, lineCode: true, description: true, estimatedTotal: true, actualTotal: true, variance: true } },
+    },
+  },
 } satisfies Prisma.BudgetRevisionInclude;
 
 export type FullRevision = Prisma.BudgetRevisionGetPayload<{ include: typeof revisionInclude }>;
@@ -261,6 +268,13 @@ export async function createRevision(budgetId: string) {
         productionFeePercent: source?.productionFeePercent ?? budget.productionFeePercent,
         insurancePercent: source?.insurancePercent ?? budget.insurancePercent,
         notes: source?.notes,
+        estimateDescription: source?.estimateDescription,
+        includedNotes: source?.includedNotes,
+        notIncludedNotes: source?.notIncludedNotes,
+        assumptions: source?.assumptions,
+        paymentTerms: source?.paymentTerms,
+        validUntil: source?.validUntil,
+        representative: source?.representative,
       },
     });
 
@@ -365,6 +379,13 @@ export async function cloneRevisionForEdit(revisionId: string, changeSummary = "
         productionFeePercent: source.productionFeePercent,
         insurancePercent: source.insurancePercent,
         notes: source.notes,
+        estimateDescription: source.estimateDescription,
+        includedNotes: source.includedNotes,
+        notIncludedNotes: source.notIncludedNotes,
+        assumptions: source.assumptions,
+        paymentTerms: source.paymentTerms,
+        validUntil: source.validUntil,
+        representative: source.representative,
         sourceRevisionId: source.id,
         changeSummary,
       },
@@ -406,6 +427,21 @@ export async function cloneRevisionForEdit(revisionId: string, changeSummary = "
         }
         await tx.budgetLineItem.update({ where: { id: copied.id }, data: { actualTotal: line.actualTotal, variance: line.variance } });
       }
+    }
+
+    for (const transfer of source.transfers) {
+      const fromLineItemId = lineMap.get(transfer.fromLineItemId);
+      const toLineItemId = lineMap.get(transfer.toLineItemId);
+      if (!fromLineItemId || !toLineItemId) continue;
+      await tx.budgetLineTransfer.create({
+        data: {
+          revisionId: revision.id,
+          fromLineItemId,
+          toLineItemId,
+          amount: transfer.amount,
+          reason: transfer.reason,
+        },
+      });
     }
 
     await tx.budget.update({ where: { id: source.budgetId }, data: { currentRevisionId: revision.id } });
