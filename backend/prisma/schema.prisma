@@ -1677,6 +1677,7 @@ model EmailMessage {
   snippet            String?
   sentAt             DateTime
   isFromMe           Boolean     @default(false)
+  isDuplicateSuppressed Boolean     @default(false)
   hasAttachments     Boolean     @default(false)
   attachments        Json        @default("[]")
   gmailAttachmentIds Json        @default("[]")
@@ -1689,6 +1690,7 @@ model EmailMessage {
 
   @@index([threadId, sentAt])
   @@index([gmailThreadId])
+  @@index([isDuplicateSuppressed])
   @@index([imapMailbox, imapUid])
   @@map("pms_email_messages")
 }

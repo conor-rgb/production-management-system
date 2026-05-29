@@ -1465,8 +1465,9 @@ router.get("/blackbook/:entryId/crm", async (req: Request, res: Response): Promi
   ].filter((email): email is string => Boolean(email));
   const [rawEmailMatches, opportunities, productions, optionCandidates] = await Promise.all([
     relatedEmails.length
-      ? prisma.emailMessage.findMany({
+        ? prisma.emailMessage.findMany({
           where: {
+            isDuplicateSuppressed: false,
             OR: [
               { fromAddress: { in: relatedEmails, mode: "insensitive" } },
               { toAddresses: { hasSome: relatedEmails } },

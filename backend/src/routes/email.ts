@@ -778,6 +778,7 @@ router.post("/threads/:threadId/create-opportunity", async (req: Request, res: R
     include: {
       account: true,
       messages: {
+        where: { isDuplicateSuppressed: false },
         orderBy: { sentAt: "asc" },
         take: 8,
         select: { fromAddress: true, fromName: true, bodyText: true, snippet: true, sentAt: true, isFromMe: true },
@@ -921,6 +922,7 @@ router.get("/threads/:threadId/people", async (req: Request, res: Response): Pro
     include: {
       account: true,
       messages: {
+        where: { isDuplicateSuppressed: false },
         select: {
           fromAddress: true,
           fromName: true,
@@ -1259,7 +1261,7 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
         { subject: { contains: q, mode: "insensitive" } },
         { snippet: { contains: q, mode: "insensitive" } },
         { participants: { has: q.toLowerCase() } },
-        { messages: { some: { bodyText: { contains: q, mode: "insensitive" } } } },
+        { messages: { some: { isDuplicateSuppressed: false, bodyText: { contains: q, mode: "insensitive" } } } },
       ],
     },
     orderBy: { lastMessageAt: "desc" },

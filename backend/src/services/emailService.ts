@@ -1009,16 +1009,16 @@ export async function getThreads(options: ThreadListOptions) {
       OR: [
         { subject: { contains: search, mode: "insensitive" } },
         { participants: { has: search.toLowerCase() } },
-        { messages: { some: { bodyText: { contains: search, mode: "insensitive" } } } },
-        { messages: { some: { fromName: { contains: search, mode: "insensitive" } } } },
-        { messages: { some: { fromAddress: { contains: search, mode: "insensitive" } } } },
+        { messages: { some: { isDuplicateSuppressed: false, bodyText: { contains: search, mode: "insensitive" } } } },
+        { messages: { some: { isDuplicateSuppressed: false, fromName: { contains: search, mode: "insensitive" } } } },
+        { messages: { some: { isDuplicateSuppressed: false, fromAddress: { contains: search, mode: "insensitive" } } } },
       ],
     });
   }
 
   switch (folder) {
     case "sent":
-      andFilters.push({ OR: [{ inSent: true }, { messages: { some: { isFromMe: true } } }] });
+      andFilters.push({ OR: [{ inSent: true }, { messages: { some: { isFromMe: true, isDuplicateSuppressed: false } } }] });
       break;
     case "flagged":
     case "starred":
@@ -1038,7 +1038,7 @@ export async function getThreads(options: ThreadListOptions) {
       andFilters.push({
         OR: [
           { inInbox: true },
-          { isArchived: false, messages: { some: { isFromMe: false } } },
+          { isArchived: false, messages: { some: { isFromMe: false, isDuplicateSuppressed: false } } },
         ],
         isTrashed: false,
       });
@@ -1061,6 +1061,7 @@ export async function getThreads(options: ThreadListOptions) {
     linkedOpportunity: true,
     linkedProduction: true,
     messages: {
+      where: { isDuplicateSuppressed: false },
       orderBy: { sentAt: "desc" as const },
       take: 1,
       select: {
@@ -1081,7 +1082,7 @@ export async function getThreads(options: ThreadListOptions) {
   let total: number;
 
   if (folder === "sent") {
-    const sentWhere: Prisma.EmailMessageWhereInput = { isFromMe: true, thread: { is: where } };
+    const sentWhere: Prisma.EmailMessageWhereInput = { isFromMe: true, isDuplicateSuppressed: false, thread: { is: where } };
     const [sentGroups, allSentGroups] = await Promise.all([
       prisma.emailMessage.groupBy({
         by: ["threadId"],
@@ -1104,7 +1105,7 @@ export async function getThreads(options: ThreadListOptions) {
         include: threadInclude,
       }),
       prisma.emailMessage.findMany({
-        where: { threadId: { in: orderedIds }, isFromMe: true },
+        where: { threadId: { in: orderedIds }, isFromMe: true, isDuplicateSuppressed: false },
         orderBy: { sentAt: "desc" },
         select: {
           threadId: true,
@@ -1137,7 +1138,7 @@ export async function getThreads(options: ThreadListOptions) {
   const threadIds = threads.map((thread) => thread.id);
   const attachmentRows = threadIds.length
     ? await prisma.emailMessage.findMany({
-      where: { threadId: { in: threadIds }, hasAttachments: true },
+      where: { threadId: { in: threadIds }, hasAttachments: true, isDuplicateSuppressed: false },
       select: { threadId: true },
     })
     : [];
@@ -1193,11 +1194,12 @@ export async function getThread(threadId: string, options?: { before?: Date; lim
 
   const messageWhere: Prisma.EmailMessageWhereInput = {
     threadId,
+    isDuplicateSuppressed: false,
     ...(options?.before ? { sentAt: { lt: options.before } } : {}),
   };
 
   const [totalMessageCount, olderTotalCount, recentMessagesDesc, allAttachmentsMessages] = await Promise.all([
-    prisma.emailMessage.count({ where: { threadId } }),
+    prisma.emailMessage.count({ where: { threadId, isDuplicateSuppressed: false } }),
     prisma.emailMessage.count({ where: messageWhere }),
     prisma.emailMessage.findMany({
       where: messageWhere,
@@ -1205,7 +1207,7 @@ export async function getThread(threadId: string, options?: { before?: Date; lim
       take: limit,
     }),
     prisma.emailMessage.findMany({
-      where: { threadId, hasAttachments: true },
+      where: { threadId, hasAttachments: true, isDuplicateSuppressed: false },
       orderBy: { sentAt: "asc" },
       select: { id: true, attachments: true },
     }),

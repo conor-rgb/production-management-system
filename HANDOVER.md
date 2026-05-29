@@ -1,3 +1,52 @@
+# HANDOVER - 2026-05-29 - Email Historical Duplicate Cleanup
+
+## Built This Session
+- Added persistent local duplicate suppression for email messages.
+- Added `EmailMessage.isDuplicateSuppressed` with an index.
+- Added migration `20260529231000_email_duplicate_suppression`.
+- Migration marked historical near-duplicate emails as suppressed when they matched:
+  - same thread,
+  - same sender,
+  - same recipients,
+  - same subject/body signature,
+  - sent within 30 seconds of the previous matching message.
+- Updated email queries so suppressed messages are excluded from:
+  - thread detail messages,
+  - thread attachment summaries,
+  - sent-folder latest message grouping,
+  - inbox/search message matching,
+  - Blackbook CRM activity email matches,
+  - opportunity/production comms includes.
+
+## Data Cleanup Result
+- 3 historical duplicate message rows were marked as suppressed.
+- No Gmail messages were deleted.
+- Suppressed rows remain in the DB for audit/safety and will not be shown in normal app timelines.
+
+## Files Changed
+- `backend/prisma/schema.prisma`
+- `backend/prisma/migrations/20260529231000_email_duplicate_suppression/migration.sql`
+- `backend/src/routes/email.ts`
+- `backend/src/routes/opportunities.ts`
+- `backend/src/routes/options.ts`
+- `backend/src/routes/productions.ts`
+- `backend/src/services/emailService.ts`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Prisma migration deployed.
+- Prisma client regenerated.
+- Backend build passed.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Historical duplicate sent rows are cleaned from user-facing email and Blackbook activity.
+- Future sync will not re-show those rows because suppression is stored locally on the message row.
+
+---
+
 # HANDOVER - 2026-05-29 - Email Duplicate Send / Activity Cleanup
 
 ## Built This Session
