@@ -1,3 +1,43 @@
+# HANDOVER - 2026-05-29 - Crew Matrix Right Click Cleanup
+
+## Built This Session
+- Reduced visible controls on the Crew & Suppliers Matrix page.
+- Removed the dedicated hover action column from requirement rows.
+- Removed the visible workstream reassignment dropdown from each first row.
+- Requirement rows now keep only the essential visible fields:
+  - requirement name,
+  - record count/sheet link,
+  - type label,
+  - date matrix cells.
+- Added a right-click requirement menu with:
+  - open record sheet,
+  - duplicate requirement,
+  - move up/down,
+  - change kind,
+  - move workstream,
+  - release/reactivate,
+  - delete.
+- Assignment dropdowns inside date cells now only appear on hover.
+
+## Files Changed
+- `frontend/src/components/options/OptionsBoardView.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Matrix should feel less cluttered:
+  - actions live in context menus,
+  - row content is calmer,
+  - date/status cells remain primary.
+
+---
+
 # HANDOVER - 2026-05-29 - Crew Matrix Cleanup
 
 ## Built This Session

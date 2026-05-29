@@ -1898,7 +1898,8 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   onUpdateGroup: (groupId: string, patch: Partial<OptionGroup>) => Promise<void>;
   onUpdateWorkstream: (workstreamId: string, patch: Partial<MatrixWorkstream>) => Promise<void>;
 }) {
-  const gridColumns = `320px 118px 72px ${matrix.dates.map(() => "132px").join(" ")}`;
+  const [matrixMenu, setMatrixMenu] = useState<{ requirement: OptionRequirement; group: OptionGroup; x: number; y: number } | null>(null);
+  const gridColumns = `360px 108px ${matrix.dates.map(() => "132px").join(" ")}`;
   const sections = [
     ...matrix.workstreams.map((workstream) => ({
       id: workstream.id,
@@ -1915,6 +1916,15 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
       groups: matrix.groups.filter((group) => !group.workstreamId),
     },
   ].filter((section) => section.groups.length > 0 || section.workstream);
+
+  useEffect(() => {
+    if (!matrixMenu) return;
+    function close() {
+      setMatrixMenu(null);
+    }
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [matrixMenu]);
 
   if (matrix.groups.length === 0) {
     return (
@@ -1933,7 +1943,6 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
         <div className="sticky top-0 z-20 grid min-h-[50px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500" style={{ gridTemplateColumns: gridColumns }}>
           <div className="flex h-full items-center border-r border-[#dcdfe3] px-4">Requirement</div>
           <div className="flex h-full items-center border-r border-[#e6e6e3] px-3">Kind</div>
-          <div />
           {matrix.dates.map((date) => (
             <div key={date.id} className="flex min-h-[50px] flex-col items-center justify-center gap-1 border-r border-[#dcdfe3] bg-[#fbfbf8] px-2 py-1.5">
               <span className="text-center text-[11px] font-semibold normal-case tracking-normal text-gray-900">{compactDateLabel(date).top}</span>
@@ -1951,59 +1960,39 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
         {sections.map((section) => (
           <div key={section.id}>
             <div className="grid min-h-[46px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-xs" style={{ gridTemplateColumns: gridColumns }}>
-              <div className="flex min-w-0 items-center gap-3 border-r border-[#dcdfe3] px-4 py-2" style={{ gridColumn: "1 / 4" }}>
+              <div className="flex min-w-0 items-center gap-3 border-r border-[#dcdfe3] px-4 py-2" style={{ gridColumn: "1 / 3" }}>
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: section.color }} />
                 {section.workstream ? (
                   <EditableText value={section.workstream.name} onSave={(name) => onUpdateWorkstream(section.workstream!.id, { name })} className="truncate text-[13px] font-semibold text-gray-900" />
                 ) : (
                   <span className="truncate text-[13px] font-semibold text-gray-500">Unassigned</span>
                 )}
-                <span className="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-400">{section.groups.reduce((sum, group) => sum + group.requirements.length, 0)} requirements</span>
+                <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-gray-300">{section.groups.reduce((sum, group) => sum + group.requirements.length, 0)} req</span>
               </div>
-              {matrix.dates.map((date) => {
-                const requiredCount = section.groups.reduce((sum, group) => (
-                  sum + group.requirements.filter((requirement) => needFor(requirement, date.id)?.isRequired).length
-                ), 0);
-                return (
-                  <div key={date.id} className="flex h-full items-center justify-center border-r border-[#e6e6e3] bg-[#fbfbf8] px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-400">
-                    {requiredCount > 0 ? `${requiredCount} needed` : ""}
-                  </div>
-                );
-              })}
+              {matrix.dates.map((date) => <div key={date.id} className="border-r border-[#e6e6e3] bg-[#fbfbf8]" />)}
             </div>
-            {section.groups.flatMap((group) => group.requirements.map((requirement, index) => (
-              <div key={requirement.id} className={`group grid min-h-[58px] items-center border-b border-[#ededeb] text-xs hover:bg-[#fbfbfa] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
+            {section.groups.flatMap((group) => group.requirements.map((requirement) => (
+              <div
+                key={requirement.id}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setMatrixMenu({ requirement, group, x: event.clientX, y: event.clientY });
+                }}
+                className={`group grid min-h-[58px] items-center border-b border-[#ededeb] text-xs hover:bg-[#fbfbfa] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`}
+                style={{ gridTemplateColumns: gridColumns }}
+              >
                 <div className="min-w-0 border-r border-[#e6e6e3] px-4 py-2">
-                  <EditableText value={requirement.displayLabel} onSave={(displayLabel) => onUpdateRequirement(requirement.id, { displayLabel })} className="text-[13px] font-semibold text-gray-900" />
+                  <div onDoubleClick={() => onOpenGroup(group.id)} className="block max-w-full truncate text-left text-[13px] font-semibold text-gray-900 hover:text-teal-700" title="Double-click to open sheet">
+                    <EditableText value={requirement.displayLabel} onSave={(displayLabel) => onUpdateRequirement(requirement.id, { displayLabel })} className="text-[13px] font-semibold text-gray-900" />
+                  </div>
                   <div className="mt-1 flex min-w-0 items-center gap-2">
-                    <button onClick={() => onOpenGroup(group.id)} className="truncate text-[11px] font-medium text-gray-400 hover:text-gray-900">{group.candidates.length} records in {group.name}</button>
-                    {index === 0 && (
-                      <select
-                        value={group.workstreamId ?? ""}
-                        onChange={(event) => onUpdateGroup(group.id, { workstreamId: event.target.value || null })}
-                        className="h-5 max-w-[118px] rounded border border-transparent bg-transparent px-1 text-[10px] text-gray-400 hover:border-gray-200 hover:bg-white"
-                        title="Move this sheet to another workstream"
-                      >
-                        <option value="">Unassigned</option>
-                        {matrix.workstreams.map((workstream) => <option key={workstream.id} value={workstream.id}>{workstream.name}</option>)}
-                      </select>
-                    )}
+                    <button onClick={() => onOpenGroup(group.id)} className="truncate text-[11px] font-medium text-gray-400 hover:text-gray-900">{group.candidates.length} records</button>
+                    <span className="text-gray-200">·</span>
+                    <span className="truncate text-[11px] text-gray-400">{group.name}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 border-r border-[#e6e6e3] px-3 py-2">
-                  <PillDropdown
-                    value={requirement.type}
-                    options={REQUIREMENT_TYPES}
-                    onChange={(type) => type ? onUpdateRequirement(requirement.id, { type }) : Promise.resolve()}
-                    classNameForValue={() => "border-gray-200 bg-gray-50 text-gray-600"}
-                    compact
-                  />
-                </div>
-                <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
-                  <button onClick={() => onUpdateRequirement(requirement.id, { order: requirement.order - 1 })} title="Move up" className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">↑</button>
-                  <button onClick={() => onUpdateRequirement(requirement.id, { order: requirement.order + 1 })} title="Move down" className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">↓</button>
-                  <button onClick={() => onDuplicateRequirement(requirement.id)} title="Duplicate" className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">⧉</button>
-                  <button onClick={() => onDeleteRequirement(requirement.id)} title="Delete" className="grid h-7 w-7 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>
+                <div className="flex items-center border-r border-[#e6e6e3] px-3 py-2">
+                  <span className="truncate text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500">{label(requirement.type)}</span>
                 </div>
                 {matrix.dates.map((date) => {
                   const need = needFor(requirement, date.id);
@@ -2028,11 +2017,13 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
                         {isRequired ? shownCandidate?.name ?? shortPipeline(pipeline) : "Set"}
                       </button>
                       {isRequired && (
-                        <AssignmentDropdown
-                          group={group}
-                          assignedCandidateId={assignment?.candidateId ?? null}
-                          onChange={(candidateId) => onAssignSlot(requirement.id, date.id, candidateId)}
-                        />
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition group-hover/need:opacity-100">
+                          <AssignmentDropdown
+                            group={group}
+                            assignedCandidateId={assignment?.candidateId ?? null}
+                            onChange={(candidateId) => onAssignSlot(requirement.id, date.id, candidateId)}
+                          />
+                        </div>
                       )}
                     </div>
                   );
@@ -2041,6 +2032,48 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
             )))}
           </div>
         ))}
+        {matrixMenu && (
+          <MatrixRequirementContextMenu
+            requirement={matrixMenu.requirement}
+            group={matrixMenu.group}
+            x={matrixMenu.x}
+            y={matrixMenu.y}
+            workstreams={matrix.workstreams}
+            onClose={() => setMatrixMenu(null)}
+            onOpenGroup={() => {
+              onOpenGroup(matrixMenu.group.id);
+              setMatrixMenu(null);
+            }}
+            onMoveUp={() => {
+              void onUpdateRequirement(matrixMenu.requirement.id, { order: matrixMenu.requirement.order - 1 });
+              setMatrixMenu(null);
+            }}
+            onMoveDown={() => {
+              void onUpdateRequirement(matrixMenu.requirement.id, { order: matrixMenu.requirement.order + 1 });
+              setMatrixMenu(null);
+            }}
+            onDuplicate={() => {
+              void onDuplicateRequirement(matrixMenu.requirement.id);
+              setMatrixMenu(null);
+            }}
+            onSetType={(type) => {
+              void onUpdateRequirement(matrixMenu.requirement.id, { type });
+              setMatrixMenu(null);
+            }}
+            onMoveWorkstream={(workstreamId) => {
+              void onUpdateGroup(matrixMenu.group.id, { workstreamId });
+              setMatrixMenu(null);
+            }}
+            onToggleReleased={() => {
+              void onUpdateRequirement(matrixMenu.requirement.id, { activeState: matrixMenu.requirement.activeState === "RELEASED" ? "ACTIVE" : "RELEASED" });
+              setMatrixMenu(null);
+            }}
+            onDelete={() => {
+              void onDeleteRequirement(matrixMenu.requirement.id);
+              setMatrixMenu(null);
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -4075,6 +4108,75 @@ function CandidateContextMenu({ candidate, x, y, onClose, onAddCandidate, onDupl
       <ContextMenuItem icon={<Share2 size={16} />} label="Copy record link" disabled />
       <div className="my-1 border-t border-gray-100" />
       <ContextMenuItem icon={<Trash2 size={16} />} label="Delete record" onClick={onDelete} destructive />
+    </div>
+  );
+}
+
+function MatrixRequirementContextMenu({ requirement, group, x, y, workstreams, onClose, onOpenGroup, onMoveUp, onMoveDown, onDuplicate, onSetType, onMoveWorkstream, onToggleReleased, onDelete }: {
+  requirement: OptionRequirement;
+  group: OptionGroup;
+  x: number;
+  y: number;
+  workstreams: MatrixWorkstream[];
+  onClose: () => void;
+  onOpenGroup: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDuplicate: () => void;
+  onSetType: (type: RequirementType) => void;
+  onMoveWorkstream: (workstreamId: string | null) => void;
+  onToggleReleased: () => void;
+  onDelete: () => void;
+}) {
+  const left = Math.min(x, window.innerWidth - 280);
+  const top = Math.min(y, window.innerHeight - 390);
+  return (
+    <div
+      onClick={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.preventDefault()}
+      className="fixed z-[1200] w-64 rounded-lg border border-gray-200 bg-white p-2 text-[12px] shadow-2xl"
+      style={{ left, top }}
+    >
+      <div className="border-b border-gray-100 px-2 pb-2 pt-1">
+        <div className="truncate text-[12px] font-semibold text-gray-900">{requirement.displayLabel}</div>
+        <div className="mt-0.5 truncate text-[10px] text-gray-400">{group.name} · {group.candidates.length} records</div>
+      </div>
+      <div className="py-1">
+        <ContextMenuItem icon={<ExternalLink size={15} />} label="Open record sheet" onClick={onOpenGroup} />
+        <ContextMenuItem icon={<Copy size={15} />} label="Duplicate requirement" onClick={onDuplicate} />
+        <ContextMenuItem icon={<ArrowLeft size={15} className="rotate-90" />} label="Move up" onClick={onMoveUp} />
+        <ContextMenuItem icon={<ArrowLeft size={15} className="-rotate-90" />} label="Move down" onClick={onMoveDown} />
+      </div>
+      <div className="border-t border-gray-100 py-2">
+        <label className="mb-2 block px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+          Kind
+          <select
+            value={requirement.type}
+            onChange={(event) => onSetType(event.target.value as RequirementType)}
+            className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-[11px] normal-case tracking-normal text-gray-700 outline-none focus:border-gray-400"
+          >
+            {REQUIREMENT_TYPES.map((type) => <option key={type} value={type}>{label(type)}</option>)}
+          </select>
+        </label>
+        <label className="block px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+          Workstream
+          <select
+            value={group.workstreamId ?? ""}
+            onChange={(event) => onMoveWorkstream(event.target.value || null)}
+            className="mt-1 h-8 w-full rounded border border-gray-200 bg-white px-2 text-[11px] normal-case tracking-normal text-gray-700 outline-none focus:border-gray-400"
+          >
+            <option value="">Unassigned</option>
+            {workstreams.map((workstream) => <option key={workstream.id} value={workstream.id}>{workstream.name}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="border-t border-gray-100 pt-1">
+        <ContextMenuItem icon={<EyeOff size={15} />} label={requirement.activeState === "RELEASED" ? "Set active" : "Release requirement"} onClick={onToggleReleased} />
+        <ContextMenuItem icon={<Trash2 size={15} />} label="Delete requirement" onClick={onDelete} destructive />
+      </div>
+      <button onClick={onClose} className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded text-gray-300 hover:bg-gray-100 hover:text-gray-700">
+        <X size={12} />
+      </button>
     </div>
   );
 }
