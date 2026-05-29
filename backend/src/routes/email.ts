@@ -17,7 +17,7 @@ import {
   stopIdleSync,
   syncAccount,
 } from "../services/emailService";
-import { fullGmailSync } from "../services/gmailSyncService";
+import { fullGmailSync, syncGmailDraftsForAccount } from "../services/gmailSyncService";
 import { archiveThread as gmailArchiveThread, markThreadRead, markThreadUnread, starThread, unarchiveThread as gmailUnarchiveThread, unstarThread } from "../services/gmailService";
 
 const router = Router();
@@ -43,6 +43,8 @@ type DraftBody = {
   linkedContactId?: string | null;
   isMinimized?: boolean;
 };
+
+type EmailDraftWithAccount = Prisma.EmailDraftGetPayload<{ include: { account: true } }>;
 
 function cleanSubject(subject: string): string {
   return subject.replace(/^(re|fwd?|fw):\s*/gi, "").trim() || subject;
@@ -155,6 +157,55 @@ async function getPrimaryEmailAccount() {
   const primary = await prisma.emailAccount.findFirst({ where: { isPrimary: true, isActive: true } });
   if (primary) return primary;
   return prisma.emailAccount.findFirst({ where: { isActive: true }, orderBy: { createdAt: "asc" } });
+}
+
+function draftHasContent(draft: Pick<EmailDraftWithAccount, "to" | "cc" | "bcc" | "subject" | "bodyHtml">): boolean {
+  return Boolean(
+    draft.to.length ||
+    draft.cc.length ||
+    draft.bcc.length ||
+    draft.subject.trim() ||
+    draft.bodyHtml.replace(/<[^>]+>/g, "").trim()
+  );
+}
+
+function bodyTouchesDraftContent(body: DraftBody): boolean {
+  return body.to !== undefined ||
+    body.cc !== undefined ||
+    body.bcc !== undefined ||
+    body.subject !== undefined ||
+    body.bodyHtml !== undefined ||
+    body.gmailThreadId !== undefined ||
+    body.inReplyToMsgId !== undefined ||
+    body.references !== undefined;
+}
+
+async function syncLocalDraftToGmail(draft: EmailDraftWithAccount): Promise<void> {
+  if (draft.account.provider !== EmailProvider.GOOGLE || !draftHasContent(draft)) return;
+  const { upsertGmailDraft } = await import("../services/gmailService");
+  const result = await upsertGmailDraft(draft.account, {
+    to: draft.to,
+    cc: draft.cc,
+    bcc: draft.bcc,
+    subject: draft.subject,
+    bodyHtml: draft.bodyHtml,
+    inReplyTo: draft.inReplyToMsgId ?? undefined,
+    references: draft.references ?? undefined,
+    gmailThreadId: draft.gmailThreadId ?? undefined,
+  }, draft.gmailDraftId);
+  await prisma.emailDraft.update({
+    where: { id: draft.id },
+    data: {
+      gmailDraftId: result.gmailDraftId,
+      gmailDraftMessageId: result.gmailMessageId,
+      gmailThreadId: result.gmailThreadId,
+      lastSyncedToGmailAt: new Date(),
+    },
+  });
+  await prisma.emailMessage.updateMany({
+    where: { gmailMessageId: result.gmailMessageId },
+    data: { isDraftArtifact: true },
+  });
 }
 
 function redactAccount<T extends { encryptedPassword?: string | null; encryptedAccessToken?: string | null; encryptedRefreshToken?: string | null }>(account: T) {
@@ -470,6 +521,11 @@ router.get("/drafts", async (_req: Request, res: Response): Promise<void> => {
     res.json([]);
     return;
   }
+  if (account.provider === EmailProvider.GOOGLE) {
+    await syncGmailDraftsForAccount(account).catch((err: unknown) => {
+      console.error("[EMAIL DRAFT] Gmail draft sync failed:", err instanceof Error ? err.message : err);
+    });
+  }
   const drafts = await prisma.emailDraft.findMany({
     where: { accountId: account.id },
     orderBy: { lastEditedAt: "desc" },
@@ -510,21 +566,44 @@ router.post("/drafts", async (req: Request, res: Response): Promise<void> => {
     },
     include: emailDraftInclude,
   });
+  const draftWithAccount = await prisma.emailDraft.findUnique({
+    where: { id: draft.id },
+    include: { account: true },
+  });
+  if (draftWithAccount && bodyTouchesDraftContent(body)) {
+    await syncLocalDraftToGmail(draftWithAccount).catch((err: unknown) => {
+      console.error("[EMAIL DRAFT] Gmail draft create failed:", err instanceof Error ? err.message : err);
+    });
+  }
   console.log(`[EMAIL DRAFT] Created draft ${draft.id}`);
-  res.status(201).json(draft);
+  const hydratedDraft = await prisma.emailDraft.findUnique({ where: { id: draft.id }, include: emailDraftInclude });
+  res.status(201).json(hydratedDraft ?? draft);
 });
 
 router.patch("/drafts/:draftId", async (req: Request, res: Response): Promise<void> => {
   try {
     const data = draftDataFromBody(req.body as DraftBody);
-    const draft = await prisma.emailDraft.update({
+    await prisma.emailDraft.update({
       where: { id: req.params.draftId },
       data: {
         ...data,
         lastEditedAt: new Date(),
       },
-      include: emailDraftInclude,
     });
+    const draftWithAccount = await prisma.emailDraft.findUnique({
+      where: { id: req.params.draftId },
+      include: { account: true },
+    });
+    if (!draftWithAccount) {
+      res.status(404).json({ error: "Draft not found" });
+      return;
+    }
+    if (bodyTouchesDraftContent(req.body as DraftBody)) {
+      await syncLocalDraftToGmail(draftWithAccount).catch((err: unknown) => {
+        console.error("[EMAIL DRAFT] Gmail draft autosave failed:", err instanceof Error ? err.message : err);
+      });
+    }
+    const draft = await prisma.emailDraft.findUnique({ where: { id: req.params.draftId }, include: emailDraftInclude });
     res.json(draft);
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Failed to update draft" });
@@ -532,6 +611,13 @@ router.patch("/drafts/:draftId", async (req: Request, res: Response): Promise<vo
 });
 
 router.delete("/drafts/:draftId", async (req: Request, res: Response): Promise<void> => {
+  const draft = await prisma.emailDraft.findUnique({ where: { id: req.params.draftId }, include: { account: true } });
+  if (draft?.account.provider === EmailProvider.GOOGLE && draft.gmailDraftId) {
+    const { deleteGmailDraft } = await import("../services/gmailService");
+    await deleteGmailDraft(draft.account, draft.gmailDraftId).catch((err: unknown) => {
+      console.error("[EMAIL DRAFT] Gmail draft delete failed:", err instanceof Error ? err.message : err);
+    });
+  }
   await prisma.emailDraft.delete({ where: { id: req.params.draftId } });
   console.log(`[EMAIL DRAFT] Deleted draft ${req.params.draftId}`);
   res.json({ deleted: true });
@@ -565,28 +651,24 @@ router.post("/drafts/:draftId/send", async (req: Request, res: Response): Promis
 
   try {
     if (draft.account.provider === EmailProvider.GOOGLE) {
-      const { sendGmailMessage } = await import("../services/gmailService");
+      if (!draft.gmailDraftId) {
+        await syncLocalDraftToGmail(draft);
+      }
+      const refreshedDraft = await prisma.emailDraft.findUnique({ where: { id: draft.id }, include: { account: true } });
+      if (!refreshedDraft?.gmailDraftId) throw new Error("Gmail draft could not be prepared for sending");
+      const { sendGmailDraft } = await import("../services/gmailService");
       const { syncThread } = await import("../services/gmailSyncService");
-      const sent = await sendGmailMessage(draft.account, {
-        to: draft.to,
-        cc: draft.cc,
-        bcc: draft.bcc,
-        subject: draft.subject,
-        bodyHtml: draft.bodyHtml,
-        inReplyTo: draft.inReplyToMsgId ?? undefined,
-        references: draft.references ?? undefined,
-        gmailThreadId: draft.gmailThreadId ?? undefined,
-      });
-      const localThreadId = await syncThread(draft.account, sent.gmailThreadId).catch((err: unknown) => {
+      const sent = await sendGmailDraft(refreshedDraft.account, refreshedDraft.gmailDraftId);
+      const localThreadId = await syncThread(refreshedDraft.account, sent.gmailThreadId).catch((err: unknown) => {
         console.error("[EMAIL DRAFT] Sent thread sync failed:", err instanceof Error ? err.message : err);
         return null;
       });
-      if (localThreadId && (draft.linkedOpportunityId || draft.linkedProductionId)) {
+      if (localThreadId && (refreshedDraft.linkedOpportunityId || refreshedDraft.linkedProductionId)) {
         await prisma.emailThread.update({
           where: { id: localThreadId },
           data: {
-            linkedOpportunityId: draft.linkedOpportunityId,
-            linkedProductionId: draft.linkedProductionId,
+            linkedOpportunityId: refreshedDraft.linkedOpportunityId,
+            linkedProductionId: refreshedDraft.linkedProductionId,
           },
         }).catch((err: unknown) => console.error("[EMAIL DRAFT] Sent thread link failed:", err instanceof Error ? err.message : err));
       }
@@ -778,7 +860,7 @@ router.post("/threads/:threadId/create-opportunity", async (req: Request, res: R
     include: {
       account: true,
       messages: {
-        where: { isDuplicateSuppressed: false },
+        where: { isDuplicateSuppressed: false, isDraftArtifact: false },
         orderBy: { sentAt: "asc" },
         take: 8,
         select: { fromAddress: true, fromName: true, bodyText: true, snippet: true, sentAt: true, isFromMe: true },
@@ -922,7 +1004,7 @@ router.get("/threads/:threadId/people", async (req: Request, res: Response): Pro
     include: {
       account: true,
       messages: {
-        where: { isDuplicateSuppressed: false },
+        where: { isDuplicateSuppressed: false, isDraftArtifact: false },
         select: {
           fromAddress: true,
           fromName: true,
@@ -1261,7 +1343,7 @@ router.get("/search", async (req: Request, res: Response): Promise<void> => {
         { subject: { contains: q, mode: "insensitive" } },
         { snippet: { contains: q, mode: "insensitive" } },
         { participants: { has: q.toLowerCase() } },
-        { messages: { some: { isDuplicateSuppressed: false, bodyText: { contains: q, mode: "insensitive" } } } },
+        { messages: { some: { isDuplicateSuppressed: false, isDraftArtifact: false, bodyText: { contains: q, mode: "insensitive" } } } },
       ],
     },
     orderBy: { lastMessageAt: "desc" },

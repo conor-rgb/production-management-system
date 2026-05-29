@@ -35,7 +35,7 @@ const productionInclude = {
   },
   budgets: { include: { currentRevision: { include: { sections: { include: { lineItems: { include: { subCosts: true } } } } } } } },
     jobFiles: true,
-  emailThreads: { include: { messages: { where: { isDuplicateSuppressed: false }, orderBy: { sentAt: "asc" as const } } } },
+  emailThreads: { include: { messages: { where: { isDuplicateSuppressed: false, isDraftArtifact: false }, orderBy: { sentAt: "asc" as const } } } },
   opportunity: true,
 };
 

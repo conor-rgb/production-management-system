@@ -1552,6 +1552,8 @@ model EmailDraft {
   id                  String       @id @default(uuid())
   accountId           String
   account             EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  gmailDraftId        String?
+  gmailDraftMessageId String?
   to                  String[]     @default([])
   cc                  String[]     @default([])
   bcc                 String[]     @default([])
@@ -1569,10 +1571,13 @@ model EmailDraft {
   linkedContact       Contact?     @relation(fields: [linkedContactId], references: [id], onDelete: SetNull)
   isMinimized         Boolean      @default(false)
   lastEditedAt        DateTime     @default(now())
+  lastSyncedToGmailAt DateTime?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
+  @@unique([accountId, gmailDraftId])
   @@index([accountId, lastEditedAt])
+  @@index([gmailDraftMessageId])
   @@index([replyToThreadId])
   @@index([linkedOpportunityId])
   @@index([linkedProductionId])
@@ -1678,6 +1683,7 @@ model EmailMessage {
   sentAt             DateTime
   isFromMe           Boolean     @default(false)
   isDuplicateSuppressed Boolean     @default(false)
+  isDraftArtifact    Boolean     @default(false)
   hasAttachments     Boolean     @default(false)
   attachments        Json        @default("[]")
   gmailAttachmentIds Json        @default("[]")
@@ -1691,6 +1697,7 @@ model EmailMessage {
   @@index([threadId, sentAt])
   @@index([gmailThreadId])
   @@index([isDuplicateSuppressed])
+  @@index([isDraftArtifact])
   @@index([imapMailbox, imapUid])
   @@map("pms_email_messages")
 }

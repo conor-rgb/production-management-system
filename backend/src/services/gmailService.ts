@@ -54,6 +54,17 @@ type GmailThreadListResponse = {
   resultSizeEstimate?: number;
 };
 
+type GmailDraftResponse = {
+  id: string;
+  message?: GmailMessage;
+};
+
+type GmailDraftListResponse = {
+  drafts?: GmailDraftResponse[];
+  nextPageToken?: string;
+  resultSizeEstimate?: number;
+};
+
 type GmailHistoryResponse = {
   history?: Array<{
     messagesAdded?: Array<{ message?: { threadId?: string } }>;
@@ -84,6 +95,7 @@ export type ParsedGmailMessage = {
   sentAt: Date;
   isFromMe: boolean;
   hasAttachments: boolean;
+  isDraft: boolean;
   attachments: Array<{
     filename: string;
     mimeType: string;
@@ -290,6 +302,7 @@ export function parseGmailMessage(message: GmailMessage, accountEmail: string): 
     sentAt: new Date(Number(message.internalDate)),
     isFromMe: from.address === accountEmail.toLowerCase() || labelIds.includes("SENT"),
     hasAttachments: attachments.some((attachment) => !attachment.isInline),
+    isDraft: labelIds.includes("DRAFT"),
     attachments,
   };
 }
@@ -328,7 +341,7 @@ export async function getAttachment(account: EmailAccount, gmailMessageId: strin
   return Buffer.from(data.data.replace(/-/g, "+").replace(/_/g, "/"), "base64");
 }
 
-export async function sendGmailMessage(account: EmailAccount, options: {
+export type GmailSendOptions = {
   to: string[];
   cc?: string[];
   bcc?: string[];
@@ -337,28 +350,81 @@ export async function sendGmailMessage(account: EmailAccount, options: {
   inReplyTo?: string;
   references?: string;
   gmailThreadId?: string | null;
-}): Promise<{ gmailMessageId: string; gmailThreadId: string }> {
+};
+
+function buildRawGmailMessage(account: EmailAccount, options: GmailSendOptions): string {
   const headers = [
     `From: ${account.emailAddress}`,
-    `To: ${options.to.join(", ")}`,
+    options.to.length ? `To: ${options.to.join(", ")}` : null,
     options.cc?.length ? `Cc: ${options.cc.join(", ")}` : null,
     options.bcc?.length ? `Bcc: ${options.bcc.join(", ")}` : null,
-    `Subject: ${options.subject}`,
+    `Subject: ${options.subject || ""}`,
     "MIME-Version: 1.0",
     "Content-Type: text/html; charset=utf-8",
     options.inReplyTo ? `In-Reply-To: ${options.inReplyTo}` : null,
     options.references ? `References: ${options.references}` : null,
   ].filter((line): line is string => Boolean(line)).join("\r\n");
-  const raw = Buffer.from(`${headers}\r\n\r\n${options.bodyHtml}`)
+  return Buffer.from(`${headers}\r\n\r\n${options.bodyHtml}`)
     .toString("base64")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
+}
+
+export async function sendGmailMessage(account: EmailAccount, options: GmailSendOptions): Promise<{ gmailMessageId: string; gmailThreadId: string }> {
+  const raw = buildRawGmailMessage(account, options);
   const body: { raw: string; threadId?: string } = { raw };
   if (options.gmailThreadId) body.threadId = options.gmailThreadId;
   const result = await gmailPost<{ id: string; threadId: string }>(account, "messages/send", body);
   console.log(`[GMAIL] Sent message ${result.id} in thread ${result.threadId}`);
   return { gmailMessageId: result.id, gmailThreadId: result.threadId };
+}
+
+export async function listGmailDrafts(account: EmailAccount): Promise<GmailDraftResponse[]> {
+  const drafts: GmailDraftResponse[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params: Record<string, string> = { maxResults: "50" };
+    if (pageToken) params.pageToken = pageToken;
+    const data = await gmailGet<GmailDraftListResponse>(account, "drafts", params);
+    drafts.push(...(data.drafts ?? []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+  return drafts;
+}
+
+export async function getGmailDraft(account: EmailAccount, gmailDraftId: string): Promise<GmailDraftResponse> {
+  return gmailGet<GmailDraftResponse>(account, `drafts/${gmailDraftId}`, { format: "full" });
+}
+
+export async function upsertGmailDraft(account: EmailAccount, options: GmailSendOptions, gmailDraftId?: string | null): Promise<{ gmailDraftId: string; gmailMessageId: string; gmailThreadId: string }> {
+  const raw = buildRawGmailMessage(account, options);
+  const message: { raw: string; threadId?: string } = { raw };
+  if (options.gmailThreadId) message.threadId = options.gmailThreadId;
+  const body = { message };
+  const result = gmailDraftId
+    ? await gmailPut<GmailDraftResponse>(account, `drafts/${gmailDraftId}`, body)
+    : await gmailPost<GmailDraftResponse>(account, "drafts", body);
+  if (!result.message?.id || !result.message.threadId) {
+    throw new Error("Gmail draft response did not include a message ID");
+  }
+  console.log(`[GMAIL] ${gmailDraftId ? "Updated" : "Created"} draft ${result.id}`);
+  return {
+    gmailDraftId: result.id,
+    gmailMessageId: result.message.id,
+    gmailThreadId: result.message.threadId,
+  };
+}
+
+export async function sendGmailDraft(account: EmailAccount, gmailDraftId: string): Promise<{ gmailMessageId: string; gmailThreadId: string }> {
+  const result = await gmailPost<{ id: string; threadId: string }>(account, `drafts/${gmailDraftId}/send`, {});
+  console.log(`[GMAIL] Sent draft ${gmailDraftId} as message ${result.id} in thread ${result.threadId}`);
+  return { gmailMessageId: result.id, gmailThreadId: result.threadId };
+}
+
+export async function deleteGmailDraft(account: EmailAccount, gmailDraftId: string): Promise<void> {
+  await gmailDelete(account, `drafts/${gmailDraftId}`);
+  console.log(`[GMAIL] Deleted draft ${gmailDraftId}`);
 }
 
 export async function getHistory(account: EmailAccount, startHistoryId: string): Promise<{ history: NonNullable<GmailHistoryResponse["history"]>; historyId: string }> {

@@ -1468,6 +1468,7 @@ router.get("/blackbook/:entryId/crm", async (req: Request, res: Response): Promi
         ? prisma.emailMessage.findMany({
           where: {
             isDuplicateSuppressed: false,
+            isDraftArtifact: false,
             OR: [
               { fromAddress: { in: relatedEmails, mode: "insensitive" } },
               { toAddresses: { hasSome: relatedEmails } },

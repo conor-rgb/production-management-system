@@ -5,6 +5,8 @@ import { ComposerTray } from "../components/email/ComposerTray";
 
 export interface Draft {
   id: string;
+  gmailDraftId?: string | null;
+  gmailDraftMessageId?: string | null;
   to: string[];
   cc: string[];
   bcc: string[];
@@ -19,6 +21,7 @@ export interface Draft {
   linkedContactId?: string | null;
   isMinimized: boolean;
   lastEditedAt: string;
+  lastSyncedToGmailAt?: string | null;
   linkedOpportunity?: { id: string; title?: string; clientName?: string | null; brand?: string | null } | null;
   linkedProduction?: { id: string; title?: string; jobCode?: string | null; clientName?: string | null; brand?: string | null } | null;
 }

@@ -1,6 +1,6 @@
 import { EmailAccount } from "@prisma/client";
 import prisma from "../prisma";
-import { getHistory, getGmailThread, listThreads, parseGmailMessage } from "./gmailService";
+import { getGmailDraft, getHistory, getGmailThread, listGmailDrafts, listThreads, parseGmailMessage } from "./gmailService";
 
 function contactDisplayName(contact?: { firstName: string; lastName: string | null } | null): string | null {
   if (!contact) return null;
@@ -56,15 +56,25 @@ export async function syncThread(account: EmailAccount, gmailThreadId: string): 
   if (!threadData.messages?.length) return null;
 
   const parsedMessages = threadData.messages.map((message) => parseGmailMessage(message, account.emailAddress));
-  const allLabelIds = new Set(parsedMessages.flatMap((message) => message.labelIds));
+  const draftMessages = parsedMessages.filter((message) => message.isDraft);
+  if (draftMessages.length) {
+    await prisma.emailMessage.updateMany({
+      where: { gmailMessageId: { in: draftMessages.map((message) => message.gmailMessageId) } },
+      data: { isDraftArtifact: true },
+    });
+  }
+  const visibleMessages = parsedMessages.filter((message) => !message.isDraft);
+  if (!visibleMessages.length) return null;
+
+  const allLabelIds = new Set(visibleMessages.flatMap((message) => message.labelIds));
   const inInbox = allLabelIds.has("INBOX");
-  const inSent = parsedMessages.some((message) => message.inSent);
+  const inSent = visibleMessages.some((message) => message.inSent);
   const isStarred = allLabelIds.has("STARRED");
   const isUnread = allLabelIds.has("UNREAD");
   const isTrashed = allLabelIds.has("TRASH");
   const isArchived = !inInbox && !isTrashed;
 
-  const participants = Array.from(new Set(parsedMessages.flatMap((message) => [
+  const participants = Array.from(new Set(visibleMessages.flatMap((message) => [
     message.fromAddress,
     ...message.toAddresses,
     ...message.ccAddresses,
@@ -82,14 +92,14 @@ export async function syncThread(account: EmailAccount, gmailThreadId: string): 
     return contactDisplayName(contact) ?? email;
   });
 
-  const sortedByDate = [...parsedMessages].sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime());
+  const sortedByDate = [...visibleMessages].sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime());
   const lastMessageAt = sortedByDate[sortedByDate.length - 1]?.sentAt ?? new Date();
-  const inboxMessages = parsedMessages.filter((message) => message.inInbox && !message.isFromMe);
-  const sentMessages = parsedMessages.filter((message) => message.inSent || message.isFromMe);
+  const inboxMessages = visibleMessages.filter((message) => message.inInbox && !message.isFromMe);
+  const sentMessages = visibleMessages.filter((message) => message.inSent);
   const lastInboxMessageAt = inboxMessages.length ? new Date(Math.max(...inboxMessages.map((message) => message.sentAt.getTime()))) : null;
   const lastSentMessageAt = sentMessages.length ? new Date(Math.max(...sentMessages.map((message) => message.sentAt.getTime()))) : null;
-  const subject = parsedMessages[0]?.subject ?? "(no subject)";
-  const snippet = parsedMessages[parsedMessages.length - 1]?.snippet ?? "";
+  const subject = visibleMessages[0]?.subject ?? "(no subject)";
+  const snippet = visibleMessages[visibleMessages.length - 1]?.snippet ?? "";
 
   const thread = await prisma.emailThread.upsert({
     where: {
@@ -139,7 +149,7 @@ export async function syncThread(account: EmailAccount, gmailThreadId: string): 
     },
   });
 
-  for (const parsed of parsedMessages) {
+  for (const parsed of visibleMessages) {
     await prisma.emailMessage.upsert({
       where: { externalMessageId: parsed.gmailMessageId },
       update: {
@@ -155,6 +165,7 @@ export async function syncThread(account: EmailAccount, gmailThreadId: string): 
         bodyText: parsed.bodyText,
         snippet: parsed.snippet,
         hasAttachments: parsed.hasAttachments,
+        isDraftArtifact: false,
         attachments: parsed.attachments,
         gmailAttachmentIds: parsed.attachments.map((attachment) => ({
           filename: attachment.filename,
@@ -182,6 +193,7 @@ export async function syncThread(account: EmailAccount, gmailThreadId: string): 
         snippet: parsed.snippet,
         sentAt: parsed.sentAt,
         isFromMe: parsed.isFromMe,
+        isDraftArtifact: false,
         hasAttachments: parsed.hasAttachments,
         attachments: parsed.attachments,
         gmailAttachmentIds: parsed.attachments.map((attachment) => ({
@@ -193,6 +205,64 @@ export async function syncThread(account: EmailAccount, gmailThreadId: string): 
   }
 
   return thread.id;
+}
+
+export async function syncGmailDraftsForAccount(account: EmailAccount): Promise<void> {
+  const remoteDraftSummaries = await listGmailDrafts(account);
+  const remoteDraftIds = new Set(remoteDraftSummaries.map((draft) => draft.id));
+  for (const summary of remoteDraftSummaries) {
+    try {
+      const draftData = await getGmailDraft(account, summary.id);
+      if (!draftData.message) continue;
+      const parsed = parseGmailMessage(draftData.message, account.emailAddress);
+      const bodyHtml = parsed.bodyHtml || parsed.bodyText;
+      await prisma.emailDraft.upsert({
+        where: {
+          accountId_gmailDraftId: {
+            accountId: account.id,
+            gmailDraftId: summary.id,
+          },
+        },
+        update: {
+          gmailDraftMessageId: parsed.gmailMessageId,
+          gmailThreadId: parsed.gmailThreadId,
+          to: { set: parsed.toAddresses },
+          cc: { set: parsed.ccAddresses },
+          bcc: { set: parsed.bccAddresses },
+          subject: parsed.subject === "(no subject)" ? "" : parsed.subject,
+          bodyHtml,
+          lastEditedAt: parsed.sentAt,
+          lastSyncedToGmailAt: new Date(),
+        },
+        create: {
+          accountId: account.id,
+          gmailDraftId: summary.id,
+          gmailDraftMessageId: parsed.gmailMessageId,
+          gmailThreadId: parsed.gmailThreadId,
+          to: parsed.toAddresses,
+          cc: parsed.ccAddresses,
+          bcc: parsed.bccAddresses,
+          subject: parsed.subject === "(no subject)" ? "" : parsed.subject,
+          bodyHtml,
+          lastEditedAt: parsed.sentAt,
+          lastSyncedToGmailAt: new Date(),
+        },
+      });
+      await prisma.emailMessage.updateMany({
+        where: { gmailMessageId: parsed.gmailMessageId },
+        data: { isDraftArtifact: true },
+      });
+    } catch (err) {
+      console.error(`[GMAIL SYNC] Failed to sync draft ${summary.id}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  await prisma.emailDraft.deleteMany({
+    where: {
+      accountId: account.id,
+      gmailDraftId: { not: null, notIn: Array.from(remoteDraftIds) },
+    },
+  });
 }
 
 export async function incrementalGmailSync(account: EmailAccount): Promise<void> {

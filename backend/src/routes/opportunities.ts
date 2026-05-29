@@ -16,7 +16,7 @@ const fullInclude = {
   productions: { select: { id: true, title: true, jobCode: true, status: true } },
   emailThreads: {
     include: {
-      messages: { where: { isDuplicateSuppressed: false }, orderBy: { sentAt: "asc" as const } },
+      messages: { where: { isDuplicateSuppressed: false, isDraftArtifact: false }, orderBy: { sentAt: "asc" as const } },
       linkedContact: true,
       linkedProduction: true,
     },

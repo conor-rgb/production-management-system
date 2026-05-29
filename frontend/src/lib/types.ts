@@ -262,6 +262,7 @@ export interface EmailMessage {
   body?: string;
   sentAt: string;
   isFromMe: boolean;
+  isDraftArtifact?: boolean;
   hasAttachments: boolean;
   attachments: Array<{ filename: string; mimeType: string; sizeBytes: number; contentId?: string; isInline?: boolean; jobFileId?: string; jobFile?: JobFile }>;
   resolvedFromName?: string;

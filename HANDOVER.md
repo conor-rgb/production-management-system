@@ -1,3 +1,59 @@
+# HANDOVER - 2026-05-29 - Gmail Draft Sync V2
+
+## Built This Session
+- Added native Gmail draft synchronization for the persistent composer:
+  - local `EmailDraft` rows now store `gmailDraftId`, `gmailDraftMessageId`, and `lastSyncedToGmailAt`,
+  - draft create/autosave updates Gmail via `users.drafts.create` / `users.drafts.update`,
+  - deleting a local draft deletes the Gmail draft,
+  - sending a Gmail-backed draft now calls `users.drafts.send`.
+- Added Gmail draft import on `GET /api/email/drafts`:
+  - Gmail drafts created or edited outside the app are pulled into the local composer draft tray,
+  - remote Gmail draft deletions remove the matching local draft.
+- Added `EmailMessage.isDraftArtifact`:
+  - Gmail messages carrying the `DRAFT` label are marked as draft artifacts,
+  - draft artifacts are excluded from inbox/sent/thread/search/Blackbook/production/opportunity activity views,
+  - full and incremental Gmail sync skip draft messages when deriving real thread state.
+- Cleaned historical local data:
+  - migration marked 52 existing Gmail draft-like message rows as `isDraftArtifact = true`.
+
+## Files Changed
+- `backend/prisma/schema.prisma`
+- `backend/prisma/migrations/20260529233000_gmail_draft_sync/migration.sql`
+- `backend/src/routes/email.ts`
+- `backend/src/routes/opportunities.ts`
+- `backend/src/routes/options.ts`
+- `backend/src/routes/productions.ts`
+- `backend/src/services/emailService.ts`
+- `backend/src/services/gmailService.ts`
+- `backend/src/services/gmailSyncService.ts`
+- `frontend/src/lib/types.ts`
+- `frontend/src/store/draftStore.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Prisma migration deployed.
+- Prisma client regenerated.
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Composer autosaves should now appear in Gmail as real drafts, not as sent messages.
+- Gmail draft saves should no longer appear as sent emails in the email client or Blackbook activity feeds.
+- Existing bad draft-save rows remain in the DB for safety but are suppressed from normal UI.
+
+## Next Step
+- Test in-browser:
+  1. Click Compose, type a subject/body, wait 1-2 seconds, confirm the draft appears in Gmail Drafts.
+  2. Edit the draft in Gmail, refresh the app, confirm the local tray pulls the latest draft.
+  3. Send from the app, confirm only one sent message appears and the draft disappears from Gmail Drafts.
+  4. Open Blackbook activity for the recipient and confirm draft autosaves do not appear as activity rows.
+
+---
+
 # HANDOVER - 2026-05-29 - Email Historical Duplicate Cleanup
 
 ## Built This Session
