@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { CalendarEventType, ProjectActionStatus, ProjectActionType, ProjectActionVisibility } from "@prisma/client";
+import { CalendarEventType, OptionRequirementType, ProjectActionStatus, ProjectActionType, ProjectActionVisibility } from "@prisma/client";
 import prisma from "../prisma";
 import { getProductionColor, pushToGoogleCalendar } from "../services/calendarSyncService";
 import { getPrimaryAccount } from "../services/googleCalendarService";
@@ -26,6 +26,13 @@ type ActionBody = {
   blackbookEntryId?: string | null;
   emailThreadId?: string | null;
   emailMessageId?: string | null;
+};
+
+type WorkstreamBody = {
+  name?: string;
+  color?: string | null;
+  order?: number;
+  optionGroupIds?: string[];
 };
 
 function actionType(value: unknown): ProjectActionType {
@@ -72,6 +79,20 @@ async function pushEvent(eventId: string): Promise<void> {
   }
 }
 
+function workstreamTemplateFor(name: string, type: OptionRequirementType): { name: string; color: string; order: number } {
+  const normalized = name.toLowerCase();
+  if (type === OptionRequirementType.LOCATION || /location|studio|venue|recce/.test(normalized)) return { name: "Locations", color: "#d9ead3", order: 30 };
+  if (type === OptionRequirementType.TRANSPORT || /transport|vehicle|car|travel|driver/.test(normalized)) return { name: "Transport", color: "#cfe2f3", order: 60 };
+  if (type === OptionRequirementType.EQUIPMENT || /camera|lighting|kit|equipment|eq/.test(normalized)) return { name: "Equipment", color: "#d0e0e3", order: 40 };
+  if (type === OptionRequirementType.TALENT || /model|talent|casting/.test(normalized)) return { name: "Talent", color: "#ead1dc", order: 50 };
+  if (/styling|stylist|wardrobe|hmu|makeup|hair|tailor|florist|floral/.test(normalized)) return { name: "Styling / HMU", color: "#ead1dc", order: 20 };
+  if (/video|motion|dop|director|editor|av|technical/.test(normalized)) return { name: "Motion / AV", color: "#c8d8f0", order: 15 };
+  if (type === OptionRequirementType.CREW || /photo|photographer|assistant|digital|producer|production/.test(normalized)) return { name: "Photo / Production", color: "#f7c59f", order: 10 };
+  if (/catering|caterer|food|bar|restaurant/.test(normalized)) return { name: "Catering", color: "#fff2cc", order: 55 };
+  if (type === OptionRequirementType.POST) return { name: "Post", color: "#d9d2e9", order: 70 };
+  return { name: "Services", color: "#e6e6e3", order: 90 };
+}
+
 async function ensureWorkstreams(productionId: string) {
   const groups = await prisma.optionGroup.findMany({
     where: { productionId },
@@ -82,19 +103,46 @@ async function ensureWorkstreams(productionId: string) {
     },
   });
 
-  await Promise.all(groups.map((group, index) =>
-    prisma.projectWorkstream.upsert({
-      where: { productionId_optionGroupId: { productionId, optionGroupId: group.id } },
-      update: { name: group.name, order: group.order, color: LANE_COLORS[index % LANE_COLORS.length] },
-      create: { productionId, optionGroupId: group.id, name: group.name, order: group.order, color: LANE_COLORS[index % LANE_COLORS.length] },
-    })
-  ));
+  const legacyWorkstreams = await prisma.projectWorkstream.findMany({
+    where: { productionId, optionGroupId: { not: null } },
+    select: { id: true, optionGroupId: true },
+  });
+  for (const legacy of legacyWorkstreams) {
+    if (!legacy.optionGroupId) continue;
+    await prisma.optionGroup.updateMany({
+      where: { id: legacy.optionGroupId, workstreamId: null },
+      data: { workstreamId: legacy.id },
+    });
+  }
+
+  const existingCount = await prisma.projectWorkstream.count({ where: { productionId } });
+  if (existingCount === 0 && groups.length > 0) {
+    const templates = new Map<string, { name: string; color: string; order: number; groupIds: string[] }>();
+    for (const group of groups) {
+      const template = workstreamTemplateFor(group.name, group.type);
+      const existing = templates.get(template.name);
+      if (existing) {
+        existing.groupIds.push(group.id);
+      } else {
+        templates.set(template.name, { ...template, groupIds: [group.id] });
+      }
+    }
+    for (const template of [...templates.values()].sort((a, b) => a.order - b.order)) {
+      const workstream = await prisma.projectWorkstream.create({
+        data: { productionId, name: template.name, color: template.color, order: template.order },
+      });
+      await prisma.optionGroup.updateMany({
+        where: { id: { in: template.groupIds } },
+        data: { workstreamId: workstream.id },
+      });
+    }
+  }
 
   const workstreams = await prisma.projectWorkstream.findMany({
     where: { productionId },
     orderBy: { order: "asc" },
     include: {
-      optionGroup: {
+      optionGroups: {
         include: {
           requirements: { orderBy: { order: "asc" }, include: { assignments: { include: { candidate: { include: { blackbookEntry: true } }, date: true } } } },
           candidates: { orderBy: { order: "asc" }, include: { blackbookEntry: true, dateStatuses: { include: { date: true } }, assignments: { include: { requirement: true, date: true } } } },
@@ -162,17 +210,25 @@ router.get("/production/:productionId", async (req: Request, res: Response): Pro
   });
   if (!production) { res.status(404).json({ error: "Production not found" }); return; }
 
-  const [workstreams, actions, dates] = await Promise.all([
+  const [workstreams, actions, dates, unassignedOptionGroups] = await Promise.all([
     ensureWorkstreams(production.id),
     prisma.projectAction.findMany({ where: { productionId: production.id }, orderBy: [{ startAt: "asc" }, { createdAt: "asc" }], include: actionInclude }),
     prisma.productionDate.findMany({ where: { productionId: production.id }, orderBy: { date: "asc" } }),
+    prisma.optionGroup.findMany({
+      where: { productionId: production.id, workstreamId: null },
+      orderBy: { order: "asc" },
+      include: {
+        requirements: { orderBy: { order: "asc" }, include: { assignments: { include: { candidate: { include: { blackbookEntry: true } }, date: true } } } },
+        candidates: { orderBy: { order: "asc" }, include: { blackbookEntry: true, dateStatuses: { include: { date: true } } } },
+      },
+    }),
   ]);
 
-  res.json({ production, workstreams, actions, dates });
+  res.json({ production, workstreams, actions, dates, unassignedOptionGroups });
 });
 
 router.post("/production/:productionId/workstreams", async (req: Request, res: Response): Promise<void> => {
-  const body = req.body as { name?: string; color?: string | null; order?: number };
+  const body = req.body as WorkstreamBody;
   if (!body.name?.trim()) { res.status(400).json({ error: "name required" }); return; }
   const workstream = await prisma.projectWorkstream.create({
     data: {
@@ -182,6 +238,12 @@ router.post("/production/:productionId/workstreams", async (req: Request, res: R
       order: Number.isFinite(body.order) ? Number(body.order) : 999,
     },
   });
+  if (body.optionGroupIds?.length) {
+    await prisma.optionGroup.updateMany({
+      where: { productionId: req.params.productionId, id: { in: body.optionGroupIds } },
+      data: { workstreamId: workstream.id },
+    });
+  }
   res.status(201).json(workstream);
 });
 
@@ -197,6 +259,36 @@ router.patch("/workstreams/:workstreamId", async (req: Request, res: Response): 
     },
   });
   res.json(workstream);
+});
+
+router.patch("/workstreams/:workstreamId/option-groups", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { optionGroupIds?: string[] };
+  const workstream = await prisma.projectWorkstream.findUnique({ where: { id: req.params.workstreamId } });
+  if (!workstream) { res.status(404).json({ error: "Workstream not found" }); return; }
+  const optionGroupIds = Array.isArray(body.optionGroupIds) ? body.optionGroupIds : [];
+  await prisma.optionGroup.updateMany({
+    where: { productionId: workstream.productionId, workstreamId: workstream.id },
+    data: { workstreamId: null },
+  });
+  if (optionGroupIds.length) {
+    await prisma.optionGroup.updateMany({
+      where: { productionId: workstream.productionId, id: { in: optionGroupIds } },
+      data: { workstreamId: workstream.id },
+    });
+  }
+  const updated = await prisma.projectWorkstream.findUnique({
+    where: { id: workstream.id },
+    include: {
+      optionGroups: {
+        orderBy: { order: "asc" },
+        include: {
+          requirements: { orderBy: { order: "asc" }, include: { assignments: { include: { candidate: { include: { blackbookEntry: true } }, date: true } } } },
+          candidates: { orderBy: { order: "asc" }, include: { blackbookEntry: true, dateStatuses: { include: { date: true } } } },
+        },
+      },
+    },
+  });
+  res.json(updated);
 });
 
 router.post("/production/:productionId/actions", async (req: Request, res: Response): Promise<void> => {

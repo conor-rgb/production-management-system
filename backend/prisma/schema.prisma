@@ -648,6 +648,7 @@ model OptionsBoard {
 model OptionGroup {
   id           String                @id @default(uuid())
   productionId String
+  workstreamId String?
   name         String
   type         OptionRequirementType @default(OTHER)
   order        Int                   @default(0)
@@ -656,13 +657,15 @@ model OptionGroup {
   columns      OptionColumn[]
   savedViews   OptionSavedView[]
   deckTemplate OptionDeckTemplate?
-  workstreams  ProjectWorkstream[]
+  legacyWorkstreams ProjectWorkstream[] @relation("LegacyWorkstreamOptionGroup")
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
 
   production Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  workstream ProjectWorkstream? @relation("WorkstreamOptionGroups", fields: [workstreamId], references: [id], onDelete: SetNull)
 
   @@index([productionId, order])
+  @@index([workstreamId])
   @@map("pms_option_groups")
 }
 
@@ -1110,7 +1113,8 @@ model ProjectWorkstream {
   updatedAt               DateTime        @updatedAt
 
   production  Production   @relation(fields: [productionId], references: [id], onDelete: Cascade)
-  optionGroup OptionGroup? @relation(fields: [optionGroupId], references: [id], onDelete: SetNull)
+  optionGroup OptionGroup? @relation("LegacyWorkstreamOptionGroup", fields: [optionGroupId], references: [id], onDelete: SetNull)
+  optionGroups OptionGroup[] @relation("WorkstreamOptionGroups")
 
   @@unique([productionId, optionGroupId])
   @@index([productionId, order])

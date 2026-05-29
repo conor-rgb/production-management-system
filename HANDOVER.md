@@ -1,3 +1,67 @@
+# HANDOVER - 2026-05-29 - Manual Workstream Groups for Timeline Lanes
+
+## Built This Session
+- Corrected the timeline model so workstreams are manually managed project lanes, not one-to-one mirrors of option sheets.
+- Option sheets now attach underneath a workstream lane:
+  - one workstream can contain multiple option sheets,
+  - one option sheet can still contain multiple required slots, such as `Photo Assistant x3`.
+- Added a workstream editor drawer in the Timeline tab:
+  - create a lane,
+  - rename a lane,
+  - set lane color,
+  - tick which option sheets feed that lane.
+- Updated Timeline lane display:
+  - lane shows attached option sheet chips,
+  - lane summary pulls required slots from all attached sheets,
+  - confirmed assignments still surface in the lane summary where available.
+- Existing projects remain compatible:
+  - legacy one-option-sheet lanes are migrated into the new attachment model when the timeline loads.
+
+## Backend
+- Updated `backend/prisma/schema.prisma`.
+- Added migration:
+  - `backend/prisma/migrations/20260529200000_workstream_option_group_assignment/migration.sql`
+- Updated:
+  - `backend/src/routes/projectActions.ts`
+- Added `workstreamId` to `OptionGroup`.
+- `ProjectWorkstream` now has:
+  - `optionGroups` as the current source-of-truth relation,
+  - `optionGroupId` only kept as a legacy compatibility relation.
+- New/updated endpoint:
+  - `PATCH /api/project-actions/workstreams/:workstreamId/option-groups`
+
+## Frontend
+- Updated:
+  - `frontend/src/components/timeline/ProductionTimelineView.tsx`
+  - `frontend/src/lib/types.ts`
+- Timeline top bar now has `+ Lane`.
+- Each lane has a `Sheets` action to manage which option sheets feed it.
+
+## Deployment / Verification
+- Prisma migration deployed successfully.
+- Prisma client regenerated.
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- The intended structure is now:
+  - Workstream = project planning lane, e.g. Photo, Styling, Locations, Catering.
+  - Option sheet = candidate pool, e.g. Photographer, Photo Assistant, Camera Kit.
+  - Requirement slot = actual role to fill, e.g. Photo Assistant 1, Photo Assistant 2, Photo Assistant 3.
+- This gives the timeline a client/planning shape while preserving the granular option board underneath.
+
+## Suggested Next Steps
+- Add drag/drop assignment of option sheets between lanes.
+- Add workstream templates per job type so new jobs can start with sensible lanes.
+- Add a Matrix setting to choose which workstream each option sheet belongs to without leaving Options.
+- Add global Timeline/Calendar view using these same workstreams as filters/layers.
+
+---
+
 # HANDOVER - 2026-05-29 - Project Timeline Workstreams and Calendar-Linked Actions
 
 ## Built This Session

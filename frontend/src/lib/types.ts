@@ -386,7 +386,7 @@ export interface ProjectWorkstream {
   color?: string | null;
   order: number;
   visibleOnClientTimeline: boolean;
-  optionGroup?: {
+  optionGroups?: Array<{
     id: string;
     name: string;
     requirements?: Array<{
@@ -408,7 +408,7 @@ export interface ProjectWorkstream {
       blackbookEntry?: { id: string; displayName: string; email?: string | null; phone?: string | null } | null;
       dateStatuses?: Array<{ id: string; dateId: string; status: string }>;
     }>;
-  } | null;
+  }>;
 }
 
 export interface ProjectAction {
