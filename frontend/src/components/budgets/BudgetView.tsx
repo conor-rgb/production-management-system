@@ -42,6 +42,14 @@ type BudgetCompareResult = {
     deltaEstimated: number;
   }>;
 };
+type BudgetPdfExportResponse = {
+  id: string;
+  originalFilename: string;
+  storedFilename?: string;
+  mimeType: string;
+  sizeBytes: number;
+  contentBase64?: string;
+};
 
 type BudgetColumn = {
   key: BudgetColumnKey;
@@ -395,8 +403,29 @@ export default function BudgetView({ entity, onBack, embedded = false }: { entit
 
   async function exportPdf(exportMode: "client" | "internal") {
     if (!revision) return;
-    await api.post(`/api/budgets/revisions/${revision.id}/export-pdf`, { mode: exportMode });
-    setToast("PDF exported.");
+    const file = await api.post<BudgetPdfExportResponse>(`/api/budgets/revisions/${revision.id}/export-pdf`, { mode: exportMode });
+    if (file.contentBase64) {
+      const binary = atob(file.contentBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+      const blob = new Blob([bytes], { type: file.mimeType || "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.originalFilename || "Estimate.pdf";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } else {
+      const link = document.createElement("a");
+      link.href = `/api/files/${file.id}/download`;
+      link.download = file.originalFilename || "Estimate.pdf";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+    setToast("PDF exported and downloaded.");
   }
 
   const firstAdvance = useMemo(() => {
