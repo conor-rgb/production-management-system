@@ -1,3 +1,35 @@
+# HANDOVER - 2026-05-29 - Crew Matrix Compact Rows
+
+## Built This Session
+- Made Crew & Suppliers Matrix rows significantly denser for scanning.
+- Requirement rows reduced from large two-line cards to compact single-line rows.
+- Requirement metadata is now low-attention inline text:
+  - record count,
+  - sheet name,
+  - requirement type.
+- Workstream section rows are shorter and less visually heavy.
+- Date cells were reduced to match the compact row height.
+- Header date controls were scaled down to preserve vertical space.
+
+## Files Changed
+- `frontend/src/components/options/OptionsBoardView.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Matrix should now be much easier to scan vertically.
+- Requirement name remains the primary visible data.
+- Secondary metadata is visible but deliberately quiet.
+- Right-click remains the main place for edit/actions.
+
+---
+
 # HANDOVER - 2026-05-29 - Crew Matrix Remove Kind Column
 
 ## Built This Session

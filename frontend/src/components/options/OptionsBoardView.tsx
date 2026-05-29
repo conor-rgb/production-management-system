@@ -1940,33 +1940,35 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <div className="min-w-max">
-        <div className="sticky top-0 z-20 grid min-h-[50px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500" style={{ gridTemplateColumns: gridColumns }}>
+        <div className="sticky top-0 z-20 grid min-h-[44px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500" style={{ gridTemplateColumns: gridColumns }}>
           <div className="flex h-full items-center border-r border-[#dcdfe3] px-4">Requirement</div>
           {matrix.dates.map((date) => (
-            <div key={date.id} className="flex min-h-[50px] flex-col items-center justify-center gap-1 border-r border-[#dcdfe3] bg-[#fbfbf8] px-2 py-1.5">
+            <div key={date.id} className="flex min-h-[44px] flex-col items-center justify-center gap-0.5 border-r border-[#dcdfe3] bg-[#fbfbf8] px-2 py-1">
               <span className="text-center text-[11px] font-semibold normal-case tracking-normal text-gray-900">{compactDateLabel(date).top}</span>
               <span className="-mt-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-gray-400">{compactDateLabel(date).bottom}</span>
-              <PillDropdown
-                value={date.status}
-                options={DATE_STATUSES}
-                onChange={(status) => status ? onUpdateDate(date.id, { status }) : Promise.resolve()}
-                classNameForValue={dateStatusClass}
-                compact
-              />
+              <div className="scale-90">
+                <PillDropdown
+                  value={date.status}
+                  options={DATE_STATUSES}
+                  onChange={(status) => status ? onUpdateDate(date.id, { status }) : Promise.resolve()}
+                  classNameForValue={dateStatusClass}
+                  compact
+                />
+              </div>
             </div>
           ))}
         </div>
         {sections.map((section) => (
           <div key={section.id}>
-            <div className="grid min-h-[46px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-xs" style={{ gridTemplateColumns: gridColumns }}>
-              <div className="flex min-w-0 items-center gap-3 border-r border-[#dcdfe3] px-4 py-2">
+            <div className="grid min-h-[34px] items-center border-b border-[#dcdfe3] bg-[#f7f7f5] text-xs" style={{ gridTemplateColumns: gridColumns }}>
+              <div className="flex min-w-0 items-center gap-2 border-r border-[#dcdfe3] px-4 py-1.5">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: section.color }} />
                 {section.workstream ? (
                   <EditableText value={section.workstream.name} onSave={(name) => onUpdateWorkstream(section.workstream!.id, { name })} className="truncate text-[13px] font-semibold text-gray-900" />
                 ) : (
                   <span className="truncate text-[13px] font-semibold text-gray-500">Unassigned</span>
                 )}
-                <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-gray-300">{section.groups.reduce((sum, group) => sum + group.requirements.length, 0)} req</span>
+                <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-gray-300">{section.groups.reduce((sum, group) => sum + group.requirements.length, 0)}</span>
               </div>
               {matrix.dates.map((date) => <div key={date.id} className="border-r border-[#e6e6e3] bg-[#fbfbf8]" />)}
             </div>
@@ -1977,19 +1979,19 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
                   event.preventDefault();
                   setMatrixMenu({ requirement, group, x: event.clientX, y: event.clientY });
                 }}
-                className={`group grid min-h-[58px] items-center border-b border-[#ededeb] text-xs hover:bg-[#fbfbfa] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`}
+                className={`group grid min-h-[34px] items-center border-b border-[#ededeb] text-xs hover:bg-[#fbfbfa] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`}
                 style={{ gridTemplateColumns: gridColumns }}
               >
-                <div className="min-w-0 border-r border-[#e6e6e3] px-4 py-2">
-                  <button onClick={() => onOpenGroup(group.id)} className="block max-w-full truncate text-left text-[13px] font-semibold text-gray-900 hover:text-teal-700" title="Open board">
+                <div className="flex min-w-0 items-center gap-2 border-r border-[#e6e6e3] px-4 py-1">
+                  <button onClick={() => onOpenGroup(group.id)} className="min-w-0 max-w-[190px] truncate text-left text-[13px] font-semibold text-gray-900 hover:text-teal-700" title="Open board">
                     {requirement.displayLabel}
                   </button>
-                  <div className="mt-1 flex min-w-0 items-center gap-2">
-                    <button onClick={() => onOpenGroup(group.id)} className="truncate text-[11px] font-medium text-gray-400 hover:text-gray-900">{group.candidates.length} records</button>
+                  <div className="flex min-w-0 items-center gap-1 text-[10px] text-gray-300">
+                    <button onClick={() => onOpenGroup(group.id)} className="whitespace-nowrap font-medium hover:text-gray-700">{group.candidates.length} rec</button>
                     <span className="text-gray-200">·</span>
-                    <span className="truncate text-[11px] text-gray-400">{group.name}</span>
+                    <span className="max-w-[92px] truncate">{group.name}</span>
                     <span className="text-gray-200">·</span>
-                    <span className="truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-300">{label(requirement.type)}</span>
+                    <span className="truncate font-semibold uppercase tracking-[0.06em]">{label(requirement.type)}</span>
                   </div>
                 </div>
                 {matrix.dates.map((date) => {
@@ -2001,7 +2003,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
                   return (
                     <div
                       key={date.id}
-                      className={`group/need relative flex min-h-[58px] min-w-[96px] items-center justify-center gap-1 border-r border-[#f0f0ee] px-2 py-1.5 ${pipelineCellClass(pipeline, isRequired)}`}
+                      className={`group/need relative flex min-h-[34px] min-w-[96px] items-center justify-center gap-1 border-r border-[#f0f0ee] px-1 py-0.5 ${pipelineCellClass(pipeline, isRequired)}`}
                     >
                       <button
                         title={candidateSummary(group, date.id)}
@@ -2010,7 +2012,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
                           event.stopPropagation();
                           onOpenGroup(group.id);
                         }}
-                        className={`inline-flex min-h-8 min-w-[86px] items-center justify-center rounded-sm border border-transparent bg-transparent px-2 text-[11px] font-semibold hover:bg-white/45 ${pipelineMatrixButtonClass(pipeline, isRequired)}`}
+                        className={`inline-flex min-h-6 min-w-[76px] items-center justify-center rounded-sm border border-transparent bg-transparent px-1.5 text-[11px] font-semibold hover:bg-white/45 ${pipelineMatrixButtonClass(pipeline, isRequired)}`}
                       >
                         {isRequired ? shownCandidate?.name ?? shortPipeline(pipeline) : "Set"}
                       </button>
