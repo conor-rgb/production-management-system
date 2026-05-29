@@ -391,7 +391,7 @@ function ProductionWorkspace({ productionId, selectedListProduction, initialTab,
   const modules: Tab[] = ["Overview", "Options", "Budget", "Timeline", "Dates", "Crew", "POs", "Comms", "Files"];
   const moduleLabel: Record<Tab, string> = {
     Overview: "Overview",
-    Options: "Options",
+    Options: "Crew & Suppliers",
     Budget: "Budget",
     Timeline: "Timeline",
     Dates: "Dates",
@@ -1019,9 +1019,9 @@ function PurchaseOrderCreatePanel({ production, context, onClose, onCreated }: {
           <section className="rounded-lg border border-gray-200 p-3">
             <h4 className="text-xs font-semibold uppercase tracking-[0.05em] text-gray-400">Supplier</h4>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <label className="text-xs text-gray-500">From job options
+              <label className="text-xs text-gray-500">From Crew & Suppliers
                 <select value={optionCandidateId} onChange={(event) => selectCandidate(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900">
-                  <option value="">No option candidate</option>
+                  <option value="">No linked record</option>
                   {context.optionCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.group.name} · {candidate.name}</option>)}
                 </select>
               </label>

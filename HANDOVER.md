@@ -1,3 +1,47 @@
+# HANDOVER - 2026-05-29 - Crew & Suppliers Airtable Naming Pass
+
+## Built This Session
+- Reframed the project `Options` module as the user-facing `Crew & Suppliers` workspace.
+- Kept the existing backend routes, URL parameters, and internal option/candidate model names intact for compatibility.
+- Updated the visible production module navigation:
+  - `Options` now displays as `Crew & Suppliers`.
+- Updated the Airtable-style workspace copy:
+  - Matrix remains the master workstream/date plan.
+  - Requirements open record sheets.
+  - Sheet rows are now presented as records rather than candidates.
+  - Empty states, action buttons, assignment tooltips, default row names, delete prompts, and image-manager copy now follow the new language.
+- Updated PO supplier creation copy:
+  - `From job options` is now `From Crew & Suppliers`.
+  - empty state is now `No linked record`.
+
+## Files Changed
+- `frontend/src/pages/Productions.tsx`
+- `frontend/src/components/options/OptionsBoardView.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- The user-facing model is now:
+  - `Crew & Suppliers` = parent workspace inside a project.
+  - `Matrix` = master workstream/date plan.
+  - `Requirement` = role/service slot that needs filling.
+  - `Record sheet` = the pool of possible people/suppliers/locations for a requirement.
+  - `Record` = a candidate/supplier/location row in that sheet.
+- The implementation still uses existing internal `options` route names and `candidate` code identifiers, which avoids a risky broad refactor.
+
+## Suggested Next Steps
+- Add the Crew & Suppliers structure directly to settings/templates so new projects can start with workstream + requirement presets.
+- Add drag/drop assignment of record sheets between workstream lanes.
+- Continue the Airtable-style polish on Budget using the same nav, sheet, toolbar, and grid primitives.
+
+---
+
 # HANDOVER - 2026-05-29 - Manual Workstream Groups for Timeline Lanes
 
 ## Built This Session

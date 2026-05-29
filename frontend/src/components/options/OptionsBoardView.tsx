@@ -669,7 +669,7 @@ function candidateSummary(group: OptionGroup, dateId: string): string {
       const status = statusFor(candidate, dateId)?.status;
       return status ? `${candidate.name}: ${label(status)}` : `${candidate.name}: no request`;
     });
-  return lines.length ? lines.join("\n") : "No candidates yet";
+  return lines.length ? lines.join("\n") : "No records yet";
 }
 
 function linkCount(candidate: OptionCandidate): number {
@@ -941,7 +941,7 @@ function AssignmentDropdown({ group, assignedCandidateId, onChange }: {
           event.stopPropagation();
           setOpen((current) => !current);
         }}
-        title="Assign candidate to this slot"
+        title="Assign record to this slot"
         className="grid h-7 w-5 place-items-center rounded text-[10px] text-gray-400 hover:bg-white hover:text-gray-900"
       >
         ▾
@@ -969,7 +969,7 @@ function AssignmentDropdown({ group, assignedCandidateId, onChange }: {
               {candidate.name}
             </button>
           ))}
-          {activeCandidates.length === 0 && <div className="px-2 py-2 text-[11px] text-gray-400">No active candidates</div>}
+          {activeCandidates.length === 0 && <div className="px-2 py-2 text-[11px] text-gray-400">No active records</div>}
         </div>
       )}
     </div>
@@ -1326,7 +1326,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   }
 
   async function deleteRequirement(requirementId: string) {
-    if (!window.confirm("Delete this requirement slot? The candidate sheet will remain.")) return;
+    if (!window.confirm("Delete this requirement slot? The record sheet will remain.")) return;
     setMatrix(await api.delete(`/api/options/matrix/requirements/${requirementId}`).then(() => api.get<MatrixResponse>(`/api/options/production/${productionId}/matrix`)));
   }
 
@@ -1339,7 +1339,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   }
 
   async function addCandidate(groupId: string) {
-    setMatrix(await api.post<MatrixResponse>(`/api/options/matrix/groups/${groupId}/candidates`, { name: "New candidate" }));
+    setMatrix(await api.post<MatrixResponse>(`/api/options/matrix/groups/${groupId}/candidates`, { name: "New record" }));
   }
 
   async function updateCandidate(candidateId: string, patch: Partial<OptionCandidate>) {
@@ -1351,7 +1351,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   }
 
   async function deleteCandidate(candidateId: string) {
-    if (!window.confirm("Delete this candidate?")) return;
+    if (!window.confirm("Delete this record?")) return;
     setMatrix(await api.delete(`/api/options/matrix/candidates/${candidateId}`).then(() => api.get<MatrixResponse>(`/api/options/production/${productionId}/matrix`)));
   }
 
@@ -1406,7 +1406,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   }
 
   async function deleteColumn(columnId: string) {
-    if (!window.confirm("Delete this custom field from this options sheet?")) return;
+    if (!window.confirm("Delete this custom field from this sheet?")) return;
     setMatrix(await api.delete(`/api/options/matrix/columns/${columnId}`).then(() => api.get<MatrixResponse>(`/api/options/production/${productionId}/matrix`)));
   }
 
@@ -1458,7 +1458,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
       const blob = await response.blob();
       const disposition = response.headers.get("Content-Disposition") ?? "";
       const match = disposition.match(/filename="([^"]+)"/);
-      const filename = match?.[1] ?? "Options.pdf";
+      const filename = match?.[1] ?? "Crew_Suppliers.pdf";
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -1472,7 +1472,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
     }
   }
 
-  if (loading || !matrix) return <div className="grid h-full place-items-center text-sm text-gray-400">Loading options matrix...</div>;
+  if (loading || !matrix) return <div className="grid h-full place-items-center text-sm text-gray-400">Loading crew & suppliers...</div>;
 
   const selectedGroup = matrix.groups.find((group) => group.id === selectedGroupId) ?? null;
   const activeSavedView = selectedGroup?.savedViews.find((view) => view.id === activeSavedViewId) ?? null;
@@ -1487,7 +1487,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   const actions = (
     <>
       {!selectedGroup && <button onClick={() => setShowDateForm(true)} className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">+ Date</button>}
-      {!selectedGroup && <button onClick={() => setShowRoleForm(true)} className="h-9 rounded-md bg-[#0f172a] px-3 text-[13px] font-semibold text-white shadow-sm">+ Role / service</button>}
+      {!selectedGroup && <button onClick={() => setShowRoleForm(true)} className="h-9 rounded-md bg-[#0f172a] px-3 text-[13px] font-semibold text-white shadow-sm">+ Requirement</button>}
       {selectedGroup && (
         <button
           onClick={() => exportGroupPdf(selectedGroup.id).catch((err: Error) => window.alert(err.message))}
@@ -1497,7 +1497,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
           <Download size={14} /> {exportingGroupId === selectedGroup.id ? "Generating..." : "Export PDF"}
         </button>
       )}
-      {selectedGroup && <button onClick={() => addCandidate(selectedGroup.id)} className="h-9 rounded-md bg-[#0f172a] px-3 text-[13px] font-semibold text-white shadow-sm">+ Candidate</button>}
+      {selectedGroup && <button onClick={() => addCandidate(selectedGroup.id)} className="h-9 rounded-md bg-[#0f172a] px-3 text-[13px] font-semibold text-white shadow-sm">+ Record</button>}
     </>
   );
 
@@ -1619,7 +1619,7 @@ function ProjectWorkspaceHeader({ matrix, activeModule, onBack, onNavigateModule
   const projectName = [matrix.production.brand, matrix.production.clientName].filter(Boolean).join(" x ") || matrix.production.title || matrix.production.jobCode || "Project";
   const modules: Array<{ id: "overview" | "options" | "budget" | "dates" | "crew" | "pos" | "comms" | "files"; label: string; onClick?: () => void }> = [
     { id: "overview", label: "Overview", onClick: () => onNavigateModule("overview") },
-    { id: "options", label: "Options" },
+    { id: "options", label: "Crew & Suppliers" },
     { id: "budget", label: "Budget", onClick: () => onNavigateModule("budget") },
     { id: "dates", label: "Dates", onClick: () => onNavigateModule("dates") },
     { id: "crew", label: "Crew List", onClick: () => onNavigateModule("crew") },
@@ -1718,7 +1718,7 @@ function OptionsViewRail({ selectedGroup, selectedView, displayMode, activeSaved
     <aside className="hidden w-[260px] shrink-0 border-r border-gray-200 bg-[#fbfbfa] lg:flex lg:flex-col">
       <div className="border-b border-gray-200 p-3">
         <button onClick={onAddCandidate} className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-gray-700 hover:bg-gray-100">
-          <Plus size={18} /> {selectedGroup ? "Create new candidate" : "Create new role/service"}
+          <Plus size={18} /> {selectedGroup ? "Create new record" : "Create new requirement"}
         </button>
         <button className="mt-1 flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-gray-500 hover:bg-gray-100">
           <Search size={16} /> Find a view
@@ -1781,12 +1781,12 @@ function OptionsViewRail({ selectedGroup, selectedView, displayMode, activeSaved
         {selectedGroup ? (
           <>
             <div className="mb-2 font-semibold uppercase tracking-[0.05em] text-gray-400">Sheet settings</div>
-            <p>Use this space for view settings, page notes, date requirements, and linked budget lines for {selectedGroup.name}.</p>
+            <p>Use this space for view settings, sheet notes, date requirements, and linked budget lines for {selectedGroup.name}.</p>
           </>
         ) : (
           <>
             <div className="mb-2 font-semibold uppercase tracking-[0.05em] text-gray-400">Matrix settings</div>
-            <p>The matrix is the master role/date plan. Each role opens its own options sheet.</p>
+            <p>The matrix is the master workstream/date plan. Each requirement opens a record sheet.</p>
           </>
         )}
       </div>
@@ -1810,8 +1810,8 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
     return (
       <div className="grid flex-1 place-items-center p-8 text-center">
         <div>
-          <h3 className="text-base font-semibold text-gray-900">Build the end-goal production matrix</h3>
-          <p className="mt-2 max-w-md text-sm text-gray-500">Add role or service slots like Photographer, Photo Assistant 1, Location, Catering, Transport, or Florist. Dates become columns automatically.</p>
+          <h3 className="text-base font-semibold text-gray-900">Build the Crew & Suppliers matrix</h3>
+          <p className="mt-2 max-w-md text-sm text-gray-500">Add the requirements this job needs: Photographer, Photo Assistant 1, Location, Catering, Transport, Florist, AV, and more. Dates become columns automatically.</p>
         </div>
       </div>
     );
@@ -1840,7 +1840,7 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
           <div key={requirement.id} className={`group grid min-h-12 items-center gap-x-2 border-b border-gray-100 px-3 text-xs hover:bg-[#f8f8f6] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
             <div className="min-w-0">
               <EditableText value={requirement.displayLabel} onSave={(displayLabel) => onUpdateRequirement(requirement.id, { displayLabel })} className="font-semibold text-gray-900" />
-              <button onClick={() => onOpenGroup(group.id)} className="mt-0.5 truncate text-[11px] text-gray-400 hover:text-gray-900">Open {group.name} options {"->"} {group.candidates.length} candidates</button>
+              <button onClick={() => onOpenGroup(group.id)} className="mt-0.5 truncate text-[11px] text-gray-400 hover:text-gray-900">Open {group.name} sheet {"->"} {group.candidates.length} records</button>
             </div>
             <div className="flex items-center gap-1">
               <PillDropdown
@@ -2188,7 +2188,7 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
             Save view
           </button>
           <button onClick={onAddCandidate} className="flex h-8 shrink-0 items-center rounded px-2 text-[13px] font-medium text-gray-700 hover:bg-gray-100">
-            <Plus size={14} className="mr-1" /> Candidate
+            <Plus size={14} className="mr-1" /> Record
           </button>
           <button
             onClick={() => { void onExportPdf().catch((err: Error) => window.alert(err.message)); }}
@@ -2445,12 +2445,12 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
           ))}
           {group.candidates.length === 0 && (
             <div className="grid h-28 place-items-center text-center text-sm text-gray-500">
-              <div>No candidates on option for {group.name} yet.<br /><button onClick={onAddCandidate} className="mt-2 text-gray-900 underline">+ Add candidate</button></div>
+              <div>No records in the {group.name} sheet yet.<br /><button onClick={onAddCandidate} className="mt-2 text-gray-900 underline">+ Add record</button></div>
             </div>
           )}
           <button onClick={onAddCandidate} className="flex h-9 items-center gap-2 border-b border-gray-100 px-4 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-900" style={{ width: "100%", minWidth: minimumSheetWidth }}>
             <span className="ml-[26px] text-lg leading-none">+</span>
-            Add candidate
+            Add record
           </button>
         </div>
       </div>
@@ -3958,7 +3958,7 @@ function CandidateRecordPanel({ candidate, group, dates, customColumns, onClose,
             value={candidate.name}
             onSave={(name) => onUpdateCandidate(candidate.id, { name })}
             className="text-[15px] font-semibold text-gray-950"
-            placeholder="Candidate name"
+            placeholder="Record name"
           />
           <div className="mt-0.5 text-[11px] text-gray-400">{group.name} record</div>
         </div>
@@ -4228,7 +4228,7 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
           return [cell(column.id, (
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
-                <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="text-[13px] font-semibold text-gray-900" placeholder="Candidate" />
+                <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="text-[13px] font-semibold text-gray-900" placeholder="Record" />
               </div>
               {candidate.subtitle && <div className="mt-1 truncate text-[11px] text-gray-400">{candidate.subtitle}</div>}
             </div>
@@ -4330,8 +4330,8 @@ function CandidateGallery({ group, dates, candidates, visibleColumns, onOpenPhot
       ) : (
         <div className="grid h-64 place-items-center text-center text-sm text-gray-500">
           <div>
-            No candidates match this view.<br />
-            <button onClick={() => { void onAddCandidate(); }} className="mt-2 text-gray-900 underline">+ Add candidate</button>
+            No records match this view.<br />
+            <button onClick={() => { void onAddCandidate(); }} className="mt-2 text-gray-900 underline">+ Add record</button>
           </div>
         </div>
       )}
@@ -4979,7 +4979,7 @@ function PhotoManager({ candidate, onClose, onUpload, onUpdate, onDelete }: {
               </button>
             )}
           </div>
-          {candidate.photos.length === 0 && <p className="mt-4 text-center text-xs text-gray-400">Add images here now; the selected ones will be available when we build the PDF exporter.</p>}
+          {candidate.photos.length === 0 && <p className="mt-4 text-center text-xs text-gray-400">Add images here; selected images are available for the PDF designer and exports.</p>}
           <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(event) => handleFiles(event.target.files).catch(console.error)} />
         </div>
       </div>
@@ -5001,11 +5001,11 @@ function RoleForm({ productionId, onClose, onSaved }: { productionId: string; on
     <div className="fixed inset-0 z-[850] grid place-items-center bg-black/20 p-4">
       <div className="w-full max-w-[420px] rounded-lg bg-white p-4 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-900">Add role / service requirement</h3>
+          <h3 className="text-sm font-semibold text-gray-900">Add requirement</h3>
           <button onClick={onClose}><X size={16} /></button>
         </div>
         <div className="space-y-3">
-          <label className="block text-xs font-medium text-gray-500">Role / service name<input value={name} onChange={(event) => setName(event.target.value)} autoFocus className="mt-1 h-10 w-full rounded border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-gray-500" placeholder="Photo Assistant" /></label>
+          <label className="block text-xs font-medium text-gray-500">Requirement name<input value={name} onChange={(event) => setName(event.target.value)} autoFocus className="mt-1 h-10 w-full rounded border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-gray-500" placeholder="Photo Assistant" /></label>
           <label className="block text-xs font-medium text-gray-500">Type<select value={type} onChange={(event) => setType(event.target.value as RequirementType)} className="mt-1 h-10 w-full rounded border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-gray-500">{REQUIREMENT_TYPES.map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></label>
           <label className="block text-xs font-medium text-gray-500">Quantity / slots<input value={quantity} onChange={(event) => setQuantity(event.target.value)} type="number" min={1} className="mt-1 h-10 w-full rounded border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-gray-500" /></label>
         </div>
