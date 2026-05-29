@@ -852,11 +852,16 @@ async function matrixResponse(productionId: string) {
   if (!production) return null;
   await ensureCoreOptionColumns(productionId);
 
-  const [dates, groups] = await Promise.all([
+  const [dates, workstreams, groups] = await Promise.all([
     prisma.productionDate.findMany({
       where: { productionId },
       orderBy: [{ date: "asc" }, { time: "asc" }, { createdAt: "asc" }],
       select: { id: true, dateType: true, status: true, date: true, time: true, label: true, location: true, notes: true },
+    }),
+    prisma.projectWorkstream.findMany({
+      where: { productionId },
+      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+      select: { id: true, productionId: true, name: true, color: true, order: true, visibleOnClientTimeline: true },
     }),
     prisma.optionGroup.findMany({
       where: { productionId },
@@ -890,6 +895,7 @@ async function matrixResponse(productionId: string) {
   return {
     production,
     dates,
+    workstreams,
     groups: groups.map((group) => ({
       ...group,
       candidates: group.candidates.map((candidate) => ({
@@ -1607,7 +1613,7 @@ router.post("/production/:productionId/matrix/dates", async (req: Request, res: 
 });
 
 router.post("/production/:productionId/matrix/groups", async (req: Request, res: Response): Promise<void> => {
-  const body = req.body as { name?: string; type?: OptionRequirementType; quantity?: number };
+  const body = req.body as { name?: string; type?: OptionRequirementType; quantity?: number; workstreamId?: string | null; workstreamName?: string | null };
   const name = body.name?.trim();
   if (!name) {
     res.status(400).json({ error: "name is required" });
@@ -1618,6 +1624,45 @@ router.post("/production/:productionId/matrix/groups", async (req: Request, res:
     res.status(404).json({ error: "Production not found" });
     return;
   }
+  let workstreamId = body.workstreamId ?? null;
+  const workstreamName = body.workstreamName?.trim();
+  if (workstreamId) {
+    const workstream = await prisma.projectWorkstream.findFirst({ where: { id: workstreamId, productionId: req.params.productionId }, select: { id: true } });
+    if (!workstream) {
+      res.status(400).json({ error: "workstreamId is invalid for this production" });
+      return;
+    }
+  } else if (workstreamName) {
+    const order = await prisma.projectWorkstream.count({ where: { productionId: req.params.productionId } });
+    const workstream = await prisma.projectWorkstream.create({
+      data: {
+        productionId: req.params.productionId,
+        name: workstreamName,
+        color: "#f7c59f",
+        order,
+      },
+    });
+    workstreamId = workstream.id;
+  } else {
+    const existing = await prisma.projectWorkstream.findFirst({
+      where: { productionId: req.params.productionId },
+      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+      select: { id: true },
+    });
+    if (existing) {
+      workstreamId = existing.id;
+    } else {
+      const workstream = await prisma.projectWorkstream.create({
+        data: {
+          productionId: req.params.productionId,
+          name: "Production",
+          color: "#f7c59f",
+          order: 0,
+        },
+      });
+      workstreamId = workstream.id;
+    }
+  }
   const quantity = Math.max(1, Math.floor(Number(body.quantity ?? 1)));
   const order = await prisma.optionGroup.count({ where: { productionId: req.params.productionId } });
   const group = await prisma.optionGroup.create({
@@ -1626,6 +1671,7 @@ router.post("/production/:productionId/matrix/groups", async (req: Request, res:
       name,
       type: body.type ?? "OTHER",
       order,
+      workstreamId,
     },
   });
   await prisma.optionRequirement.createMany({
@@ -1640,6 +1686,75 @@ router.post("/production/:productionId/matrix/groups", async (req: Request, res:
     })),
   });
   res.status(201).json(await matrixResponse(req.params.productionId));
+});
+
+router.post("/production/:productionId/matrix/workstreams", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { name?: string; color?: string | null; order?: number };
+  const name = body.name?.trim();
+  if (!name) {
+    res.status(400).json({ error: "name is required" });
+    return;
+  }
+  const production = await prisma.production.findUnique({ where: { id: req.params.productionId }, select: { id: true } });
+  if (!production) {
+    res.status(404).json({ error: "Production not found" });
+    return;
+  }
+  const order = Number.isFinite(body.order) ? Number(body.order) : await prisma.projectWorkstream.count({ where: { productionId: req.params.productionId } });
+  await prisma.projectWorkstream.create({
+    data: {
+      productionId: req.params.productionId,
+      name,
+      color: body.color ?? "#f7c59f",
+      order,
+    },
+  });
+  res.status(201).json(await matrixResponse(req.params.productionId));
+});
+
+router.patch("/matrix/workstreams/:workstreamId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { name?: string; color?: string | null; order?: number; visibleOnClientTimeline?: boolean };
+  const workstream = await prisma.projectWorkstream.findUnique({ where: { id: req.params.workstreamId }, select: { id: true, productionId: true } });
+  if (!workstream) {
+    res.status(404).json({ error: "Workstream not found" });
+    return;
+  }
+  await prisma.projectWorkstream.update({
+    where: { id: workstream.id },
+    data: {
+      name: body.name,
+      color: body.color,
+      order: body.order,
+      visibleOnClientTimeline: body.visibleOnClientTimeline,
+    },
+  });
+  res.json(await matrixResponse(workstream.productionId));
+});
+
+router.patch("/matrix/groups/:groupId", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { name?: string; type?: OptionRequirementType; order?: number; workstreamId?: string | null };
+  const group = await prisma.optionGroup.findUnique({ where: { id: req.params.groupId }, select: { id: true, productionId: true } });
+  if (!group) {
+    res.status(404).json({ error: "Group not found" });
+    return;
+  }
+  if (body.workstreamId) {
+    const workstream = await prisma.projectWorkstream.findFirst({ where: { id: body.workstreamId, productionId: group.productionId }, select: { id: true } });
+    if (!workstream) {
+      res.status(400).json({ error: "workstreamId is invalid for this production" });
+      return;
+    }
+  }
+  await prisma.optionGroup.update({
+    where: { id: group.id },
+    data: {
+      name: body.name,
+      type: body.type,
+      order: body.order,
+      workstreamId: body.workstreamId,
+    },
+  });
+  res.json(await matrixResponse(group.productionId));
 });
 
 router.patch("/matrix/requirements/:requirementId", async (req: Request, res: Response): Promise<void> => {

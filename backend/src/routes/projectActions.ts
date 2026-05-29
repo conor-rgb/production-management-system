@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { CalendarEventType, OptionRequirementType, ProjectActionStatus, ProjectActionType, ProjectActionVisibility } from "@prisma/client";
+import { CalendarEventType, ProjectActionStatus, ProjectActionType, ProjectActionVisibility } from "@prisma/client";
 import prisma from "../prisma";
 import { getProductionColor, pushToGoogleCalendar } from "../services/calendarSyncService";
 import { getPrimaryAccount } from "../services/googleCalendarService";
@@ -79,30 +79,7 @@ async function pushEvent(eventId: string): Promise<void> {
   }
 }
 
-function workstreamTemplateFor(name: string, type: OptionRequirementType): { name: string; color: string; order: number } {
-  const normalized = name.toLowerCase();
-  if (type === OptionRequirementType.LOCATION || /location|studio|venue|recce/.test(normalized)) return { name: "Locations", color: "#d9ead3", order: 30 };
-  if (type === OptionRequirementType.TRANSPORT || /transport|vehicle|car|travel|driver/.test(normalized)) return { name: "Transport", color: "#cfe2f3", order: 60 };
-  if (type === OptionRequirementType.EQUIPMENT || /camera|lighting|kit|equipment|eq/.test(normalized)) return { name: "Equipment", color: "#d0e0e3", order: 40 };
-  if (type === OptionRequirementType.TALENT || /model|talent|casting/.test(normalized)) return { name: "Talent", color: "#ead1dc", order: 50 };
-  if (/styling|stylist|wardrobe|hmu|makeup|hair|tailor|florist|floral/.test(normalized)) return { name: "Styling / HMU", color: "#ead1dc", order: 20 };
-  if (/video|motion|dop|director|editor|av|technical/.test(normalized)) return { name: "Motion / AV", color: "#c8d8f0", order: 15 };
-  if (type === OptionRequirementType.CREW || /photo|photographer|assistant|digital|producer|production/.test(normalized)) return { name: "Photo / Production", color: "#f7c59f", order: 10 };
-  if (/catering|caterer|food|bar|restaurant/.test(normalized)) return { name: "Catering", color: "#fff2cc", order: 55 };
-  if (type === OptionRequirementType.POST) return { name: "Post", color: "#d9d2e9", order: 70 };
-  return { name: "Services", color: "#e6e6e3", order: 90 };
-}
-
 async function ensureWorkstreams(productionId: string) {
-  const groups = await prisma.optionGroup.findMany({
-    where: { productionId },
-    orderBy: { order: "asc" },
-    include: {
-      requirements: { orderBy: { order: "asc" }, include: { assignments: { include: { candidate: { include: { blackbookEntry: true } }, date: true } } } },
-      candidates: { orderBy: { order: "asc" }, include: { blackbookEntry: true, dateStatuses: { include: { date: true } }, assignments: { include: { requirement: true, date: true } } } },
-    },
-  });
-
   const legacyWorkstreams = await prisma.projectWorkstream.findMany({
     where: { productionId, optionGroupId: { not: null } },
     select: { id: true, optionGroupId: true },
@@ -113,29 +90,6 @@ async function ensureWorkstreams(productionId: string) {
       where: { id: legacy.optionGroupId, workstreamId: null },
       data: { workstreamId: legacy.id },
     });
-  }
-
-  const existingCount = await prisma.projectWorkstream.count({ where: { productionId } });
-  if (existingCount === 0 && groups.length > 0) {
-    const templates = new Map<string, { name: string; color: string; order: number; groupIds: string[] }>();
-    for (const group of groups) {
-      const template = workstreamTemplateFor(group.name, group.type);
-      const existing = templates.get(template.name);
-      if (existing) {
-        existing.groupIds.push(group.id);
-      } else {
-        templates.set(template.name, { ...template, groupIds: [group.id] });
-      }
-    }
-    for (const template of [...templates.values()].sort((a, b) => a.order - b.order)) {
-      const workstream = await prisma.projectWorkstream.create({
-        data: { productionId, name: template.name, color: template.color, order: template.order },
-      });
-      await prisma.optionGroup.updateMany({
-        where: { id: { in: template.groupIds } },
-        data: { workstreamId: workstream.id },
-      });
-    }
   }
 
   const workstreams = await prisma.projectWorkstream.findMany({

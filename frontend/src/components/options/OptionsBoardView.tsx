@@ -367,6 +367,7 @@ interface BlackbookEntry {
 interface OptionGroup {
   id: string;
   productionId: string;
+  workstreamId: string | null;
   name: string;
   type: RequirementType;
   order: number;
@@ -374,6 +375,15 @@ interface OptionGroup {
   savedViews: OptionSavedView[];
   requirements: OptionRequirement[];
   candidates: OptionCandidate[];
+}
+
+interface MatrixWorkstream {
+  id: string;
+  productionId: string;
+  name: string;
+  color: string | null;
+  order: number;
+  visibleOnClientTimeline: boolean;
 }
 
 interface MatrixResponse {
@@ -385,6 +395,7 @@ interface MatrixResponse {
     brand: string | null;
   };
   dates: MatrixDate[];
+  workstreams: MatrixWorkstream[];
   groups: OptionGroup[];
 }
 
@@ -1255,6 +1266,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   const [loading, setLoading] = useState(true);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(searchParams.get("optionGroup"));
   const [showRoleForm, setShowRoleForm] = useState(false);
+  const [showWorkstreamForm, setShowWorkstreamForm] = useState(false);
   const [showDateForm, setShowDateForm] = useState(false);
   const [openBlackbookEntryId, setOpenBlackbookEntryId] = useState<string | null>(null);
   const [exportingGroupId, setExportingGroupId] = useState<string | null>(null);
@@ -1332,6 +1344,14 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
 
   async function updateDate(dateId: string, patch: Partial<MatrixDate>) {
     setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/dates/${dateId}`, patch));
+  }
+
+  async function updateWorkstream(workstreamId: string, patch: Partial<MatrixWorkstream>) {
+    setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/workstreams/${workstreamId}`, patch));
+  }
+
+  async function updateGroup(groupId: string, patch: Partial<OptionGroup>) {
+    setMatrix(await api.patch<MatrixResponse>(`/api/options/matrix/groups/${groupId}`, patch));
   }
 
   async function assignSlot(requirementId: string, dateId: string, candidateId: string | null) {
@@ -1487,6 +1507,7 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   const actions = (
     <>
       {!selectedGroup && <button onClick={() => setShowDateForm(true)} className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">+ Date</button>}
+      {!selectedGroup && <button onClick={() => setShowWorkstreamForm(true)} className="h-9 rounded-md border border-gray-200 bg-white px-3 text-[13px] font-medium text-gray-700 shadow-sm hover:bg-gray-50">+ Workstream</button>}
       {!selectedGroup && <button onClick={() => setShowRoleForm(true)} className="h-9 rounded-md bg-[#0f172a] px-3 text-[13px] font-semibold text-white shadow-sm">+ Requirement</button>}
       {selectedGroup && (
         <button
@@ -1572,11 +1593,14 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
               onDeleteRequirement={deleteRequirement}
               onUpdateDate={updateDate}
               onAssignSlot={assignSlot}
+              onUpdateGroup={updateGroup}
+              onUpdateWorkstream={updateWorkstream}
             />
           )}
         </div>
       </div>
-      {showRoleForm && <RoleForm productionId={productionId} onClose={() => setShowRoleForm(false)} onSaved={(data) => { setMatrix(data); setShowRoleForm(false); }} />}
+      {showWorkstreamForm && <WorkstreamForm productionId={productionId} onClose={() => setShowWorkstreamForm(false)} onSaved={(data) => { setMatrix(data); setShowWorkstreamForm(false); }} />}
+      {showRoleForm && <RoleForm productionId={productionId} workstreams={matrix.workstreams} onClose={() => setShowRoleForm(false)} onSaved={(data) => { setMatrix(data); setShowRoleForm(false); }} />}
       {showDateForm && <DateForm productionId={productionId} onClose={() => setShowDateForm(false)} onSaved={(data) => { setMatrix(data); setShowDateForm(false); }} />}
       {openBlackbookEntryId && (
         <BlackbookOverlay
@@ -1794,7 +1818,7 @@ function OptionsViewRail({ selectedGroup, selectedView, displayMode, activeSaved
   );
 }
 
-function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, onDuplicateRequirement, onDeleteRequirement, onUpdateDate, onAssignSlot }: {
+function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, onDuplicateRequirement, onDeleteRequirement, onUpdateDate, onAssignSlot, onUpdateGroup, onUpdateWorkstream }: {
   matrix: MatrixResponse;
   onOpenGroup: (groupId: string) => void;
   onPatchNeed: (requirementId: string, dateId: string, isRequired: boolean) => Promise<void>;
@@ -1803,8 +1827,26 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
   onDeleteRequirement: (requirementId: string) => Promise<void>;
   onUpdateDate: (dateId: string, patch: Partial<MatrixDate>) => Promise<void>;
   onAssignSlot: (requirementId: string, dateId: string, candidateId: string | null) => Promise<void>;
+  onUpdateGroup: (groupId: string, patch: Partial<OptionGroup>) => Promise<void>;
+  onUpdateWorkstream: (workstreamId: string, patch: Partial<MatrixWorkstream>) => Promise<void>;
 }) {
   const gridColumns = `260px 132px 76px ${matrix.dates.map(() => "128px").join(" ")}`;
+  const sections = [
+    ...matrix.workstreams.map((workstream) => ({
+      id: workstream.id,
+      workstream,
+      label: workstream.name,
+      color: workstream.color ?? "#e6e6e3",
+      groups: matrix.groups.filter((group) => group.workstreamId === workstream.id),
+    })),
+    {
+      id: "unassigned",
+      workstream: null,
+      label: "Unassigned",
+      color: "#e6e6e3",
+      groups: matrix.groups.filter((group) => !group.workstreamId),
+    },
+  ].filter((section) => section.groups.length > 0 || section.workstream);
 
   if (matrix.groups.length === 0) {
     return (
@@ -1836,60 +1878,91 @@ function MatrixTable({ matrix, onOpenGroup, onPatchNeed, onUpdateRequirement, on
             </div>
           ))}
         </div>
-        {matrix.groups.flatMap((group) => group.requirements.map((requirement) => (
-          <div key={requirement.id} className={`group grid min-h-12 items-center gap-x-2 border-b border-gray-100 px-3 text-xs hover:bg-[#f8f8f6] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
-            <div className="min-w-0">
-              <EditableText value={requirement.displayLabel} onSave={(displayLabel) => onUpdateRequirement(requirement.id, { displayLabel })} className="font-semibold text-gray-900" />
-              <button onClick={() => onOpenGroup(group.id)} className="mt-0.5 truncate text-[11px] text-gray-400 hover:text-gray-900">Open {group.name} sheet {"->"} {group.candidates.length} records</button>
+        {sections.map((section) => (
+          <div key={section.id}>
+            <div className="grid min-h-10 items-center gap-x-2 border-b border-gray-200 bg-[#f4f4f1] px-3 text-xs" style={{ gridTemplateColumns: gridColumns }}>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="h-3 w-3 rounded-full" style={{ background: section.color }} />
+                {section.workstream ? (
+                  <EditableText value={section.workstream.name} onSave={(name) => onUpdateWorkstream(section.workstream!.id, { name })} className="truncate text-[13px] font-semibold text-gray-900" />
+                ) : (
+                  <span className="truncate text-[13px] font-semibold text-gray-500">Unassigned</span>
+                )}
+                <span className="rounded bg-white px-1.5 py-0.5 text-[10px] text-gray-400">{section.groups.reduce((sum, group) => sum + group.requirements.length, 0)} slots</span>
+              </div>
+              <div className="text-[11px] text-gray-400">workstream</div>
+              <div />
+              {matrix.dates.map((date) => <div key={date.id} className="text-center text-[10px] text-gray-400">{dateLabel(date)}</div>)}
             </div>
-            <div className="flex items-center gap-1">
-              <PillDropdown
-                value={requirement.type}
-                options={REQUIREMENT_TYPES}
-                onChange={(type) => type ? onUpdateRequirement(requirement.id, { type }) : Promise.resolve()}
-                classNameForValue={() => "border-gray-200 bg-gray-50 text-gray-600"}
-              />
-            </div>
-            <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
-              <button onClick={() => onUpdateRequirement(requirement.id, { order: requirement.order - 1 })} title="Move up" className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">↑</button>
-              <button onClick={() => onUpdateRequirement(requirement.id, { order: requirement.order + 1 })} title="Move down" className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">↓</button>
-              <button onClick={() => onDuplicateRequirement(requirement.id)} title="Duplicate" className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">⧉</button>
-              <button onClick={() => onDeleteRequirement(requirement.id)} title="Delete" className="grid h-7 w-7 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>
-            </div>
-            {matrix.dates.map((date) => {
-              const need = needFor(requirement, date.id);
-              const isRequired = Boolean(need?.isRequired);
-              const pipeline = pipelineFor(group, requirement, date.id);
-              const assignment = assignmentFor(requirement, date.id);
-              const shownCandidate = displayedCandidateForRequirement(group, requirement, date.id);
-              return (
-                <div
-                  key={date.id}
-                  className="relative mx-auto flex min-h-8 min-w-[96px] items-center justify-center gap-1"
-                >
-                  <button
-                    title={candidateSummary(group, date.id)}
-                    onClick={() => onPatchNeed(requirement.id, date.id, !isRequired)}
-                    onDoubleClick={(event) => {
-                      event.stopPropagation();
-                      onOpenGroup(group.id);
-                    }}
-                    className={`inline-flex min-h-8 min-w-[82px] items-center justify-center rounded border px-2 text-[11px] font-semibold ${pipelineClass(pipeline)}`}
-                  >
-                    {isRequired ? shownCandidate?.name ?? shortPipeline(pipeline) : ""}
-                  </button>
-                  {isRequired && (
-                    <AssignmentDropdown
-                      group={group}
-                      assignedCandidateId={assignment?.candidateId ?? null}
-                      onChange={(candidateId) => onAssignSlot(requirement.id, date.id, candidateId)}
-                    />
-                  )}
+            {section.groups.flatMap((group) => group.requirements.map((requirement, index) => (
+              <div key={requirement.id} className={`group grid min-h-12 items-center gap-x-2 border-b border-gray-100 px-3 text-xs hover:bg-[#f8f8f6] ${requirement.activeState === "RELEASED" ? "opacity-45" : ""}`} style={{ gridTemplateColumns: gridColumns }}>
+                <div className="min-w-0">
+                  <EditableText value={requirement.displayLabel} onSave={(displayLabel) => onUpdateRequirement(requirement.id, { displayLabel })} className="font-semibold text-gray-900" />
+                  <div className="mt-0.5 flex min-w-0 items-center gap-2">
+                    <button onClick={() => onOpenGroup(group.id)} className="truncate text-[11px] text-gray-400 hover:text-gray-900">Open {group.name} sheet {"->"} {group.candidates.length} records</button>
+                    {index === 0 && (
+                      <select
+                        value={group.workstreamId ?? ""}
+                        onChange={(event) => onUpdateGroup(group.id, { workstreamId: event.target.value || null })}
+                        className="h-5 max-w-[108px] rounded border border-transparent bg-transparent px-1 text-[10px] text-gray-400 hover:border-gray-200 hover:bg-white"
+                        title="Move this sheet to another workstream"
+                      >
+                        <option value="">Unassigned</option>
+                        {matrix.workstreams.map((workstream) => <option key={workstream.id} value={workstream.id}>{workstream.name}</option>)}
+                      </select>
+                    )}
+                  </div>
                 </div>
-              );
-            })}
+                <div className="flex items-center gap-1">
+                  <PillDropdown
+                    value={requirement.type}
+                    options={REQUIREMENT_TYPES}
+                    onChange={(type) => type ? onUpdateRequirement(requirement.id, { type }) : Promise.resolve()}
+                    classNameForValue={() => "border-gray-200 bg-gray-50 text-gray-600"}
+                  />
+                </div>
+                <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                  <button onClick={() => onUpdateRequirement(requirement.id, { order: requirement.order - 1 })} title="Move up" className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">↑</button>
+                  <button onClick={() => onUpdateRequirement(requirement.id, { order: requirement.order + 1 })} title="Move down" className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">↓</button>
+                  <button onClick={() => onDuplicateRequirement(requirement.id)} title="Duplicate" className="grid h-7 w-7 place-items-center rounded text-gray-400 hover:bg-white hover:text-gray-900">⧉</button>
+                  <button onClick={() => onDeleteRequirement(requirement.id)} title="Delete" className="grid h-7 w-7 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>
+                </div>
+                {matrix.dates.map((date) => {
+                  const need = needFor(requirement, date.id);
+                  const isRequired = Boolean(need?.isRequired);
+                  const pipeline = pipelineFor(group, requirement, date.id);
+                  const assignment = assignmentFor(requirement, date.id);
+                  const shownCandidate = displayedCandidateForRequirement(group, requirement, date.id);
+                  return (
+                    <div
+                      key={date.id}
+                      className="relative mx-auto flex min-h-8 min-w-[96px] items-center justify-center gap-1"
+                    >
+                      <button
+                        title={candidateSummary(group, date.id)}
+                        onClick={() => onPatchNeed(requirement.id, date.id, !isRequired)}
+                        onDoubleClick={(event) => {
+                          event.stopPropagation();
+                          onOpenGroup(group.id);
+                        }}
+                        className={`inline-flex min-h-8 min-w-[82px] items-center justify-center rounded border px-2 text-[11px] font-semibold ${pipelineClass(pipeline)}`}
+                      >
+                        {isRequired ? shownCandidate?.name ?? shortPipeline(pipeline) : ""}
+                      </button>
+                      {isRequired && (
+                        <AssignmentDropdown
+                          group={group}
+                          assignedCandidateId={assignment?.candidateId ?? null}
+                          onChange={(candidateId) => onAssignSlot(requirement.id, date.id, candidateId)}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )))}
           </div>
-        )))}
+        ))}
       </div>
     </div>
   );
@@ -4987,14 +5060,60 @@ function PhotoManager({ candidate, onClose, onUpload, onUpdate, onDelete }: {
   );
 }
 
-function RoleForm({ productionId, onClose, onSaved }: { productionId: string; onClose: () => void; onSaved: (data: MatrixResponse) => void }) {
+const WORKSTREAM_COLORS = ["#f7c59f", "#c8d8f0", "#ead1dc", "#d9ead3", "#fff2cc", "#d0e0e3", "#d9d2e9", "#e6e6e3"];
+
+function WorkstreamForm({ productionId, onClose, onSaved }: { productionId: string; onClose: () => void; onSaved: (data: MatrixResponse) => void }) {
   const [name, setName] = useState("");
-  const [type, setType] = useState<RequirementType>("CREW");
-  const [quantity, setQuantity] = useState("1");
+  const [color, setColor] = useState(WORKSTREAM_COLORS[0]);
 
   async function save() {
     if (!name.trim()) return;
-    onSaved(await api.post<MatrixResponse>(`/api/options/production/${productionId}/matrix/groups`, { name, type, quantity: Number(quantity) || 1 }));
+    onSaved(await api.post<MatrixResponse>(`/api/options/production/${productionId}/matrix/workstreams`, { name, color }));
+  }
+
+  return (
+    <div className="fixed inset-0 z-[850] grid place-items-center bg-black/20 p-4">
+      <div className="w-full max-w-[420px] rounded-lg bg-white p-4 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-900">Add workstream</h3>
+          <button onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="space-y-3">
+          <label className="block text-xs font-medium text-gray-500">Workstream name<input value={name} onChange={(event) => setName(event.target.value)} autoFocus className="mt-1 h-10 w-full rounded border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-gray-500" placeholder="Photo" /></label>
+          <div>
+            <div className="mb-1 text-xs font-medium text-gray-500">Color</div>
+            <div className="flex flex-wrap gap-2">
+              {WORKSTREAM_COLORS.map((item) => (
+                <button key={item} onClick={() => setColor(item)} className={`h-7 w-7 rounded-full border ${color === item ? "border-gray-900 ring-2 ring-gray-200" : "border-gray-200"}`} style={{ background: item }} />
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="h-9 rounded border border-gray-200 px-3 text-sm text-gray-600">Cancel</button>
+          <button onClick={() => save().catch(console.error)} className="h-9 rounded bg-gray-900 px-3 text-sm font-medium text-white">Add workstream</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RoleForm({ productionId, workstreams, onClose, onSaved }: { productionId: string; workstreams: MatrixWorkstream[]; onClose: () => void; onSaved: (data: MatrixResponse) => void }) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<RequirementType>("CREW");
+  const [quantity, setQuantity] = useState("1");
+  const [workstreamId, setWorkstreamId] = useState(workstreams[0]?.id ?? "");
+  const [newWorkstreamName, setNewWorkstreamName] = useState("");
+
+  async function save() {
+    if (!name.trim()) return;
+    onSaved(await api.post<MatrixResponse>(`/api/options/production/${productionId}/matrix/groups`, {
+      name,
+      type,
+      quantity: Number(quantity) || 1,
+      workstreamId: workstreamId || null,
+      workstreamName: workstreamId ? null : newWorkstreamName.trim() || null,
+    }));
   }
 
   return (
@@ -5006,6 +5125,13 @@ function RoleForm({ productionId, onClose, onSaved }: { productionId: string; on
         </div>
         <div className="space-y-3">
           <label className="block text-xs font-medium text-gray-500">Requirement name<input value={name} onChange={(event) => setName(event.target.value)} autoFocus className="mt-1 h-10 w-full rounded border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-gray-500" placeholder="Photo Assistant" /></label>
+          <label className="block text-xs font-medium text-gray-500">Workstream
+            <select value={workstreamId} onChange={(event) => setWorkstreamId(event.target.value)} className="mt-1 h-10 w-full rounded border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-gray-500">
+              {workstreams.map((workstream) => <option key={workstream.id} value={workstream.id}>{workstream.name}</option>)}
+              <option value="">+ New workstream</option>
+            </select>
+          </label>
+          {!workstreamId && <label className="block text-xs font-medium text-gray-500">New workstream name<input value={newWorkstreamName} onChange={(event) => setNewWorkstreamName(event.target.value)} className="mt-1 h-10 w-full rounded border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-gray-500" placeholder="Photo" /></label>}
           <label className="block text-xs font-medium text-gray-500">Type<select value={type} onChange={(event) => setType(event.target.value as RequirementType)} className="mt-1 h-10 w-full rounded border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-gray-500">{REQUIREMENT_TYPES.map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></label>
           <label className="block text-xs font-medium text-gray-500">Quantity / slots<input value={quantity} onChange={(event) => setQuantity(event.target.value)} type="number" min={1} className="mt-1 h-10 w-full rounded border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-gray-500" /></label>
         </div>

@@ -1,3 +1,63 @@
+# HANDOVER - 2026-05-29 - Crew & Suppliers Matrix Owns Workstreams
+
+## Built This Session
+- Moved workstream ownership into the Crew & Suppliers matrix.
+- Matrix API now returns project workstreams alongside dates and record sheets.
+- Matrix UI now renders requirements grouped under workstream headers.
+- Added `+ Workstream` in Crew & Suppliers.
+- Added workstream selection when creating a requirement:
+  - pick an existing workstream,
+  - or create a new workstream inline while adding the requirement.
+- Existing record sheets can be reassigned to another workstream directly from the matrix row.
+- Workstream names can be edited inline from the matrix.
+- Timeline no longer auto-creates/auto-assigns workstreams from unassigned option sheets.
+  - This keeps Crew & Suppliers as the source of truth.
+  - Timeline still consumes the same `OptionGroup.workstreamId` relation.
+
+## Backend
+- Updated `backend/src/routes/options.ts`.
+- Updated `backend/src/routes/projectActions.ts`.
+- No schema migration required.
+- Matrix response now includes:
+  - `workstreams`
+  - `groups[].workstreamId`
+- New/updated endpoints:
+  - `POST /api/options/production/:productionId/matrix/workstreams`
+  - `PATCH /api/options/matrix/workstreams/:workstreamId`
+  - `PATCH /api/options/matrix/groups/:groupId`
+  - `POST /api/options/production/:productionId/matrix/groups` now accepts `workstreamId` or `workstreamName`.
+
+## Frontend
+- Updated `frontend/src/components/options/OptionsBoardView.tsx`.
+- Crew & Suppliers matrix now shows:
+  - workstream header rows,
+  - requirement rows beneath the relevant workstream,
+  - a small sheet workstream selector for moving an existing sheet.
+- The requirement creation modal now requires the workstream context.
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Source of truth is now:
+  - Workstream = project lane / department / planning group.
+  - Requirement = slot inside that workstream.
+  - Record sheet = options/candidates attached to the requirement group.
+- Timeline should be treated as a planning view generated from this structure, not the place to define it.
+
+## Suggested Next Steps
+- Add workstream templates for common project types.
+- Add drag/drop movement of sheets between workstreams in the matrix.
+- Update Timeline action creation so meetings/tasks can auto-suggest participants from confirmed records in the selected workstream.
+- Add a meeting composer that can create calendar invites using confirmed Blackbook contacts from a workstream/date.
+
+---
+
 # HANDOVER - 2026-05-29 - Crew & Suppliers Airtable Naming Pass
 
 ## Built This Session
