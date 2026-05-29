@@ -642,25 +642,25 @@ function holdClass(status: HoldStatus | null): string {
 }
 
 function holdCellClass(status: HoldStatus | null): string {
-  if (status === "CONFIRMED") return "bg-emerald-100/75 border-r-emerald-200";
-  if (status === "FIRST_OPTION") return "bg-lime-100/75 border-r-lime-200";
-  if (status === "SECOND_OPTION") return "bg-sky-100/70 border-r-sky-200";
-  if (status === "REQUESTED") return "bg-violet-100/70 border-r-violet-200";
-  if (status === "UNAVAILABLE") return "bg-gray-100/90 border-r-gray-200";
-  if (status === "RELEASED") return "bg-gray-50 border-r-gray-200";
-  if (status === "NA") return "bg-gray-50/70 border-r-gray-100";
+  if (status === "CONFIRMED") return "bg-emerald-50/90 border-r-emerald-100";
+  if (status === "FIRST_OPTION") return "bg-lime-50/95 border-r-lime-100";
+  if (status === "SECOND_OPTION") return "bg-sky-50/90 border-r-sky-100";
+  if (status === "REQUESTED") return "bg-violet-50/90 border-r-violet-100";
+  if (status === "UNAVAILABLE") return "bg-gray-100/70 border-r-gray-200";
+  if (status === "RELEASED") return "bg-gray-50/80 border-r-gray-200";
+  if (status === "NA") return "bg-gray-50/60 border-r-gray-100";
   return "bg-white border-r-[#f0f0ee]";
 }
 
 function holdMatrixButtonClass(status: HoldStatus | null): string {
-  if (status === "CONFIRMED") return "border-emerald-200/70 bg-white/35 text-emerald-800";
-  if (status === "FIRST_OPTION") return "border-lime-200/70 bg-white/35 text-lime-800";
-  if (status === "SECOND_OPTION") return "border-sky-200/70 bg-white/35 text-sky-800";
-  if (status === "REQUESTED") return "border-violet-200/70 bg-white/35 text-violet-800";
-  if (status === "UNAVAILABLE") return "border-gray-200/70 bg-white/40 text-gray-600";
-  if (status === "RELEASED") return "border-gray-200/70 bg-white/40 text-gray-400";
-  if (status === "NA") return "border-gray-200/60 bg-white/40 text-gray-400";
-  return "border-gray-100 bg-white/55 text-gray-300";
+  if (status === "CONFIRMED") return "border-transparent bg-transparent text-emerald-800 shadow-none hover:bg-white/40";
+  if (status === "FIRST_OPTION") return "border-transparent bg-transparent text-lime-800 shadow-none hover:bg-white/40";
+  if (status === "SECOND_OPTION") return "border-transparent bg-transparent text-sky-800 shadow-none hover:bg-white/40";
+  if (status === "REQUESTED") return "border-transparent bg-transparent text-violet-800 shadow-none hover:bg-white/40";
+  if (status === "UNAVAILABLE") return "border-transparent bg-transparent text-gray-600 shadow-none hover:bg-white/40";
+  if (status === "RELEASED") return "border-transparent bg-transparent text-gray-400 shadow-none hover:bg-white/40";
+  if (status === "NA") return "border-transparent bg-transparent text-gray-400 shadow-none hover:bg-white/40";
+  return "border-transparent bg-transparent text-gray-300 opacity-25 shadow-none hover:bg-gray-50 hover:opacity-100 group-hover:opacity-65 focus:opacity-100";
 }
 
 function dateStatusClass(status: ProductionDateStatus | null): string {
@@ -919,7 +919,7 @@ function PillDropdown<T extends string>({ value, options, onChange, classNameFor
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((current) => !current)}
-        className={`inline-flex h-7 items-center justify-center gap-1 rounded-md border text-[10px] font-semibold uppercase leading-none shadow-[inset_0_0_0_0.5px_rgba(255,255,255,0.35)] ${fill ? "w-full px-1 text-[9px] tracking-[0.02em]" : compact ? "w-[76px] px-1 text-[9px] tracking-[0.02em]" : "px-2"} ${buttonClass(value)}`}
+        className={`inline-flex items-center justify-center gap-1 border text-[10px] font-semibold uppercase leading-none shadow-[inset_0_0_0_0.5px_rgba(255,255,255,0.35)] ${fill ? "h-9 w-full rounded-sm px-1 text-[10px] tracking-[0.03em]" : compact ? "h-7 w-[76px] rounded-md px-1 text-[9px] tracking-[0.02em]" : "h-7 rounded-md px-2"} ${buttonClass(value)}`}
       >
         <span className="truncate">{compact ? compactHoldLabel(value, placeholder) : value ? label(value) : placeholder}</span>
         <span className="text-[8px] opacity-50">▾</span>
@@ -2476,6 +2476,8 @@ function CandidateSheet({ matrix, group, dates, onUpdateCandidate, onLinkBlackbo
                     key={`${column.id}:${date.id}`}
                     column={column}
                     date={date}
+                    index={index}
+                    total={dates.length}
                     showControls={index === 0}
                     sortKey={sortKey}
                     sortDirection={sortDirection}
@@ -3585,9 +3587,11 @@ function CustomColumnHeader({ column, isDropTarget, isDragging, sortKey, activeS
   );
 }
 
-function DateStatusColumnHeader({ column, date, showControls, isDropTarget, isDragging, sortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onResizePreview }: {
+function DateStatusColumnHeader({ column, date, index, total, showControls, isDropTarget, isDragging, sortKey, sortDirection, onSort, onUpdate, onDelete, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onResizePreview }: {
   column: OptionColumn;
   date: MatrixDate;
+  index: number;
+  total: number;
   showControls: boolean;
   isDropTarget: boolean;
   isDragging: boolean;
@@ -3605,6 +3609,7 @@ function DateStatusColumnHeader({ column, date, showControls, isDropTarget, isDr
 }) {
   const parts = compactDateLabel(date);
   const active = sortKey === `date:${date.id}`;
+  const boundaryClass = `${index === 0 ? "border-l border-l-[#dcdfe3]" : ""} ${index === total - 1 ? "border-r-[#dcdfe3]" : ""}`;
   return (
     <div
       onDragOver={(event) => {
@@ -3621,7 +3626,7 @@ function DateStatusColumnHeader({ column, date, showControls, isDropTarget, isDr
         event.preventDefault();
         onDrop();
       }}
-      className={`relative flex h-full min-w-0 items-center justify-center border-r border-[#e6e6e3] px-2 transition ${isDropTarget ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""} ${isDragging ? "bg-gray-100 opacity-55" : ""}`}
+      className={`relative flex h-full min-w-0 items-center justify-center border-r border-[#e6e6e3] bg-[#fbfbf8] px-2 transition ${boundaryClass} ${isDropTarget ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""} ${isDragging ? "bg-gray-100 opacity-55" : ""}`}
     >
       {isDropTarget && (
         <div className="pointer-events-none absolute inset-y-1 left-0 z-20 w-1 rounded-r-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.18)]" />
@@ -4192,7 +4197,7 @@ function OptionsGridCell({ candidateId, cellKey, active, onActivate, onKeyDown, 
       onMouseDownCapture={onActivate}
       onKeyDown={onKeyDown}
       className={`relative flex min-h-[62px] min-w-0 items-center border-r border-[#f0f0ee] px-2 py-1.5 outline-none transition ${
-        active ? "z-10 bg-blue-50/20 ring-2 ring-inset ring-blue-500" : "focus:bg-blue-50/10 focus:ring-1 focus:ring-inset focus:ring-blue-300"
+        active ? "z-10 bg-teal-50/15 ring-1 ring-inset ring-teal-700/75" : "focus:bg-teal-50/10 focus:ring-1 focus:ring-inset focus:ring-teal-500/35"
       } ${className}`}
     >
       {children}
@@ -4333,8 +4338,9 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
           ))];
         }
         if (column.key === "date_statuses") {
-          return dates.map((date) => {
+          return dates.map((date, dateIndex) => {
             const status = statusFor(candidate, date.id)?.status ?? null;
+            const boundaryClass = `${dateIndex === 0 ? "border-l border-l-[#dcdfe3]" : ""} ${dateIndex === dates.length - 1 ? "border-r-[#dcdfe3]" : ""}`;
             return cell(`date:${date.id}`, (
                 <PillDropdown
                   value={status}
@@ -4346,7 +4352,7 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
                   compact
                   fill
                 />
-            ), `justify-center ${holdCellClass(status)}`);
+            ), `justify-center px-1 py-0 ${holdCellClass(status)} ${boundaryClass}`);
           });
         }
         if (column.key === "contact") {

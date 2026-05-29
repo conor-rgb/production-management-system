@@ -1,3 +1,36 @@
+# HANDOVER - 2026-05-29 - Crew Sheet Availability Matrix Polish
+
+## Built This Session
+- Refined Crew & Suppliers date availability cells after the full-cell colour pass.
+- Date status cells now use softer full-cell fills so the matrix reads clearly without overpowering names/contact data.
+- Removed the strong inner-pill feel from date status controls:
+  - labels now sit directly in the coloured cell,
+  - dropdown affordance remains,
+  - blank cells are quiet at rest and become clearer on hover/focus.
+- Added subtle left/right bookend borders around the date matrix block.
+- Date column headers now share a faint matrix-zone background.
+- Active cell focus changed from a heavy blue ring to a finer teal outline.
+
+## Files Changed
+- `frontend/src/components/options/OptionsBoardView.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Date availability columns should now feel more like a polished availability matrix:
+  - clear coloured cell blocks,
+  - quieter blanks,
+  - less button noise,
+  - stronger separation from the record detail columns.
+
+---
+
 # HANDOVER - 2026-05-29 - Crew Sheet Date Matrix Cell Fill
 
 ## Built This Session
