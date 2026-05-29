@@ -1,3 +1,31 @@
+# HANDOVER - 2026-05-29 - Compact Option Sheet Rows
+
+## Built This Session
+- Made individual option sheet rows match the compact scanning density of the Crew & Suppliers Matrix.
+- Reduced option row/cell height from 62px to 38px.
+- Scaled date status cells down so the availability matrix stays tight.
+- Reduced image thumbnails from 40px to 28px.
+- Made option name + subtitle render on one line.
+- Made contact details render on one line instead of stacked email/phone rows.
+- Made address cells render as a single compact summary while keeping the address editor available on click.
+
+## Files Changed
+- `frontend/src/components/options/OptionsBoardView.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Option sheets should now scan much more like Airtable: compact, one-line rows with the availability/date matrix reading first.
+- Rich editing still happens through the existing popovers/modals rather than visible row controls.
+
+---
+
 # HANDOVER - 2026-05-29 - Crew Matrix Compact Rows
 
 ## Built This Session

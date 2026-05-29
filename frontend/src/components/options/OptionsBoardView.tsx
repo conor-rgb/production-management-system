@@ -962,7 +962,7 @@ function PillDropdown<T extends string>({ value, options, onChange, classNameFor
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((current) => !current)}
-        className={`inline-flex items-center justify-center gap-1 border text-[10px] font-semibold uppercase leading-none shadow-[inset_0_0_0_0.5px_rgba(255,255,255,0.35)] ${fill ? "h-9 w-full rounded-sm px-1 text-[10px] tracking-[0.03em]" : compact ? "h-7 w-[76px] rounded-md px-1 text-[9px] tracking-[0.02em]" : "h-7 rounded-md px-2"} ${buttonClass(value)}`}
+        className={`inline-flex items-center justify-center gap-1 border text-[10px] font-semibold uppercase leading-none shadow-[inset_0_0_0_0.5px_rgba(255,255,255,0.35)] ${fill ? "h-7 w-full rounded-sm px-1 text-[10px] tracking-[0.03em]" : compact ? "h-7 w-[76px] rounded-md px-1 text-[9px] tracking-[0.02em]" : "h-7 rounded-md px-2"} ${buttonClass(value)}`}
       >
         <span className="truncate">{compact ? compactHoldLabel(value, placeholder) : value ? label(value) : placeholder}</span>
         <span className="text-[8px] opacity-50">▾</span>
@@ -4369,7 +4369,7 @@ function OptionsGridCell({ candidateId, cellKey, active, onActivate, onKeyDown, 
       onMouseDownCapture={onActivate}
       onKeyDown={onKeyDown}
       style={style}
-      className={`relative flex min-h-[62px] min-w-0 items-center border-r border-[#f0f0ee] px-2 py-1.5 outline-none transition ${
+      className={`relative flex min-h-[38px] min-w-0 items-center border-r border-[#f0f0ee] px-2 py-1 outline-none transition ${
         active ? "z-10 bg-teal-50/15 ring-1 ring-inset ring-teal-700/75" : "focus:bg-teal-50/10 focus:ring-1 focus:ring-inset focus:ring-teal-500/35"
       } ${className}`}
     >
@@ -4475,7 +4475,7 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
         }
       }}
       onContextMenu={onContextMenuOpen}
-      className={`group relative grid min-h-[62px] items-center border-b text-xs transition ${
+      className={`group relative grid min-h-[38px] items-center border-b text-xs transition ${
         dragActive ? "border-gray-400 bg-blue-50 ring-1 ring-inset ring-blue-300" : isReorderTarget ? "border-blue-200 bg-blue-50/35" : "border-gray-100 hover:bg-[#fafafa]"
       } ${candidate.activeState === "RELEASED" ? "opacity-45" : ""} ${isReorderDragging ? "opacity-45" : ""}`}
       style={{ gridTemplateColumns: gridColumns }}
@@ -4488,7 +4488,7 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
           Drop image{dropUploading ? " - uploading..." : "s here to add to this option"}
         </div>
       )}
-      <div className="sticky left-0 z-30 flex min-h-[62px] items-center justify-center gap-1 border-r border-[#dcdfe3] bg-white text-gray-400 shadow-[1px_0_0_#dcdfe3] group-hover:bg-[#fafafa]">
+      <div className="sticky left-0 z-30 flex min-h-[38px] items-center justify-center gap-1 border-r border-[#dcdfe3] bg-white text-gray-400 shadow-[1px_0_0_#dcdfe3] group-hover:bg-[#fafafa]">
         <button
           draggable
           onDragStart={onReorderDragStart}
@@ -4506,11 +4506,9 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
         if (column.key === "image") return [cell(column.id, <PhotoThumb candidate={candidate} onOpen={onOpenPhotos} />, "justify-center", stickyLeft)];
         if (column.key === "option") {
           return [cell(column.id, (
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="text-[13px] font-semibold text-gray-900" placeholder="Record" />
-              </div>
-              {candidate.subtitle && <div className="mt-1 truncate text-[11px] text-gray-400">{candidate.subtitle}</div>}
+            <div className="flex min-w-0 items-center gap-2">
+              <EditableText value={candidate.name} onSave={(name) => onUpdateCandidate(candidate.id, { name })} className="max-w-[190px] text-[13px] font-semibold text-gray-900" placeholder="Record" />
+              {candidate.subtitle && <span className="min-w-0 truncate text-[10px] text-gray-300">{candidate.subtitle}</span>}
             </div>
           ), "", stickyLeft)];
         }
@@ -4563,7 +4561,7 @@ function CandidateRow({ candidate, rowIndex, group, dates, customColumns, gridCo
         }
         return [cell(column.id, <CustomColumnCell column={column} candidate={candidate} onSave={(value) => onUpdateColumnValue(candidate.id, column.id, value)} />)];
       })}
-      <div className="flex min-h-[62px] items-center justify-center gap-0.5 opacity-0 transition hover:opacity-100 group-hover:opacity-50">
+      <div className="flex min-h-[38px] items-center justify-center gap-0.5 opacity-0 transition hover:opacity-100 group-hover:opacity-50">
         <button onClick={() => onDeleteCandidate(candidate.id)} title="Delete" className="grid h-7 w-4 place-items-center rounded text-red-500 hover:bg-red-50"><Trash2 size={12} /></button>
       </div>
     </div>
@@ -4751,7 +4749,7 @@ function CandidateContactCell({ group, candidate, onUpdate, onLink, onOpenBlackb
   }
 
   return (
-    <div ref={ref} className="relative flex min-w-0 items-start gap-1.5">
+    <div ref={ref} className="relative flex min-w-0 items-center gap-1.5">
       <BlackbookLinkControl
         group={group}
         candidate={candidate}
@@ -4761,20 +4759,27 @@ function CandidateContactCell({ group, candidate, onUpdate, onLink, onOpenBlackb
       />
       <button
         onClick={() => setOpen(true)}
-        className={`block min-w-0 flex-1 text-left text-[10.5px] leading-4 ${hasContact ? "text-gray-500" : "text-gray-300"} hover:text-gray-900`}
+        className={`flex min-w-0 flex-1 items-center gap-1 text-left text-[10.5px] leading-4 ${hasContact ? "text-gray-500" : "text-gray-300"} hover:text-gray-900`}
         title={hasContact ? "Edit contact details" : "Add contact details"}
       >
         {email ? (
-          <span className="flex min-w-0 items-center gap-1">
+          <>
             <Mail size={11} className="shrink-0" />
-            <span className="truncate">{email}</span>
-          </span>
+            <span className="min-w-0 truncate">{email}</span>
+          </>
         ) : null}
-        {phone ? (
-          <span className="flex min-w-0 items-center gap-1">
+        {phone && !email ? (
+          <>
             <Phone size={11} className="shrink-0" />
-            <span className="truncate">{phone}</span>
-          </span>
+            <span className="min-w-0 truncate">{phone}</span>
+          </>
+        ) : null}
+        {email && phone ? (
+          <>
+            <span className="shrink-0 text-gray-200">·</span>
+            <Phone size={10} className="shrink-0" />
+            <span className="max-w-[82px] truncate">{phone}</span>
+          </>
         ) : null}
         {!hasContact && <span>+ contact</span>}
       </button>
@@ -5066,10 +5071,8 @@ function CandidateAddressCell({ candidate, onUpdate }: {
         }`}
       >
         {lines.length ? (
-          <span className="block max-h-[38px] overflow-hidden">
-            {lines.map((line) => (
-              <span key={line} className="block truncate">{line}</span>
-            ))}
+          <span className="block truncate">
+            {summary}
           </span>
         ) : (
           <span className="flex h-full items-center">address <span className="ml-1 text-[9px] opacity-60">▾</span></span>
@@ -5188,9 +5191,9 @@ function AddressInput({ label: inputLabel, value, onSave }: { label: string; val
 function PhotoThumb({ candidate, onOpen }: { candidate: OptionCandidate; onOpen: () => void }) {
   const cover = candidate.photos[0];
   return (
-    <button onClick={onOpen} className="relative grid h-10 w-10 place-items-center overflow-hidden rounded-md border border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-400">
-      {cover ? <img src={cover.url} alt="" className="h-full w-full object-cover" /> : <ImageIcon size={17} />}
-      {candidate.photos.length > 0 && <span className="absolute bottom-0 right-0 rounded-tl bg-black/65 px-1 text-[9px] text-white">{candidate.photos.length}</span>}
+    <button onClick={onOpen} className="relative grid h-7 w-7 place-items-center overflow-hidden rounded border border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-400">
+      {cover ? <img src={cover.url} alt="" className="h-full w-full object-cover" /> : <ImageIcon size={13} />}
+      {candidate.photos.length > 0 && <span className="absolute bottom-0 right-0 rounded-tl bg-black/65 px-0.5 text-[8px] leading-3 text-white">{candidate.photos.length}</span>}
     </button>
   );
 }
