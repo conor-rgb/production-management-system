@@ -121,6 +121,18 @@ function contactName(contact?: { firstName?: string; lastName?: string | null } 
   return `${contact.firstName ?? ""}${contact.lastName ? ` ${contact.lastName}` : ""}`.trim();
 }
 
+function folderTitle(folder: Folder) {
+  const labels: Record<Folder, string> = {
+    inbox: "Inbox",
+    sent: "Sent",
+    drafts: "Drafts",
+    starred: "Starred",
+    unread: "Unread",
+    archived: "Archive",
+  };
+  return labels[folder];
+}
+
 function fileTone(mimeType: string) {
   if (mimeType.includes("pdf")) return "text-red-600";
   if (mimeType.startsWith("image/")) return "text-green-600";
@@ -381,6 +393,7 @@ export default function Email() {
     }
     return groups;
   }, [visibleDrafts]);
+  const currentAccount = accounts.find((account) => account.id === activeAccountId) ?? accounts.find((account) => account.isPrimary) ?? accounts[0];
 
   function openReply(targetThread: EmailThread) {
     const latest = [...targetThread.messages].reverse().find((message) => !message.isFromMe) ?? targetThread.messages[targetThread.messages.length - 1];
@@ -421,13 +434,16 @@ export default function Email() {
 
   return (
     <div className="flex h-full bg-white">
-      <aside className="hidden w-[200px] shrink-0 flex-col bg-[#1a1a1f] text-white md:flex">
-        <div className="p-4 text-sm font-medium">Email</div>
+      <aside className="hidden w-[210px] shrink-0 flex-col border-r border-gray-200 bg-[#fbfbfa] text-gray-900 md:flex">
+        <div className="px-4 pb-3 pt-4">
+          <p className="text-sm font-semibold">Mail</p>
+          <p className="mt-1 truncate text-[11px] text-gray-400">{currentAccount?.emailAddress ?? "No account"}</p>
+        </div>
         <div className="flex-1 overflow-auto px-2">
           {accounts.map((account) => (
             <div key={account.id} className="mb-3">
-              <button onClick={() => setActiveAccountId(account.id)} className="min-h-11 w-full rounded px-2 text-left">
-                <span className="block text-xs text-white">{account.label}</span>
+              <button onClick={() => setActiveAccountId(account.id)} className={`mb-1 min-h-12 w-full rounded-lg px-3 text-left ${activeAccountId === account.id ? "bg-white shadow-sm ring-1 ring-gray-200" : "hover:bg-white"}`}>
+                <span className="block text-xs font-medium text-gray-900">{account.label}</span>
                 <span className="block truncate text-[11px] text-gray-400">{account.emailAddress}</span>
               </button>
               <FolderButton active={folder === "inbox" && activeAccountId === account.id} icon={<Inbox size={14} />} label="Inbox" count={unreadCount} onClick={() => { setActiveAccountId(account.id); setFolder("inbox"); }} />
@@ -439,9 +455,6 @@ export default function Email() {
             </div>
           ))}
         </div>
-        <button onClick={() => openDraft().catch(console.error)} className="m-3 flex min-h-10 items-center justify-center gap-2 rounded bg-[#2c2c2a] text-sm font-medium text-white">
-          <Mail size={16} /> Compose
-        </button>
       </aside>
 
       <section className={`${selectedThreadId ? "hidden md:flex" : "flex"} w-full flex-col border-r border-gray-200 bg-white md:w-[320px] md:shrink-0`}>
@@ -458,15 +471,30 @@ export default function Email() {
             <option value="archived">Archived</option>
           </select>
         </div>
+        <div className="flex min-h-16 items-center gap-3 border-b border-gray-100 px-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-gray-950">{folderTitle(folder)}</h2>
+            <p className="truncate text-[11px] text-gray-400">{folder === "drafts" ? `${drafts.length} Gmail drafts` : currentAccount?.emailAddress ?? ""}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => openDraft().catch(console.error)}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#1a1a1f] px-3 text-xs font-medium text-white shadow-sm"
+          >
+            <PencilLine size={14} /> Compose
+          </button>
+        </div>
         <div className="flex h-11 items-center gap-2 border-b border-gray-100 px-3">
           <Search size={15} className="text-gray-400" />
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search email" className="h-full flex-1 border-0 bg-transparent text-xs outline-none" />
         </div>
-        <div className="flex gap-2 border-b border-gray-100 px-3 py-2">
-          {(["all", "unread", "flagged"] as Filter[]).map((item) => (
-            <button key={item} onClick={() => setFilter(item)} className={`min-h-7 rounded-full px-3 text-[11px] capitalize ${filter === item ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600"}`}>{item}</button>
-          ))}
-        </div>
+        {folder !== "drafts" && (
+          <div className="flex gap-2 border-b border-gray-100 px-3 py-2">
+            {(["all", "unread", "flagged"] as Filter[]).map((item) => (
+              <button key={item} onClick={() => setFilter(item)} className={`min-h-7 rounded-full px-3 text-[11px] capitalize ${filter === item ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600"}`}>{item}</button>
+            ))}
+          </div>
+        )}
         {error && <p className="p-3 text-sm text-red-600">{error}</p>}
         <div className="flex-1 overflow-auto">
           {folder === "drafts" ? (
@@ -515,6 +543,11 @@ export default function Email() {
             onBack={clearSelectedThread}
             onOpenReply={() => openReply(thread)}
             onFlag={async () => { await api.post(`/api/email/threads/${thread.id}/star`, { starred: !thread.isFlagged }); await loadThread(thread.id, selectedMessageId); await loadThreads(); }}
+            onMarkUnread={async () => {
+              await api.post(`/api/email/threads/${thread.id}/read`, { read: false });
+              clearSelectedThread();
+              await loadThreads();
+            }}
             onArchive={async () => {
               if (folder === "archived") await api.post(`/api/email/threads/${thread.id}/unarchive`, {});
               else await api.post(`/api/email/threads/${thread.id}/archive`, {});
@@ -586,8 +619,8 @@ export default function Email() {
 
 function FolderButton({ active, icon, label, count, onClick }: { active: boolean; icon: ReactNode; label: string; count?: number; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`flex h-9 w-full items-center gap-2 rounded px-4 text-left text-xs ${active ? "border-l-2 border-l-white bg-white/15 text-white" : "text-gray-300 hover:bg-white/10"}`}>
-      {icon}<span className="flex-1">{label}</span>{Boolean(count) && <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-900">{count}</span>}
+    <button onClick={onClick} className={`flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs ${active ? "bg-[#1a1a1f] font-medium text-white shadow-sm" : "text-gray-500 hover:bg-white hover:text-gray-900"}`}>
+      {icon}<span className="flex-1">{label}</span>{Boolean(count) && <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? "bg-white text-gray-900" : "bg-blue-500 text-white"}`}>{count}</span>}
     </button>
   );
 }
@@ -604,10 +637,10 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
   return (
     <button
       onClick={onClick}
-      className={`relative grid h-[72px] w-full grid-cols-[44px_1fr] gap-3 border-b border-gray-100 px-4 py-3 text-left hover:bg-[#f8f8f6] ${active ? "border-l-2 border-l-gray-900 bg-[#f0f0ee]" : ""}`}
+      className={`relative grid min-h-[76px] w-full grid-cols-[40px_1fr] gap-3 border-b border-gray-100 px-4 py-3 text-left transition-colors hover:bg-[#f8f8f6] ${active ? "border-l-2 border-l-gray-900 bg-[#f3f3f1]" : ""}`}
     >
       {!thread.isRead && <span className="absolute left-1 top-5 h-2 w-2 rounded-full bg-blue-500" />}
-      <span className="relative grid h-9 w-9 place-items-center rounded-full text-xs font-medium text-white" style={{ background: thread.avatarColor ?? "#5B8DEF" }}>
+      <span className="relative grid h-9 w-9 place-items-center rounded-full text-xs font-medium text-white shadow-sm" style={{ background: thread.avatarColor ?? "#5B8DEF" }}>
         {initials(name)}
         {(thread.messageCount ?? 0) > 1 && <span className="absolute -bottom-1 -right-1 min-w-4 rounded-full bg-gray-900 px-1 text-center text-[10px] leading-4 text-white">{thread.messageCount}</span>}
       </span>
@@ -618,11 +651,11 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
           {thread.isFlagged && <Star size={12} className="shrink-0 fill-amber-400 text-amber-400" />}
           <span className="text-[11px] text-gray-400">{timeLabel(thread.lastMessageAt)}</span>
         </span>
-        <span className={`flex min-w-0 items-center gap-1 truncate text-[13px] ${thread.isRead ? "font-normal" : "font-medium"} text-gray-800`}>
+        <span className={`mt-0.5 flex min-w-0 items-center gap-1 truncate text-[13px] ${thread.isRead ? "font-normal" : "font-semibold"} text-gray-800`}>
           <span className="truncate">{thread.subject}</span>
           {thread.hasAttachments && <Paperclip size={12} className="shrink-0 text-gray-400" />}
         </span>
-        <span className="flex min-w-0 items-center gap-1 truncate text-xs text-gray-500">
+        <span className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-gray-500">
           {(thread.linkedOpportunity || thread.linkedProduction) && (
             <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600">
               {thread.linkedProduction?.jobCode ?? thread.linkedOpportunity?.clientName ?? "Linked"}
@@ -646,7 +679,7 @@ function DraftRow({ draft, onClick }: { draft: Draft; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="relative grid h-[72px] w-full grid-cols-[44px_1fr] gap-3 border-b border-gray-100 px-4 py-3 text-left hover:bg-[#f8f8f6]"
+      className="relative grid min-h-[76px] w-full grid-cols-[40px_1fr] gap-3 border-b border-gray-100 px-4 py-3 text-left transition-colors hover:bg-[#f8f8f6]"
     >
       <span className="grid h-9 w-9 place-items-center rounded-full bg-amber-50 text-amber-700">
         <PencilLine size={15} />
@@ -664,9 +697,10 @@ function DraftRow({ draft, onClick }: { draft: Draft; onClick: () => void }) {
   );
 }
 
-function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onArchive, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; focusedMessageId: string | null; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onArchive: () => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
+function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onMarkUnread, onArchive, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; focusedMessageId: string | null; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onMarkUnread: () => void; onArchive: () => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
   const [expandedAttachments, setExpandedAttachments] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [actionSavingId, setActionSavingId] = useState<string | null>(null);
   const attachments = thread.attachments ?? [];
   const visibleAttachments = expandedAttachments ? attachments : attachments.slice(0, 3);
@@ -727,8 +761,20 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
         <button onClick={onCreateOpportunity} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-900 px-3 text-[11px] text-white"><Plus size={13} /> Opportunity</button>
         <button onClick={onArchive} className="hidden min-h-8 items-center rounded-full px-2 text-[11px] text-gray-500 hover:bg-gray-100 md:inline-flex">Archive</button>
         <button onClick={onFlag} className="grid min-h-8 min-w-8 place-items-center rounded-full text-gray-500 hover:bg-gray-100"><Star size={14} className={thread.isFlagged ? "fill-amber-400 text-amber-400" : ""} /></button>
-        <button className="grid min-h-8 min-w-8 place-items-center rounded-full text-gray-500 hover:bg-gray-100"><MoreHorizontal size={14} /></button>
+        <button onClick={() => setActionMenuOpen((current) => !current)} className="grid min-h-8 min-w-8 place-items-center rounded-full text-gray-500 hover:bg-gray-100"><MoreHorizontal size={14} /></button>
         {linkOpen && <LinkDropdown thread={thread} onClose={() => setLinkOpen(false)} onLinked={onLinked} />}
+        {actionMenuOpen && (
+          <ThreadActionMenu
+            onClose={() => setActionMenuOpen(false)}
+            onReply={onOpenReply}
+            onPeople={onOpenPeople}
+            onOpportunity={onCreateOpportunity}
+            onMarkUnread={onMarkUnread}
+            onArchive={onArchive}
+            onStar={onFlag}
+            starred={thread.isFlagged}
+          />
+        )}
       </div>
       <CrmSuggestionBanner thread={thread} onLinked={onLinked} />
       <div className="flex-1 overflow-auto bg-white p-2 pb-28 md:p-4">
@@ -765,6 +811,24 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
         </button>
       </div>
     </>
+  );
+}
+
+function ThreadActionMenu({ onClose, onReply, onPeople, onOpportunity, onMarkUnread, onArchive, onStar, starred }: { onClose: () => void; onReply: () => void; onPeople: () => void; onOpportunity: () => void; onMarkUnread: () => void; onArchive: () => void; onStar: () => void; starred: boolean }) {
+  const run = (handler: () => void) => {
+    handler();
+    onClose();
+  };
+  return (
+    <div className="absolute right-4 top-10 z-40 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-xl">
+      <button type="button" onClick={() => run(onReply)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Reply size={14} /> Reply</button>
+      <button type="button" onClick={() => run(onPeople)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Users size={14} /> People in thread</button>
+      <button type="button" onClick={() => run(onOpportunity)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Plus size={14} /> Create opportunity</button>
+      <div className="my-1 h-px bg-gray-100" />
+      <button type="button" onClick={() => run(onMarkUnread)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Mail size={14} /> Mark unread</button>
+      <button type="button" onClick={() => run(onArchive)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Archive size={14} /> Archive</button>
+      <button type="button" onClick={() => run(onStar)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Star size={14} className={starred ? "fill-amber-400 text-amber-400" : ""} /> {starred ? "Unstar" : "Star"}</button>
+    </div>
   );
 }
 

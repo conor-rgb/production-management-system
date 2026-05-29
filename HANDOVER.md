@@ -3457,3 +3457,66 @@
 3. After adding a Blackbook record to job options, optionally deep-link to `/productions?production=[id]&tab=options&optionGroup=[groupId]`.
 4. Decide how selected addresses should appear in options PDF/deck templates.
 5. Consider adding API usage logging/counts if Places usage grows beyond internal use.
+
+---
+
+# Email Client V2 UI Polish - 2026-05-29
+
+## Scope
+- Frontend-only pass on the email client and persistent composer tray.
+- Gmail API sync, Gmail draft sync, CRM routes, and backend data model were not changed in this pass.
+
+## Composer Tray
+- Composer now shows clearer Spark-style state:
+  - title row,
+  - `Reply` / `New message` context,
+  - Gmail draft sync timestamp from `lastSyncedToGmailAt`,
+  - reply context bar with `View thread`.
+- Composer is full-screen on mobile and remains docked bottom-right on desktop.
+- Send button is disabled until recipients and subject are present.
+- Footer now shows Gmail draft/account state so it is obvious when the draft is synced.
+- Increased editor minimum height to make composing feel less cramped.
+- Fixed a stale-state issue in `draftStore.sendDraft()` so quoted-history appending uses the current draft/quote state.
+
+## Email UI
+- Restyled the email sidebar from dark block styling to a calmer light mail panel.
+- Added a clearer folder header above the thread list:
+  - folder title,
+  - active account/draft count,
+  - compact Compose button.
+- Drafts folder hides inbox-specific filter pills.
+- Thread and draft rows now have slightly cleaner spacing, stronger unread/subject hierarchy, and softer active state.
+- The thread detail ellipsis now opens a real action menu:
+  - Reply,
+  - People in thread,
+  - Create opportunity,
+  - Mark unread,
+  - Archive,
+  - Star / Unstar.
+
+## Files Changed
+- `frontend/src/components/email/ComposerTray.tsx`
+- `frontend/src/pages/Email.tsx`
+- `frontend/src/store/draftStore.tsx`
+
+## Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+
+## Next Steps
+1. Add keyboard shortcuts:
+   - `c` compose,
+   - `r` reply,
+   - `e` archive,
+   - `s` star,
+   - `u` mark unread.
+2. Add Spark-like split modes:
+   - compact list,
+   - comfortable list,
+   - preview density toggle.
+3. Add proper attachment upload to composer using Gmail multipart send/draft update.
+4. Add snooze/reminder integration once the Tasks/Calendar model is implemented.
+5. Improve thread rendering:
+   - collapsed quoted sections,
+   - cleaner sender chips,
+   - message-level action menu for link-to-task/link-to-project actions.

@@ -256,7 +256,7 @@ export function DraftProvider({ children }: { children: ReactNode }) {
       sendingIds.current.delete(id);
       setIsSending((prev) => ({ ...prev, [id]: false }));
     }
-  }, []);
+  }, [drafts, quotedHtmlByDraftId]);
 
   const value = useMemo<DraftStore>(() => ({
     drafts,

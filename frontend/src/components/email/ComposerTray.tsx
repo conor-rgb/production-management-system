@@ -28,6 +28,14 @@ function titleForDraft(draft: Draft) {
   return base;
 }
 
+function draftSavedLabel(draft: Draft) {
+  const value = draft.lastSyncedToGmailAt ?? draft.lastEditedAt;
+  if (!value) return draft.gmailDraftId ? "Synced to Gmail" : "Local draft";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return draft.gmailDraftId ? "Synced to Gmail" : "Local draft";
+  return `${draft.gmailDraftId ? "Gmail draft" : "Saved"} · ${date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
 function iconButtonClass(disabled = false) {
   return `grid min-h-7 min-w-7 place-items-center rounded ${disabled ? "cursor-not-allowed text-gray-300" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`;
 }
@@ -178,6 +186,7 @@ function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: s
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const quotedHtml = quotedHtmlByDraftId[draft.id] ?? "";
   const sending = Boolean(isSending[draft.id]);
+  const canSend = draft.to.length > 0 && draft.subject.trim().length > 0;
 
   const editor = useEditor({
     extensions: [
@@ -215,9 +224,12 @@ function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: s
   }
 
   return (
-    <section className="mb-0 flex max-h-[560px] w-[480px] flex-col overflow-hidden rounded-t-lg bg-white shadow-[0_-4px_32px_rgba(0,0,0,0.12),0_0_0_0.5px_rgba(0,0,0,0.12)] pointer-events-auto max-md:w-[calc(100vw-24px)]">
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-gray-200 px-3">
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-gray-900">{titleForDraft(draft)}</span>
+    <section className="mb-0 flex max-h-[560px] w-[480px] flex-col overflow-hidden rounded-t-lg bg-white shadow-[0_-4px_32px_rgba(0,0,0,0.12),0_0_0_0.5px_rgba(0,0,0,0.12)] pointer-events-auto max-md:fixed max-md:inset-0 max-md:z-[1100] max-md:max-h-none max-md:w-screen max-md:rounded-none">
+      <header className="flex min-h-11 shrink-0 items-center gap-2 border-b border-gray-200 px-3">
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-medium text-gray-900">{titleForDraft(draft)}</span>
+          <span className="block truncate text-[10px] uppercase tracking-[0.08em] text-gray-400">{draft.replyToThreadId ? "Reply" : "New message"} · {draftSavedLabel(draft)}</span>
+        </span>
         <button type="button" onClick={() => minimizeDraft(draft.id)} className={iconButtonClass()} title="Minimize"><Minimize2 size={14} /></button>
         <button type="button" disabled className={iconButtonClass(true)} title="Full screen"><Maximize2 size={14} /></button>
         <button type="button" onClick={handleClose} className="grid min-h-7 min-w-7 place-items-center rounded text-red-500 hover:bg-red-50" title="Close"><X size={14} /></button>
@@ -228,6 +240,19 @@ function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: s
           <span className="flex-1">Discard this draft?</span>
           <button type="button" onClick={() => setConfirmDiscard(false)} className="min-h-7 underline">Keep editing</button>
           <button type="button" onClick={() => closeDraft(draft.id)} className="min-h-7 text-red-600 underline">Discard</button>
+        </div>
+      )}
+
+      {draft.replyToThreadId && (
+        <div className="flex min-h-8 items-center gap-2 border-b border-gray-100 bg-[#f8f8f6] px-3 text-[11px] text-gray-500">
+          <span className="min-w-0 flex-1 truncate">Replying in thread · {titleForDraft(draft)}</span>
+          <button
+            type="button"
+            onClick={() => { window.location.href = `/email?thread=${draft.replyToThreadId}`; }}
+            className="min-h-7 shrink-0 text-gray-700 underline"
+          >
+            View thread
+          </button>
         </div>
       )}
 
@@ -263,7 +288,7 @@ function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: s
         />
       )}
 
-      <div className="min-h-[120px] flex-1 overflow-auto px-3 py-3">
+      <div className="min-h-[160px] flex-1 overflow-auto px-3 py-3">
         <EditorContent editor={editor} />
       </div>
 
@@ -317,12 +342,12 @@ function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: s
         <button type="button" disabled className={iconButtonClass(true)} title="Reminder"><Bell size={16} /></button>
         <button type="button" onClick={() => setShowFormatting((current) => !current)} className={iconButtonClass()} title="Formatting"><Type size={16} /></button>
         <div className="flex-1" />
-        <span className="mr-2 max-w-[150px] truncate text-[10px] text-gray-400">{accountEmail}</span>
+        <span className="mr-2 min-w-0 max-w-[180px] truncate text-[10px] text-gray-400">{draftSavedLabel(draft)} · {accountEmail}</span>
         <button
           type="button"
           onClick={() => sendDraft(draft.id).catch(() => undefined)}
-          disabled={sending || draft.to.length === 0}
-          className={`flex min-h-8 items-center gap-1.5 rounded-md px-4 text-[13px] font-medium ${sending || draft.to.length === 0 ? "cursor-not-allowed bg-gray-100 text-gray-400" : "bg-[#1a1a1f] text-white"}`}
+          disabled={sending || !canSend}
+          className={`flex min-h-8 items-center gap-1.5 rounded-md px-4 text-[13px] font-medium ${sending || !canSend ? "cursor-not-allowed bg-gray-100 text-gray-400" : "bg-[#1a1a1f] text-white"}`}
         >
           {sending ? "Sending..." : <><Send size={13} /> Send →</>}
         </button>
