@@ -99,6 +99,7 @@ export function DraftProvider({ children }: { children: ReactNode }) {
   const [isSending, setIsSending] = useState<Record<string, boolean>>({});
   const [error, setError] = useState("");
   const saveTimers = useRef<Record<string, number>>({});
+  const sendingIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (window.location.pathname === "/login") return undefined;
@@ -219,6 +220,8 @@ export function DraftProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sendDraft = useCallback(async (id: string) => {
+    if (sendingIds.current.has(id)) return;
+    sendingIds.current.add(id);
     if (saveTimers.current[id]) {
       window.clearTimeout(saveTimers.current[id]);
       delete saveTimers.current[id];
@@ -244,6 +247,7 @@ export function DraftProvider({ children }: { children: ReactNode }) {
       setError(err instanceof Error ? err.message : "Failed to send draft");
       throw err;
     } finally {
+      sendingIds.current.delete(id);
       setIsSending((prev) => ({ ...prev, [id]: false }));
     }
   }, []);

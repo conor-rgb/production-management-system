@@ -94,6 +94,8 @@ const emailDraftInclude = {
   linkedContact: { select: { id: true, firstName: true, lastName: true, email: true } },
 } satisfies Prisma.EmailDraftInclude;
 
+const sendingDraftIds = new Set<string>();
+
 type AccountBody = {
   label?: string;
   emailAddress?: string;
@@ -536,19 +538,27 @@ router.delete("/drafts/:draftId", async (req: Request, res: Response): Promise<v
 });
 
 router.post("/drafts/:draftId/send", async (req: Request, res: Response): Promise<void> => {
+  if (sendingDraftIds.has(req.params.draftId)) {
+    res.status(409).json({ error: "Draft is already sending" });
+    return;
+  }
+  sendingDraftIds.add(req.params.draftId);
   const draft = await prisma.emailDraft.findUnique({
     where: { id: req.params.draftId },
     include: { account: true },
   });
   if (!draft) {
+    sendingDraftIds.delete(req.params.draftId);
     res.status(404).json({ error: "Draft not found" });
     return;
   }
   if (!draft.to.length) {
+    sendingDraftIds.delete(req.params.draftId);
     res.status(400).json({ error: "No recipients" });
     return;
   }
   if (!draft.subject.trim()) {
+    sendingDraftIds.delete(req.params.draftId);
     res.status(400).json({ error: "No subject" });
     return;
   }
@@ -603,6 +613,8 @@ router.post("/drafts/:draftId/send", async (req: Request, res: Response): Promis
     res.json({ sent: true, messageId: sentMessage.id, threadId: sentMessage.threadId });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Failed to send draft" });
+  } finally {
+    sendingDraftIds.delete(req.params.draftId);
   }
 });
 

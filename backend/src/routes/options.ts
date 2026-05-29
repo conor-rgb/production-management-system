@@ -538,6 +538,52 @@ function blackbookDataFromBody(body: BlackbookFieldBody): Prisma.BlackbookEntryU
   return data;
 }
 
+type BlackbookEmailMatch = Prisma.EmailMessageGetPayload<{
+  include: {
+    thread: {
+      select: {
+        id: true;
+        subject: true;
+        linkedOpportunity: { select: { id: true; title: true; clientName: true; brand: true; stage: true } };
+        linkedProduction: { select: { id: true; title: true; jobCode: true; clientName: true; brand: true; status: true } };
+      };
+    };
+  };
+}>;
+
+function emailDisplayKey(message: BlackbookEmailMatch): string {
+  const recipients = [...message.toAddresses, ...message.ccAddresses, ...message.bccAddresses]
+    .map((email) => email.toLowerCase())
+    .sort()
+    .join(",");
+  const body = (message.bodyText || message.snippet || "").replace(/\s+/g, " ").trim().slice(0, 240);
+  return [
+    message.threadId,
+    message.fromAddress.toLowerCase(),
+    recipients,
+    message.subject.trim().toLowerCase(),
+    body,
+  ].join("|");
+}
+
+function uniqueEmailMessages(messages: BlackbookEmailMatch[]): BlackbookEmailMatch[] {
+  const exactIds = new Set<string>();
+  const lastSeenBySignature = new Map<string, Date>();
+  return [...messages]
+    .sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime())
+    .filter((message) => {
+      const exactId = message.gmailMessageId ?? message.externalMessageId;
+      if (exactIds.has(exactId)) return false;
+      exactIds.add(exactId);
+
+      const signature = emailDisplayKey(message);
+      const previous = lastSeenBySignature.get(signature);
+      lastSeenBySignature.set(signature, message.sentAt);
+      return !previous || Math.abs(message.sentAt.getTime() - previous.getTime()) > 30_000;
+    })
+    .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
+}
+
 function candidatePatchFromBlackbook(entry: {
   id: string;
   displayName: string;
@@ -1417,7 +1463,7 @@ router.get("/blackbook/:entryId/crm", async (req: Request, res: Response): Promi
     entry.email?.toLowerCase(),
     ...entry.people.map((person) => person.email?.toLowerCase()),
   ].filter((email): email is string => Boolean(email));
-  const [emailMatches, opportunities, productions, optionCandidates] = await Promise.all([
+  const [rawEmailMatches, opportunities, productions, optionCandidates] = await Promise.all([
     relatedEmails.length
       ? prisma.emailMessage.findMany({
           where: {
@@ -1471,6 +1517,8 @@ router.get("/blackbook/:entryId/crm", async (req: Request, res: Response): Promi
       take: 50,
     }),
   ]);
+
+  const emailMatches = uniqueEmailMessages(rawEmailMatches);
 
   res.json({
     entry: { ...entry, optionCandidates },

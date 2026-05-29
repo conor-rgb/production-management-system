@@ -131,6 +131,51 @@ type EmailAttachmentContent = {
 
 const THREAD_MESSAGE_LIMIT = 10;
 
+type DisplayEmailMessage = {
+  id: string;
+  externalMessageId: string;
+  gmailMessageId: string | null;
+  threadId: string;
+  fromAddress: string;
+  toAddresses: string[];
+  ccAddresses: string[];
+  bccAddresses: string[];
+  subject: string;
+  bodyText: string;
+  snippet: string | null;
+  sentAt: Date;
+};
+
+function displayDuplicateSignature(message: DisplayEmailMessage): string {
+  const recipients = [...message.toAddresses, ...message.ccAddresses, ...message.bccAddresses]
+    .map((email) => email.toLowerCase())
+    .sort()
+    .join(",");
+  const body = (message.bodyText || message.snippet || "").replace(/\s+/g, " ").trim().slice(0, 240);
+  return [
+    message.threadId,
+    message.fromAddress.toLowerCase(),
+    recipients,
+    message.subject.trim().toLowerCase(),
+    body,
+  ].join("|");
+}
+
+function uniqueMessagesForDisplay<T extends DisplayEmailMessage>(messages: T[]): T[] {
+  const exactIds = new Set<string>();
+  const lastSeenBySignature = new Map<string, Date>();
+  return messages.filter((message) => {
+    const exactId = message.gmailMessageId ?? message.externalMessageId;
+    if (exactIds.has(exactId)) return false;
+    exactIds.add(exactId);
+
+    const signature = displayDuplicateSignature(message);
+    const previous = lastSeenBySignature.get(signature);
+    lastSeenBySignature.set(signature, message.sentAt);
+    return !previous || Math.abs(message.sentAt.getTime() - previous.getTime()) > 30_000;
+  });
+}
+
 type SyncMailboxResult = {
   threadCount: number;
   messageCount: number;
@@ -1166,7 +1211,7 @@ export async function getThread(threadId: string, options?: { before?: Date; lim
     }),
   ]);
 
-  const messages = recentMessagesDesc.reverse();
+  const messages = uniqueMessagesForDisplay(recentMessagesDesc.reverse());
   const messageIds = Array.from(new Set([
     ...messages.map((message) => message.id),
     ...allAttachmentsMessages.map((message) => message.id),

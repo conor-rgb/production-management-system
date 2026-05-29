@@ -1,3 +1,41 @@
+# HANDOVER - 2026-05-29 - Email Duplicate Send / Activity Cleanup
+
+## Built This Session
+- Tightened the email composer send path to prevent accidental duplicate sends:
+  - backend now keeps an in-flight send lock per draft ID,
+  - duplicate send requests return `409 Draft is already sending`,
+  - frontend now guards `sendDraft()` with a local in-flight ref before posting.
+- Added display-level near-duplicate filtering for email thread messages:
+  - exact Gmail/external duplicate IDs are suppressed,
+  - same thread/from/recipients/subject/body messages within 30 seconds are shown once.
+- Added the same near-duplicate filtering to Blackbook CRM activity email matches so double-sent messages do not create repeated activity rows.
+- Improved Blackbook activity text for sent email rows:
+  - sent rows now show `To [recipient]` instead of `To Conor`.
+
+## Files Changed
+- `backend/src/routes/email.ts`
+- `backend/src/routes/options.ts`
+- `backend/src/services/emailService.ts`
+- `frontend/src/components/blackbook/BlackbookOverlay.tsx`
+- `frontend/src/store/draftStore.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Backend build passed.
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- The database currently has unique Gmail message IDs, so this was not a broken unique constraint issue.
+- A quick data check found a few likely historical double-send pairs within 10-29 seconds.
+- Future double-click/race sends should be blocked before Gmail send.
+- Historical near-duplicate sends are suppressed in thread display and Blackbook activity without deleting Gmail or local records.
+
+---
+
 # HANDOVER - 2026-05-29 - Compact Option Sheet Rows
 
 ## Built This Session

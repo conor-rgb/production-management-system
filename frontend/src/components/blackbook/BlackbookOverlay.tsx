@@ -141,6 +141,7 @@ interface BlackbookCrmResponse {
     subject: string;
     fromAddress: string;
     fromName: string | null;
+    toAddresses: string[];
     snippet: string | null;
     sentAt: string;
     isFromMe: boolean;
@@ -481,12 +482,20 @@ function buildTimelineItems(data: BlackbookCrmResponse): TimelineItem[] {
     href: `/opportunities?opportunity=${item.id}`,
   }));
 
-  const emailItems = data.emailMessages.map((message) => ({
+  const seenEmailItems = new Set<string>();
+  const emailItems = data.emailMessages.filter((message) => {
+    const key = `${message.threadId}:${message.id}`;
+    if (seenEmailItems.has(key)) return false;
+    seenEmailItems.add(key);
+    return true;
+  }).map((message) => ({
     id: `email-${message.id}`,
     date: new Date(message.sentAt),
     type: "email" as const,
     title: message.subject,
-    meta: `${message.isFromMe ? "To" : "From"} ${message.fromName || message.fromAddress}`,
+    meta: message.isFromMe
+      ? `To ${message.toAddresses[0] ?? "recipient"}`
+      : `From ${message.fromName || message.fromAddress}`,
     body: message.snippet,
     href: `/email?thread=${message.threadId}&message=${message.id}`,
   }));
