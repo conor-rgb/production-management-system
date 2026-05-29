@@ -43,6 +43,7 @@ interface DraftStore {
   drafts: Draft[];
   expandedDraftId: string | null;
   quotedHtmlByDraftId: Record<string, string>;
+  refreshDrafts: () => Promise<void>;
   openDraft: (options?: Partial<Draft>) => Promise<Draft>;
   openReply: (thread: ReplyThreadInput) => Promise<Draft>;
   updateDraft: (id: string, changes: Partial<Draft>) => void;
@@ -104,13 +105,15 @@ export function DraftProvider({ children }: { children: ReactNode }) {
   const saveTimers = useRef<Record<string, number>>({});
   const sendingIds = useRef<Set<string>>(new Set());
 
+  const refreshDrafts = useCallback(async () => {
+    const items = await api.get<Draft[]>("/api/email/drafts");
+    setDrafts(items);
+    setExpandedDraftId((current) => current ?? items.find((draft) => !draft.isMinimized)?.id ?? null);
+  }, []);
+
   useEffect(() => {
     if (window.location.pathname === "/login") return undefined;
-    api.get<Draft[]>("/api/email/drafts")
-      .then((items) => {
-        setDrafts(items);
-        setExpandedDraftId(items.find((draft) => !draft.isMinimized)?.id ?? null);
-      })
+    refreshDrafts()
       .catch((err: unknown) => {
         if (err instanceof Error && err.message === "Unauthorised") return;
         setError(err instanceof Error ? err.message : "Failed to load drafts");
@@ -118,7 +121,7 @@ export function DraftProvider({ children }: { children: ReactNode }) {
     return () => {
       Object.values(saveTimers.current).forEach(window.clearTimeout);
     };
-  }, []);
+  }, [refreshDrafts]);
 
   const updateDraft = useCallback((id: string, changes: Partial<Draft>) => {
     setDrafts((prev) => prev.map((draft) => draft.id === id ? { ...draft, ...changes } : draft));
@@ -259,6 +262,7 @@ export function DraftProvider({ children }: { children: ReactNode }) {
     drafts,
     expandedDraftId,
     quotedHtmlByDraftId,
+    refreshDrafts,
     openDraft,
     openReply,
     updateDraft,
@@ -270,7 +274,7 @@ export function DraftProvider({ children }: { children: ReactNode }) {
     isSending,
     error,
     clearError: () => setError(""),
-  }), [drafts, expandedDraftId, quotedHtmlByDraftId, openDraft, openReply, updateDraft, minimizeDraft, maximizeDraft, toggleExpand, closeDraft, sendDraft, isSending, error]);
+  }), [drafts, expandedDraftId, quotedHtmlByDraftId, refreshDrafts, openDraft, openReply, updateDraft, minimizeDraft, maximizeDraft, toggleExpand, closeDraft, sendDraft, isSending, error]);
 
   return (
     <DraftContext.Provider value={value}>

@@ -1,3 +1,43 @@
+# HANDOVER - 2026-05-29 - Email Client Drafts Folder
+
+## Built This Session
+- Added a `Drafts` folder to the email client sidebar and mobile folder picker.
+- Drafts folder uses the synced local/Gmail draft store:
+  - opening the folder refreshes drafts from `/api/email/drafts`,
+  - Gmail drafts imported by the backend show in the email client,
+  - clicking a draft row opens the existing floating composer tray for that draft.
+- Added draft rows with:
+  - subject/reply title,
+  - recipient preview,
+  - body preview,
+  - last edited time,
+  - draft badge.
+
+## Files Changed
+- `frontend/src/pages/Email.tsx`
+- `frontend/src/store/draftStore.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed.
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Gmail drafts are now visible from inside the app email client, not only in Gmail or the floating tray.
+- Draft editing remains single-source through the composer tray.
+
+## Next Step
+- Browser test:
+  1. Open Email → Drafts.
+  2. Confirm Gmail draft rows appear.
+  3. Click a draft and confirm it opens in the floating composer.
+  4. Edit the draft, wait for autosave, confirm Gmail Drafts updates.
+
+---
+
 # HANDOVER - 2026-05-29 - Gmail Draft Sync V2
 
 ## Built This Session

@@ -11,6 +11,7 @@ import {
   Mail,
   MoreHorizontal,
   Paperclip,
+  PencilLine,
   Plus,
   Reply,
   Search,
@@ -23,9 +24,9 @@ import { api } from "../lib/api";
 import { PreviewPanel } from "../components/files/FileBrowser";
 import type { EmailAccount, EmailAttachmentSummary, EmailMessage, EmailThread, EmailThreadsResponse, JobFile, Production } from "../lib/types";
 import { formatBytes, JOB_FOLDERS } from "../lib/types";
-import { useDrafts } from "../store/draftStore";
+import { useDrafts, type Draft } from "../store/draftStore";
 
-type Folder = "inbox" | "sent" | "starred" | "unread" | "archived";
+type Folder = "inbox" | "sent" | "drafts" | "starred" | "unread" | "archived";
 type Filter = "all" | "unread" | "flagged";
 
 type SaveAttachmentState = {
@@ -216,7 +217,7 @@ function escapeHtml(text: string) {
 }
 
 export default function Email() {
-  const { openDraft, openReply: openDraftReply } = useDrafts();
+  const { drafts, openDraft, openReply: openDraftReply, maximizeDraft, refreshDrafts } = useDrafts();
   const initialComposeHandled = useRef(false);
   const initialParams = new URLSearchParams(window.location.search);
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
@@ -244,6 +245,10 @@ export default function Email() {
   }
 
   async function loadThreads() {
+    if (folder === "drafts") {
+      setThreads([]);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -328,7 +333,13 @@ export default function Email() {
     }
   }, [openDraft]);
 
-  useEffect(() => { loadThreads().catch(console.error); }, [activeAccountId, folder, filter]);
+  useEffect(() => {
+    if (folder === "drafts") {
+      refreshDrafts().catch(console.error);
+      return;
+    }
+    loadThreads().catch(console.error);
+  }, [activeAccountId, folder, filter, refreshDrafts]);
   useEffect(() => {
     const timer = setTimeout(() => { loadThreads().catch(console.error); }, 250);
     return () => clearTimeout(timer);
@@ -349,6 +360,27 @@ export default function Email() {
     }
     return groups;
   }, [threads]);
+  const visibleDrafts = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return drafts;
+    return drafts.filter((draft) => [
+      draft.subject,
+      draft.bodyHtml.replace(/<[^>]+>/g, " "),
+      ...draft.to,
+      ...draft.cc,
+      ...draft.bcc,
+    ].some((value) => value.toLowerCase().includes(needle)));
+  }, [drafts, search]);
+  const groupedDrafts = useMemo(() => {
+    const groups: Array<{ label: string; items: Draft[] }> = [];
+    for (const item of visibleDrafts) {
+      const label = dateGroup(item.lastEditedAt);
+      const group = groups.find((entry) => entry.label === label);
+      if (group) group.items.push(item);
+      else groups.push({ label, items: [item] });
+    }
+    return groups;
+  }, [visibleDrafts]);
 
   function openReply(targetThread: EmailThread) {
     const latest = [...targetThread.messages].reverse().find((message) => !message.isFromMe) ?? targetThread.messages[targetThread.messages.length - 1];
@@ -400,6 +432,7 @@ export default function Email() {
               </button>
               <FolderButton active={folder === "inbox" && activeAccountId === account.id} icon={<Inbox size={14} />} label="Inbox" count={unreadCount} onClick={() => { setActiveAccountId(account.id); setFolder("inbox"); }} />
               <FolderButton active={folder === "sent" && activeAccountId === account.id} icon={<Send size={14} />} label="Sent" onClick={() => { setActiveAccountId(account.id); setFolder("sent"); }} />
+              <FolderButton active={folder === "drafts" && activeAccountId === account.id} icon={<PencilLine size={14} />} label="Drafts" count={drafts.length} onClick={() => { setActiveAccountId(account.id); setFolder("drafts"); }} />
               <FolderButton active={folder === "starred" && activeAccountId === account.id} icon={<Star size={14} />} label="Starred" onClick={() => { setActiveAccountId(account.id); setFolder("starred"); }} />
               <FolderButton active={folder === "unread" && activeAccountId === account.id} icon={<Flag size={14} />} label="Unread" onClick={() => { setActiveAccountId(account.id); setFolder("unread"); }} />
               <FolderButton active={folder === "archived" && activeAccountId === account.id} icon={<Archive size={14} />} label="Archived" onClick={() => { setActiveAccountId(account.id); setFolder("archived"); }} />
@@ -419,6 +452,7 @@ export default function Email() {
           <select value={folder} onChange={(event) => setFolder(event.target.value as Folder)} className="min-h-11 rounded-lg border border-gray-200 px-3 text-sm capitalize">
             <option value="inbox">Inbox</option>
             <option value="sent">Sent</option>
+            <option value="drafts">Drafts</option>
             <option value="starred">Starred</option>
             <option value="unread">Unread</option>
             <option value="archived">Archived</option>
@@ -435,18 +469,35 @@ export default function Email() {
         </div>
         {error && <p className="p-3 text-sm text-red-600">{error}</p>}
         <div className="flex-1 overflow-auto">
-          {groupedThreads.map((group) => (
-            <div key={group.label}>
-              <div className="hidden px-4 py-2 text-[11px] uppercase tracking-wide text-gray-400 md:block">{group.label}</div>
-              {group.items.map((item) => (
-                <ThreadRow key={item.id} thread={item} active={selectedThreadId === item.id} onClick={() => selectThread(item.id)} />
-              ))}
-            </div>
-          ))}
-          {!loading && threads.length === 0 && (
+          {folder === "drafts" ? (
+            groupedDrafts.map((group) => (
+              <div key={group.label}>
+                <div className="hidden px-4 py-2 text-[11px] uppercase tracking-wide text-gray-400 md:block">{group.label}</div>
+                {group.items.map((item) => (
+                  <DraftRow key={item.id} draft={item} onClick={() => maximizeDraft(item.id)} />
+                ))}
+              </div>
+            ))
+          ) : (
+            groupedThreads.map((group) => (
+              <div key={group.label}>
+                <div className="hidden px-4 py-2 text-[11px] uppercase tracking-wide text-gray-400 md:block">{group.label}</div>
+                {group.items.map((item) => (
+                  <ThreadRow key={item.id} thread={item} active={selectedThreadId === item.id} onClick={() => selectThread(item.id)} />
+                ))}
+              </div>
+            ))
+          )}
+          {!loading && folder !== "drafts" && threads.length === 0 && (
             <div className="p-8 text-center text-sm text-gray-400">
               <Mail size={32} className="mx-auto mb-2 opacity-30" />
               No conversations yet.
+            </div>
+          )}
+          {folder === "drafts" && visibleDrafts.length === 0 && (
+            <div className="p-8 text-center text-sm text-gray-400">
+              <PencilLine size={32} className="mx-auto mb-2 opacity-30" />
+              No drafts yet.
             </div>
           )}
         </div>
@@ -579,6 +630,35 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
           )}
           <span className="truncate">{thread.latestPreview}</span>
         </span>
+      </span>
+    </button>
+  );
+}
+
+function draftPreview(draft: Draft) {
+  return draft.bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function DraftRow({ draft, onClick }: { draft: Draft; onClick: () => void }) {
+  const recipients = draft.to.length ? draft.to.join(", ") : "No recipients";
+  const title = draft.subject.trim() || (draft.replyToThreadId ? "Reply draft" : "New message");
+  const preview = draftPreview(draft) || "Empty draft";
+  return (
+    <button
+      onClick={onClick}
+      className="relative grid h-[72px] w-full grid-cols-[44px_1fr] gap-3 border-b border-gray-100 px-4 py-3 text-left hover:bg-[#f8f8f6]"
+    >
+      <span className="grid h-9 w-9 place-items-center rounded-full bg-amber-50 text-amber-700">
+        <PencilLine size={15} />
+      </span>
+      <span className="min-w-0">
+        <span className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-gray-950">{title}</span>
+          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Draft</span>
+          <span className="text-[11px] text-gray-400">{timeLabel(draft.lastEditedAt)}</span>
+        </span>
+        <span className="block truncate text-[12px] text-gray-500">To: {recipients}</span>
+        <span className="block truncate text-xs text-gray-500">{preview}</span>
       </span>
     </button>
   );
