@@ -3503,6 +3503,44 @@
 - Frontend build passed:
   - `cd frontend && npm run build`
 
+---
+
+# Email Client UX Tightening - 2026-05-30
+
+## Scope
+- Frontend-only pass on the email client reading experience.
+- No Gmail sync, draft sync, schema, or backend route changes.
+
+## Changes
+- Thread list rows are denser and easier to scan:
+  - smaller avatars,
+  - tighter row height,
+  - visible category chips for non-people or manually moved threads,
+  - existing CRM link dots remain.
+- Thread detail header is consolidated:
+  - removed the duplicated subject/action strip,
+  - Back, Star, Archive, and menu live in the main header,
+  - Link, People, Opportunity, Reply, and Unsubscribe sit as a single compact action row under the participants.
+- Message reading view is cleaner:
+  - messages now render as rounded conversation cards,
+  - sent messages use a lighter tint,
+  - long threads get date dividers,
+  - collapsed messages show a better preview,
+  - per-message timeline task action is now labelled `Task`.
+
+## Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend bundle copied to `/var/www/agent`.
+- PM2 process reloaded:
+  - `pm2 reload 0`
+
+## Next Steps
+1. Add keyboard navigation for the thread list and message actions.
+2. Add sender/domain rules for category filtering.
+3. Redesign the thread list into a more Spark-like split with stronger unread grouping and hover actions.
+4. Add message-level link-to-project/contact controls alongside the existing task action.
+
 ## Next Steps
 1. Add keyboard shortcuts:
    - `c` compose,

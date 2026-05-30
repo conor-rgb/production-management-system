@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import DOMPurify from "dompurify";
 import {
   Archive,
@@ -9,6 +9,7 @@ import {
   Inbox,
   Link2,
   Mail,
+  MessageSquare,
   MoreHorizontal,
   Paperclip,
   PencilLine,
@@ -109,6 +110,16 @@ function dateGroup(value: string) {
   return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+function messageDateLabel(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Today";
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+}
+
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
@@ -141,6 +152,36 @@ function folderTitle(folder: Folder) {
     archived: "Archive",
   };
   return labels[folder];
+}
+
+function emailCategoryLabel(category?: EmailAutoCategory | null) {
+  const labels: Record<EmailAutoCategory, string> = {
+    PEOPLE: "People",
+    PROMOTIONS: "Promo",
+    NEWSLETTERS: "News",
+    PURCHASES: "Purchase",
+    UPDATES: "Update",
+    SOCIAL: "Social",
+    FORUMS: "Forum",
+    OTHER: "Other",
+  };
+  return category ? labels[category] : "";
+}
+
+function emailCategoryClass(category?: EmailAutoCategory | null) {
+  switch (category) {
+    case "PROMOTIONS":
+      return "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-100";
+    case "NEWSLETTERS":
+      return "bg-sky-50 text-sky-700 ring-sky-100";
+    case "PURCHASES":
+      return "bg-emerald-50 text-emerald-700 ring-emerald-100";
+    case "UPDATES":
+      return "bg-amber-50 text-amber-700 ring-amber-100";
+    case "PEOPLE":
+    default:
+      return "bg-gray-100 text-gray-600 ring-gray-200";
+  }
 }
 
 const autoFilters: Array<{ key: AutoFilter; label: string; icon: ReactNode }> = [
@@ -692,6 +733,8 @@ function FolderButton({ active, icon, label, count, onClick }: { active: boolean
 
 function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: boolean; onClick: () => void }) {
   const name = senderName(thread);
+  const category = thread.categoryOverride ?? thread.autoCategory;
+  const showCategory = Boolean(category && (category !== "PEOPLE" || thread.categoryOverride));
   const linkDot = thread.linkedProductionId
     ? { color: "bg-emerald-500", title: `Linked to ${thread.linkedProduction?.jobCode ?? "production"}` }
     : thread.linkedOpportunityId
@@ -702,10 +745,10 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
   return (
     <button
       onClick={onClick}
-      className={`relative grid min-h-[76px] w-full grid-cols-[40px_1fr] gap-3 border-b border-gray-100 px-4 py-3 text-left transition-colors hover:bg-[#f8f8f6] ${active ? "border-l-2 border-l-gray-900 bg-[#f3f3f1]" : ""}`}
+      className={`relative grid min-h-[68px] w-full grid-cols-[34px_1fr] gap-3 border-b border-gray-100 px-3 py-2.5 text-left transition-colors hover:bg-[#f8f8f6] ${active ? "border-l-2 border-l-gray-900 bg-[#f3f3f1]" : ""}`}
     >
       {!thread.isRead && <span className="absolute left-1 top-5 h-2 w-2 rounded-full bg-blue-500" />}
-      <span className="relative grid h-9 w-9 place-items-center rounded-full text-xs font-medium text-white shadow-sm" style={{ background: thread.avatarColor ?? "#5B8DEF" }}>
+      <span className="relative grid h-8 w-8 place-items-center rounded-full text-[11px] font-medium text-white shadow-sm" style={{ background: thread.avatarColor ?? "#5B8DEF" }}>
         {initials(name)}
         {(thread.messageCount ?? 0) > 1 && <span className="absolute -bottom-1 -right-1 min-w-4 rounded-full bg-gray-900 px-1 text-center text-[10px] leading-4 text-white">{thread.messageCount}</span>}
       </span>
@@ -721,6 +764,11 @@ function ThreadRow({ thread, active, onClick }: { thread: EmailThread; active: b
           {thread.hasAttachments && <Paperclip size={12} className="shrink-0 text-gray-400" />}
         </span>
         <span className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-gray-500">
+          {showCategory && (
+            <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ${emailCategoryClass(category)}`}>
+              {emailCategoryLabel(category)}
+            </span>
+          )}
           {(thread.linkedOpportunity || thread.linkedProduction) && (
             <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600">
               {thread.linkedProduction?.jobCode ?? thread.linkedOpportunity?.clientName ?? "Linked"}
@@ -794,15 +842,25 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
 
   return (
     <>
-      <header className="shrink-0 border-b border-gray-200 bg-white px-4 py-3">
+      <header className="relative shrink-0 border-b border-gray-200 bg-white px-4 py-3">
         <div className="mb-1 flex items-center gap-2">
-          <button onClick={onBack} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500 md:hidden"><ArrowLeft size={18} /></button>
+          <button onClick={onBack} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><ArrowLeft size={18} /></button>
           <h1 className="min-w-0 flex-1 truncate text-base font-medium text-gray-900">{thread.subject}</h1>
-          <button onClick={onFlag} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><Star size={17} className={thread.isFlagged ? "fill-amber-400 text-amber-400" : ""} /></button>
-          <button onClick={onArchive} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><Archive size={17} /></button>
+          <button onClick={onFlag} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><Star size={17} className={thread.isFlagged ? "fill-amber-400 text-amber-400" : ""} /></button>
+          <button onClick={onArchive} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><Archive size={17} /></button>
+          <button onClick={() => setActionMenuOpen((current) => !current)} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><MoreHorizontal size={16} /></button>
         </div>
         <p className="truncate text-xs text-gray-500">{participantNames}</p>
         <LinkedRecordPills thread={thread} onLinked={onLinked} />
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button onClick={() => setLinkOpen((current) => !current)} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-100 px-3 text-[11px] text-gray-700 hover:bg-gray-200"><Link2 size={13} /> Link</button>
+          <button onClick={onOpenPeople} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-100 px-3 text-[11px] text-gray-700 hover:bg-gray-200"><Users size={13} /> People</button>
+          <button onClick={onCreateOpportunity} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-900 px-3 text-[11px] text-white"><Plus size={13} /> Opportunity</button>
+          <button onClick={onOpenReply} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-[#1a1a1f] px-3 text-[11px] text-white"><Reply size={13} /> Reply</button>
+          {canTryUnsubscribe && (
+            <button onClick={onUnsubscribe} className="inline-flex min-h-8 items-center rounded-full bg-amber-50 px-3 text-[11px] font-medium text-amber-700 hover:bg-amber-100">Unsubscribe</button>
+          )}
+        </div>
         {attachments.length > 0 && (
           <div className="mt-2 hidden flex-wrap gap-2 md:flex">
             {visibleAttachments.map((attachment) => (
@@ -818,19 +876,6 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
             )}
           </div>
         )}
-      </header>
-      <div className="relative flex min-h-10 shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-4">
-        <button onClick={onBack} className="hidden min-h-8 items-center gap-1 rounded-full px-2 text-[11px] text-gray-500 hover:bg-gray-100 md:inline-flex"><ArrowLeft size={13} /> Back</button>
-        <div className="min-w-0 flex-1 truncate text-xs text-gray-500">{thread.subject}</div>
-        <button onClick={() => setLinkOpen((current) => !current)} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-100 px-3 text-[11px] text-gray-700 hover:bg-gray-200"><Link2 size={13} /> Link</button>
-        <button onClick={onOpenPeople} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-100 px-3 text-[11px] text-gray-700 hover:bg-gray-200"><Users size={13} /> People</button>
-        <button onClick={onCreateOpportunity} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-900 px-3 text-[11px] text-white"><Plus size={13} /> Opportunity</button>
-        {canTryUnsubscribe && (
-          <button onClick={onUnsubscribe} className="hidden min-h-8 items-center rounded-full bg-amber-50 px-3 text-[11px] font-medium text-amber-700 hover:bg-amber-100 md:inline-flex">Unsubscribe</button>
-        )}
-        <button onClick={onArchive} className="hidden min-h-8 items-center rounded-full px-2 text-[11px] text-gray-500 hover:bg-gray-100 md:inline-flex">Archive</button>
-        <button onClick={onFlag} className="grid min-h-8 min-w-8 place-items-center rounded-full text-gray-500 hover:bg-gray-100"><Star size={14} className={thread.isFlagged ? "fill-amber-400 text-amber-400" : ""} /></button>
-        <button onClick={() => setActionMenuOpen((current) => !current)} className="grid min-h-8 min-w-8 place-items-center rounded-full text-gray-500 hover:bg-gray-100"><MoreHorizontal size={14} /></button>
         {linkOpen && <LinkDropdown thread={thread} onClose={() => setLinkOpen(false)} onLinked={onLinked} />}
         {actionMenuOpen && (
           <ThreadActionMenu
@@ -847,7 +892,7 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
             starred={thread.isFlagged}
           />
         )}
-      </div>
+      </header>
       {unsubscribeResult && (
         <UnsubscribeNotice result={unsubscribeResult} onClose={onDismissUnsubscribeResult} />
       )}
@@ -865,20 +910,26 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
             </button>
           </div>
         )}
-        {thread.messages.map((message, index) => (
-          <MessageBlock
-            key={message.id}
-            message={message}
-            filingAttachment={filingAttachment}
-            onOpenAttachment={onOpenAttachment}
-            latest={message.id === latestId}
-            defaultExpanded={defaultExpanded.has(message.id)}
-            focused={focusedMessageId === message.id}
-            showNewDivider={index > 0 && !message.isFromMe && !thread.isRead}
-            onCreateAction={() => createActionFromMessage(message)}
-            creatingAction={actionSavingId === message.id}
-          />
-        ))}
+        {thread.messages.map((message, index) => {
+          const previous = thread.messages[index - 1];
+          const showDateDivider = !previous || new Date(previous.sentAt).toDateString() !== new Date(message.sentAt).toDateString();
+          return (
+            <Fragment key={message.id}>
+              {showDateDivider && <MessageDateDivider label={messageDateLabel(message.sentAt)} />}
+              <MessageBlock
+                message={message}
+                filingAttachment={filingAttachment}
+                onOpenAttachment={onOpenAttachment}
+                latest={message.id === latestId}
+                defaultExpanded={defaultExpanded.has(message.id)}
+                focused={focusedMessageId === message.id}
+                showNewDivider={index > 0 && !message.isFromMe && !thread.isRead}
+                onCreateAction={() => createActionFromMessage(message)}
+                creatingAction={actionSavingId === message.id}
+              />
+            </Fragment>
+          );
+        })}
       </div>
       <div className="shrink-0 border-t border-gray-200 bg-white px-5 py-3">
         <button onClick={onOpenReply} className="flex min-h-10 w-full items-center gap-2 text-left text-[13px] text-gray-400 hover:text-gray-700">
@@ -930,13 +981,23 @@ function UnsubscribeNotice({ result, onClose }: { result: UnsubscribeResult; onC
   );
 }
 
+function MessageDateDivider({ label }: { label: string }) {
+  return (
+    <div className="my-4 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.12em] text-gray-400">
+      <span className="h-px flex-1 bg-gray-100" />
+      <span>{label}</span>
+      <span className="h-px flex-1 bg-gray-100" />
+    </div>
+  );
+}
+
 function ThreadActionMenu({ onClose, onReply, onPeople, onOpportunity, onMarkUnread, onArchive, onUnsubscribe, onMoveCategory, currentCategory, onStar, starred }: { onClose: () => void; onReply: () => void; onPeople: () => void; onOpportunity: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe?: () => void; onMoveCategory: (category: EmailAutoCategory | null) => void; currentCategory: EmailAutoCategory; onStar: () => void; starred: boolean }) {
   const run = (handler: () => void) => {
     handler();
     onClose();
   };
   return (
-    <div className="absolute right-4 top-10 z-40 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-xl">
+    <div className="absolute right-4 top-12 z-40 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-xl">
       <button type="button" onClick={() => run(onReply)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Reply size={14} /> Reply</button>
       <button type="button" onClick={() => run(onPeople)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Users size={14} /> People in thread</button>
       <button type="button" onClick={() => run(onOpportunity)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Plus size={14} /> Create opportunity</button>
@@ -1024,7 +1085,7 @@ function LinkDropdown({ thread, onClose, onLinked }: { thread: EmailThread; onCl
   }
 
   return (
-    <div className="absolute right-3 top-10 z-30 w-[330px] rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
+    <div className="absolute right-3 top-24 z-30 w-[330px] rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
       <div className="mb-2 flex items-center">
         <p className="text-xs font-medium text-gray-900">Link to...</p>
         <button onClick={onClose} className="ml-auto grid min-h-8 min-w-8 place-items-center text-gray-400"><X size={14} /></button>
@@ -1386,34 +1447,34 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, def
           <span className="h-px flex-1 bg-gray-200" />
         </div>
       )}
-      <article ref={articleRef} className={`group border-b border-gray-100 transition-shadow ${focused ? "relative z-[1] ring-2 ring-blue-200" : ""} ${message.isFromMe ? "bg-[#f8f8f6]" : "bg-white"}`}>
+      <article ref={articleRef} className={`group mb-2 overflow-hidden rounded-xl border border-gray-100 transition-shadow hover:shadow-sm ${focused ? "relative z-[1] ring-2 ring-blue-200" : ""} ${message.isFromMe ? "bg-[#fafaf8]" : "bg-white"}`}>
         <button
           onClick={() => !latest && setExpanded((current) => !current)}
-          className="grid min-h-12 w-full grid-cols-[40px_1fr_auto_auto] items-center gap-2 px-2 text-left transition-all duration-200"
+          className="grid min-h-11 w-full grid-cols-[34px_1fr_auto_auto] items-center gap-2 px-3 text-left transition-all duration-200"
         >
-          <span className="grid h-8 w-8 place-items-center rounded-full text-[11px] font-medium text-white" style={{ background: message.avatarColor ?? "#5B8DEF" }}>{initials(name)}</span>
+          <span className="grid h-7 w-7 place-items-center rounded-full text-[10px] font-medium text-white" style={{ background: message.avatarColor ?? "#5B8DEF" }}>{initials(name)}</span>
           <span className="min-w-0">
             <span className="flex min-w-0 items-baseline gap-2">
               <span className="truncate text-[13px] font-medium text-gray-900">{name}</span>
               <span className="shrink-0 text-xs text-gray-500">{toLabel}</span>
             </span>
-            {!expanded && <span className="block truncate text-xs text-gray-500">{message.bodyText.slice(0, 80)}</span>}
+            {!expanded && <span className="block truncate text-xs text-gray-500">{(message.bodyText || "").slice(0, 110)}</span>}
           </span>
           <span className="text-xs text-gray-400">{fullTimeLabel(message.sentAt)}</span>
           <span className="flex items-center gap-1">
             <span
               onClick={(event) => { event.stopPropagation(); onCreateAction(); }}
-              className="hidden rounded-full bg-white px-2 py-1 text-[10px] font-medium text-gray-500 shadow-sm ring-1 ring-gray-200 hover:text-gray-900 group-hover:inline-flex"
+              className="hidden items-center gap-1 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-gray-500 shadow-sm ring-1 ring-gray-200 hover:text-gray-900 group-hover:inline-flex"
               title="Create timeline task from this email"
             >
-              {creatingAction ? "Saving..." : "+ task"}
+              <MessageSquare size={11} /> {creatingAction ? "Saving..." : "Task"}
             </span>
             <MoreHorizontal size={15} className="hidden text-gray-400 group-hover:block" />
             {expanded ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
           </span>
         </button>
         {expanded && (
-          <div className="px-12 pb-4">
+          <div className="px-14 pb-4">
             {hasImages && !showImages && <button onClick={() => setShowImages(true)} className="mb-3 min-h-9 rounded bg-gray-100 px-3 text-xs text-gray-700">Show images</button>}
             <div className="prose prose-sm max-w-none text-[13px] leading-6 text-gray-800" dangerouslySetInnerHTML={{ __html: renderedBody.bodyHtml }} />
             {renderedBody.signatureHtml && (
