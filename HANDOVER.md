@@ -3529,6 +3529,28 @@
 
 ---
 
+# Email Message Card Sizing - 2026-05-30
+
+## Scope
+- Frontend-only visual pass on email thread message cards.
+- No sync, composer, filtering, or backend changes.
+
+## Changes
+- Collapsed message cards are shorter and less visually heavy.
+- Avatar size, row padding, radius, margin, and shadows were reduced.
+- Preview text and timestamp sizes were normalized.
+- Expanded messages keep the card treatment but use tighter body padding and line-height.
+
+## Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend deployed:
+  - `cp -r frontend/dist/* /var/www/agent/`
+- PM2 reloaded:
+  - `pm2 reload 0`
+
+---
+
 # Email Modern Message Canvas - 2026-05-30
 
 ## Scope

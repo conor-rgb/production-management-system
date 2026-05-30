@@ -1509,14 +1509,14 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
           <span className="h-px flex-1 bg-gray-200" />
         </div>
       )}
-      <article ref={articleRef} className={`group mb-4 overflow-hidden bg-white transition-all ${expanded ? "rounded-[22px] border border-gray-200 shadow-[0_12px_34px_rgba(15,23,42,0.08),0_1px_2px_rgba(15,23,42,0.06)]" : "rounded-[18px] border border-gray-200/80 shadow-[0_6px_18px_rgba(15,23,42,0.06),0_1px_2px_rgba(15,23,42,0.04)] hover:-translate-y-px hover:shadow-[0_10px_26px_rgba(15,23,42,0.08)]"} ${focused ? "relative z-[1] ring-2 ring-blue-200" : ""}`}>
+      <article ref={articleRef} className={`group mb-2.5 overflow-hidden bg-white transition-all ${expanded ? "rounded-[18px] border border-gray-200 shadow-[0_8px_24px_rgba(15,23,42,0.07),0_1px_2px_rgba(15,23,42,0.05)]" : "rounded-[14px] border border-gray-200/80 shadow-[0_3px_10px_rgba(15,23,42,0.045),0_1px_2px_rgba(15,23,42,0.035)] hover:shadow-[0_6px_16px_rgba(15,23,42,0.06)]"} ${focused ? "relative z-[1] ring-2 ring-blue-200" : ""}`}>
         <button
           onClick={() => setExpanded((current) => !current)}
-          className={`grid w-full grid-cols-[42px_1fr_auto_auto] items-center gap-3 px-5 text-left transition-all duration-200 ${expanded ? "min-h-16 pt-4" : "min-h-[72px]"}`}
+          className={`grid w-full grid-cols-[34px_1fr_auto_auto] items-center gap-3 px-4 text-left transition-all duration-200 ${expanded ? "min-h-14 pt-3" : "min-h-[54px]"}`}
         >
           <span
             onClick={(event) => { event.stopPropagation(); setDetailsOpen((current) => !current); }}
-            className="grid h-10 w-10 place-items-center rounded-full text-xs font-medium text-white shadow-sm"
+            className="grid h-8 w-8 place-items-center rounded-full text-[11px] font-medium text-white shadow-sm"
             style={{ background: message.avatarColor ?? "#5B8DEF" }}
             title="Show sender details"
           >
@@ -1526,7 +1526,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
             <span className="flex min-w-0 items-baseline gap-2">
               <span
                 onClick={(event) => { event.stopPropagation(); setDetailsOpen((current) => !current); }}
-                className={`truncate font-semibold text-gray-950 ${expanded ? "text-[15px]" : "text-[14px]"}`}
+                className={`truncate font-semibold text-gray-950 ${expanded ? "text-[14px]" : "text-[13px]"}`}
                 title={message.fromAddress}
               >
                 {name}
@@ -1539,7 +1539,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
                   {toLabel}
                 </span>
               ) : (
-                <span className="min-w-0 truncate text-[15px] text-gray-800">{previewText.slice(0, 150)}</span>
+                <span className="min-w-0 truncate text-[13px] text-gray-800">{previewText.slice(0, 150)}</span>
               )}
             </span>
             {expanded && detailsOpen && (
@@ -1551,7 +1551,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
               </span>
             )}
           </span>
-          <span className="whitespace-nowrap text-[13px] text-gray-500">{fullTimeLabel(message.sentAt)}</span>
+          <span className="whitespace-nowrap text-xs text-gray-500">{fullTimeLabel(message.sentAt)}</span>
           <span className="flex items-center gap-1">
             {expanded && <span className="hidden rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase text-gray-500 md:inline-flex">Shared</span>}
             <span
@@ -1566,9 +1566,9 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
           </span>
         </button>
         {expanded && (
-          <div className="px-16 pb-7 pt-3">
+          <div className="px-14 pb-5 pt-2">
             {hasImages && !showImages && <button onClick={() => setShowImages(true)} className="mb-3 min-h-8 rounded-full bg-gray-100 px-3 text-xs text-gray-700">Show images</button>}
-            <div className="prose prose-sm max-w-none text-[15px] leading-8 text-gray-950" dangerouslySetInnerHTML={{ __html: renderedBody.bodyHtml }} />
+            <div className="prose prose-sm max-w-none text-[14px] leading-7 text-gray-950" dangerouslySetInnerHTML={{ __html: renderedBody.bodyHtml }} />
             {renderedBody.signatureHtml && (
               <div className="prose prose-sm mt-3 max-w-none text-xs italic text-gray-400" dangerouslySetInnerHTML={{ __html: renderedBody.signatureHtml }} />
             )}
