@@ -3505,6 +3505,30 @@
 
 ---
 
+# Email Modern Message Canvas - 2026-05-30
+
+## Scope
+- Frontend-only styling pass on the email thread reading canvas.
+
+## Changes
+- Removed date divider rows from the thread body.
+- Changed the message pane from white to a soft grey canvas so message cards separate more clearly.
+- Collapsed messages now use larger floating rounded cards with stronger shadow separation.
+- Expanded messages now use a stronger Spark-like card treatment:
+  - larger radius,
+  - deeper but soft shadow,
+  - larger avatar,
+  - more readable message body type and line-height.
+
+## Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend bundle copied to `/var/www/agent`.
+- PM2 process reloaded:
+  - `pm2 reload 0`
+
+---
+
 # Email Spark-Style Message Headers - 2026-05-30
 
 ## Scope
