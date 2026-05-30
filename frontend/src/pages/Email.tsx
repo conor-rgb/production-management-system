@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { PreviewPanel } from "../components/files/FileBrowser";
-import type { EmailAccount, EmailAttachmentSummary, EmailMessage, EmailThread, EmailThreadsResponse, JobFile, Production } from "../lib/types";
+import type { EmailAccount, EmailAttachmentSummary, EmailAutoCategory, EmailMessage, EmailThread, EmailThreadsResponse, JobFile, Production } from "../lib/types";
 import { formatBytes, JOB_FOLDERS } from "../lib/types";
 import { useDrafts, type Draft } from "../store/draftStore";
 
@@ -142,6 +142,15 @@ const autoFilters: Array<{ key: AutoFilter; label: string; icon: ReactNode }> = 
   { key: "promotions", label: "Promotions", icon: <Tags size={13} /> },
   { key: "newsletters", label: "Newsletters", icon: <NewspaperIcon /> },
   { key: "purchases", label: "Purchases", icon: <Receipt size={13} /> },
+];
+
+const moveCategoryOptions: Array<{ category: EmailAutoCategory | null; label: string }> = [
+  { category: "PEOPLE", label: "People" },
+  { category: "PROMOTIONS", label: "Promotions" },
+  { category: "NEWSLETTERS", label: "Newsletters" },
+  { category: "PURCHASES", label: "Purchases" },
+  { category: "UPDATES", label: "Updates" },
+  { category: null, label: "Use automatic" },
 ];
 
 function NewspaperIcon() {
@@ -595,6 +604,11 @@ export default function Email() {
                 setError(err instanceof Error ? err.message : "No unsubscribe option detected");
               }
             }}
+            onMoveCategory={async (category) => {
+              await api.patch(`/api/email/threads/${thread.id}/category`, { category });
+              await loadThread(thread.id, selectedMessageId);
+              await loadThreads();
+            }}
             onOpenPeople={() => setPeopleThread(thread)}
             onCreateOpportunity={() => setOpportunityThread(thread)}
             onLinked={async () => { await loadThread(thread.id, selectedMessageId); await loadThreads(); }}
@@ -738,7 +752,7 @@ function DraftRow({ draft, onClick }: { draft: Draft; onClick: () => void }) {
   );
 }
 
-function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onMarkUnread, onArchive, onUnsubscribe, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; focusedMessageId: string | null; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe: () => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
+function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onMarkUnread, onArchive, onUnsubscribe, onMoveCategory, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; focusedMessageId: string | null; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe: () => void; onMoveCategory: (category: EmailAutoCategory | null) => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
   const [expandedAttachments, setExpandedAttachments] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
@@ -817,6 +831,8 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
             onMarkUnread={onMarkUnread}
             onArchive={onArchive}
             onUnsubscribe={canTryUnsubscribe ? onUnsubscribe : undefined}
+            onMoveCategory={onMoveCategory}
+            currentCategory={thread.categoryOverride ?? thread.autoCategory}
             onStar={onFlag}
             starred={thread.isFlagged}
           />
@@ -860,7 +876,7 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
   );
 }
 
-function ThreadActionMenu({ onClose, onReply, onPeople, onOpportunity, onMarkUnread, onArchive, onUnsubscribe, onStar, starred }: { onClose: () => void; onReply: () => void; onPeople: () => void; onOpportunity: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe?: () => void; onStar: () => void; starred: boolean }) {
+function ThreadActionMenu({ onClose, onReply, onPeople, onOpportunity, onMarkUnread, onArchive, onUnsubscribe, onMoveCategory, currentCategory, onStar, starred }: { onClose: () => void; onReply: () => void; onPeople: () => void; onOpportunity: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe?: () => void; onMoveCategory: (category: EmailAutoCategory | null) => void; currentCategory: EmailAutoCategory; onStar: () => void; starred: boolean }) {
   const run = (handler: () => void) => {
     handler();
     onClose();
@@ -875,6 +891,19 @@ function ThreadActionMenu({ onClose, onReply, onPeople, onOpportunity, onMarkUnr
       <button type="button" onClick={() => run(onArchive)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Archive size={14} /> Archive</button>
       {onUnsubscribe && <button type="button" onClick={() => run(onUnsubscribe)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-amber-700 hover:bg-amber-50"><X size={14} /> Unsubscribe</button>}
       <button type="button" onClick={() => run(onStar)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Star size={14} className={starred ? "fill-amber-400 text-amber-400" : ""} /> {starred ? "Unstar" : "Star"}</button>
+      <div className="my-1 h-px bg-gray-100" />
+      <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400">Move to</div>
+      {moveCategoryOptions.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          onClick={() => run(() => onMoveCategory(item.category))}
+          className="flex min-h-8 w-full items-center justify-between px-3 text-left text-gray-700 hover:bg-gray-50"
+        >
+          <span>{item.label}</span>
+          {item.category && item.category === currentCategory && <span className="text-[10px] text-gray-400">current</span>}
+        </button>
+      ))}
     </div>
   );
 }

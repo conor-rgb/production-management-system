@@ -3638,3 +3638,51 @@
 1. Add manual category override per thread/sender if the automatic category still misses edge cases.
 2. Consider renaming Purchases to `Receipts` if the product language should be more precise.
 3. Add a small audit action in the category menu: "Move to People/Updates/Promotions".
+
+---
+
+# Email Manual Category Overrides - 2026-05-30
+
+## Scope
+- Added persistent thread-level category corrections for the email client.
+- This keeps the automatic classifier useful while allowing manual cleanup when an edge case lands in the wrong place.
+
+## Data Model
+- Added to `EmailThread`:
+  - `categoryOverride EmailAutoCategory?`
+  - `categoryOverrideAt DateTime?`
+- Migration applied:
+  - `20260530002000_email_category_overrides`
+
+## API
+- Added:
+  - `PATCH /api/email/threads/:threadId/category`
+- Body:
+  - `{ "category": "PEOPLE" | "PROMOTIONS" | "NEWSLETTERS" | "PURCHASES" | "UPDATES" | "SOCIAL" | "FORUMS" | "OTHER" | null }`
+- Passing `null` clears the override and returns the thread to automatic classification.
+- Thread list filtering now uses effective category:
+  - `categoryOverride` when present,
+  - otherwise `autoCategory`.
+
+## Frontend
+- The thread ellipsis menu now includes a `Move to` section:
+  - People,
+  - Promotions,
+  - Newsletters,
+  - Purchases,
+  - Updates,
+  - Use automatic.
+- Moving a thread immediately refetches the current thread and list so the row disappears from the old filtered category and appears in the new one.
+
+## Verification
+- Prisma migration deployed and client generated:
+  - `cd backend && npx prisma migrate deploy && npx prisma generate`
+- Backend build passed:
+  - `cd backend && npm run build`
+- Frontend build passed:
+  - `cd frontend && npm run build`
+
+## Next Steps
+1. Add sender/domain-level rules: "Always put this sender/domain in People/Promotions/etc."
+2. Add a small visible label in thread detail showing `Automatic: X` and `Moved to: Y` when an override exists.
+3. Add bulk selection actions in the thread list for moving many newsletters/promotions at once.

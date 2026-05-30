@@ -298,6 +298,8 @@ export interface EmailThread {
   isFlagged: boolean;
   isArchived: boolean;
   autoCategory: EmailAutoCategory;
+  categoryOverride?: EmailAutoCategory | null;
+  categoryOverrideAt?: string | null;
   gmailCategory?: string | null;
   unsubscribeUrl?: string | null;
   unsubscribeEmail?: string | null;

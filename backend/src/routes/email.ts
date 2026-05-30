@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { ContactSource, ContactType, EmailProvider, PmsJobType, Prisma } from "@prisma/client";
+import { ContactSource, ContactType, EmailAutoCategory, EmailProvider, PmsJobType, Prisma } from "@prisma/client";
 import prisma from "../prisma";
 import { encrypt } from "../services/encryptionService";
 import {
@@ -121,6 +121,16 @@ function emailCategoryQuery(value: unknown): "people" | "promotions" | "newslett
   if (typeof value !== "string") return undefined;
   if (["people", "promotions", "newsletters", "purchases", "updates", "social", "forums", "other", "all"].includes(value)) {
     return value as "people" | "promotions" | "newsletters" | "purchases" | "updates" | "social" | "forums" | "other" | "all";
+  }
+  return undefined;
+}
+
+function emailCategoryBody(value: unknown): EmailAutoCategory | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  const normalized = value.toUpperCase();
+  if (Object.values(EmailAutoCategory).includes(normalized as EmailAutoCategory)) {
+    return normalized as EmailAutoCategory;
   }
   return undefined;
 }
@@ -882,6 +892,31 @@ router.post("/threads/:threadId/unsubscribe", async (req: Request, res: Response
     method: "URL",
     url: current.unsubscribeUrl,
   });
+});
+
+router.patch("/threads/:threadId/category", async (req: Request, res: Response): Promise<void> => {
+  const category = emailCategoryBody((req.body as { category?: unknown }).category);
+  if (category === undefined) {
+    res.status(400).json({ error: "Valid category required" });
+    return;
+  }
+
+  const current = await prisma.emailThread.findUnique({ where: { id: req.params.threadId } });
+  if (!current) {
+    res.status(404).json({ error: "Thread not found" });
+    return;
+  }
+
+  const updated = await prisma.emailThread.update({
+    where: { id: current.id },
+    data: {
+      categoryOverride: category,
+      categoryOverrideAt: category ? new Date() : null,
+    },
+    include: emailThreadCrmInclude,
+  });
+  console.log(`[EMAIL] ${category ? `Moved thread ${current.id} to ${category}` : `Cleared category override for thread ${current.id}`}`);
+  res.json(updated);
 });
 
 router.patch("/threads/:threadId/link", async (req: Request, res: Response): Promise<void> => {

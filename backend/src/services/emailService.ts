@@ -1018,7 +1018,12 @@ export async function getThreads(options: ThreadListOptions) {
 
   const requestedCategory = options.category ? categoryMap[options.category] : null;
   if (requestedCategory) {
-    andFilters.push({ autoCategory: requestedCategory });
+    andFilters.push({
+      OR: [
+        { categoryOverride: requestedCategory },
+        { categoryOverride: null, autoCategory: requestedCategory },
+      ],
+    });
   }
 
   if (options.search) {

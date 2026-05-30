@@ -1608,6 +1608,8 @@ model EmailThread {
   isUnread            Boolean        @default(false)
   isTrashed           Boolean        @default(false)
   autoCategory        EmailAutoCategory @default(PEOPLE)
+  categoryOverride    EmailAutoCategory?
+  categoryOverrideAt  DateTime?
   gmailCategory       String?
   unsubscribeUrl      String?
   unsubscribeEmail    String?
@@ -1633,6 +1635,7 @@ model EmailThread {
   @@index([accountId, isStarred])
   @@index([accountId, isUnread])
   @@index([accountId, autoCategory])
+  @@index([accountId, categoryOverride])
   @@index([linkedContactId])
   @@index([linkedOpportunityId])
   @@index([linkedProductionId])
