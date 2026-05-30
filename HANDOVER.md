@@ -3505,6 +3505,33 @@
 
 ---
 
+# Email Outlook Quote Tightening - 2026-05-30
+
+## Scope
+- Frontend-only email rendering fix.
+- Tightened quoted-history detection for Outlook-style replies.
+
+## Changes
+- Plain-text quote splitting now recognises:
+  - `From/Sent/To` Outlook blocks,
+  - French Outlook headers: `De/Envoyé/À/Objet`,
+  - external sender warning blocks,
+  - `VIGILANCE:` warning blocks.
+- HTML quote stripping now:
+  - detects Outlook quote headers after `<hr>` separators,
+  - removes the quote header and all following quoted siblings,
+  - preserves the visible new reply above the quote,
+  - places hidden history behind the existing `Show previous message` control.
+
+## Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend bundle copied to `/var/www/agent`.
+- PM2 process reloaded:
+  - `pm2 reload 0`
+
+---
+
 # Email Client UX Tightening - 2026-05-30
 
 ## Scope

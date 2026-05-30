@@ -222,8 +222,10 @@ function splitPlainTextQuote(text: string): { visible: string; quoted: string; h
   const patterns = [
     /^On .+\n?.+wrote:$/m,
     /^-{3,}\s*Original Message\s*-{3,}/im,
-    /^From:\s.+\nSent:\s/im,
-    /^From:\s.+\nDate:\s/im,
+    /^From:\s.+\n(?:Sent|Date):\s/im,
+    /^De\s?:\s.+\n(?:Envoyé|Date)\s?:\s/im,
+    /^This Message is From an External Sender/im,
+    /^VIGILANCE\s?:/im,
     /^_{5,}$/m,
   ];
   let splitIndex = -1;
@@ -235,24 +237,59 @@ function splitPlainTextQuote(text: string): { visible: string; quoted: string; h
   return { visible: text.slice(0, splitIndex).trim(), quoted: text.slice(splitIndex), hasQuote: true };
 }
 
+function isOutlookQuoteHeader(text: string) {
+  const normalized = text.replace(/\u00a0/g, " ").trim();
+  return (
+    /^(From|De)\s?:\s+/i.test(normalized)
+    && /^(Sent|Envoyé|Date)\s?:\s+/im.test(normalized)
+    && /^(To|À)\s?:\s+/im.test(normalized)
+  ) || /^(This Message is From an External Sender|VIGILANCE\s?:)/i.test(normalized);
+}
+
 function hideQuotedContent(htmlString: string): { visible: string; quoted: string; hasQuote: boolean } {
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlString, "text/html");
 
-  const removeFromElement = (el: Element) => {
-    const quoted = el.parentElement?.innerHTML ?? el.outerHTML;
-    let sibling = el.nextSibling;
-    while (sibling) {
-      const next = sibling.nextSibling;
-      sibling.parentNode?.removeChild(sibling);
-      sibling = next;
+  const nodeHtml = (node: Node) => {
+    if (node instanceof Element) return node.outerHTML;
+    return node.textContent ?? "";
+  };
+
+  const removeFromNode = (node: Node) => {
+    const quotedParts: string[] = [];
+    let anchor: Node | null = node;
+    while (anchor?.parentNode && anchor.parentNode !== doc.body) {
+      let sibling = anchor.nextSibling;
+      while (sibling) {
+        const next = sibling.nextSibling;
+        quotedParts.push(nodeHtml(sibling));
+        sibling.parentNode?.removeChild(sibling);
+        sibling = next;
+      }
+      const parent: Node | null = anchor.parentNode;
+      quotedParts.unshift(nodeHtml(anchor));
+      anchor.parentNode?.removeChild(anchor);
+      anchor = parent;
     }
-    el.remove();
+
+    if (anchor?.parentNode === doc.body) {
+      let sibling = anchor.nextSibling;
+      while (sibling) {
+        const next = sibling.nextSibling;
+        quotedParts.push(nodeHtml(sibling));
+        sibling.parentNode?.removeChild(sibling);
+        sibling = next;
+      }
+      quotedParts.unshift(nodeHtml(anchor));
+      anchor.parentNode.removeChild(anchor);
+    }
+
+    const quoted = quotedParts.join("");
     return { visible: doc.body.innerHTML, quoted, hasQuote: true };
   };
 
   const gmailQuote = doc.querySelector(".gmail_quote, .gmail_extra");
-  if (gmailQuote) return removeFromElement(gmailQuote);
+  if (gmailQuote) return removeFromNode(gmailQuote);
 
   const blockquotes = doc.querySelectorAll("blockquote");
   if (blockquotes.length > 0) {
@@ -261,11 +298,22 @@ function hideQuotedContent(htmlString: string): { visible: string; quoted: strin
     return { visible: doc.body.innerHTML, quoted, hasQuote: true };
   }
 
-  const allElements = doc.querySelectorAll("div, p, td");
+  const horizontalRules = doc.querySelectorAll("hr");
+  for (const hr of horizontalRules) {
+    let probe = hr.nextSibling;
+    let probeText = "";
+    while (probe && probeText.length < 1200) {
+      probeText += ` ${probe.textContent ?? ""}`;
+      if (isOutlookQuoteHeader(probeText)) return removeFromNode(hr);
+      probe = probe.nextSibling;
+    }
+  }
+
+  const allElements = doc.querySelectorAll("div, p, td, table");
   for (const el of allElements) {
     const text = el.textContent ?? "";
-    if (/^From:\s/.test(text.trim()) && (/Sent:\s/.test(text) || /Date:\s/.test(text)) && /To:\s/.test(text)) {
-      return removeFromElement(el);
+    if (isOutlookQuoteHeader(text)) {
+      return removeFromNode(el);
     }
   }
 
