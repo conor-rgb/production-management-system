@@ -3574,6 +3574,30 @@
 
 ---
 
+# Email Outlook Quote Header Trim - 2026-05-30
+
+## Scope
+- Frontend-only quote rendering fix for email thread messages.
+
+## Problem
+- Some Outlook replies render quoted history as regular HTML text rather than `blockquote`, `.gmail_quote`, or a clean quote container.
+- These messages showed `From:`, `Date:`, `To:`, `Cc:`, and `Subject:` blocks directly in the visible message body.
+
+## Fix
+- Added a DOM text-node quote trimmer that scans rendered HTML text nodes for Outlook-style quote header blocks.
+- When a `From:` marker is followed by `Date`/`Sent` and recipient/subject headers nearby, the visible body is cut at that point.
+- The removed content is kept behind the existing `Show previous message` control instead of being displayed inline.
+
+## Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend deployed:
+  - `cp -r frontend/dist/* /var/www/agent/`
+- PM2 reloaded:
+  - `pm2 reload 0`
+
+---
+
 # Email Modern Message Canvas - 2026-05-30
 
 ## Scope

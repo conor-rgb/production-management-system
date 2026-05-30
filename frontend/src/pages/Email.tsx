@@ -337,6 +337,53 @@ function hideQuotedContent(htmlString: string): { visible: string; quoted: strin
   return { visible: doc.body.innerHTML, quoted: "", hasQuote: false };
 }
 
+function trimHtmlTextQuoteHeaders(htmlString: string): { visible: string; quoted: string; hasQuote: boolean } {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(htmlString, "text/html");
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  let current = walker.nextNode();
+
+  while (current) {
+    textNodes.push(current as Text);
+    current = walker.nextNode();
+  }
+
+  for (let index = 0; index < textNodes.length; index += 1) {
+    const node = textNodes[index];
+    const text = node.textContent ?? "";
+    const marker = text.search(/(^|[\r\n])\s*(From|De)\s?:\s*/i);
+    if (marker === -1) continue;
+
+    const nearbyText = textNodes
+      .slice(index, Math.min(index + 80, textNodes.length))
+      .map((item) => item.textContent ?? "")
+      .join("\n");
+
+    const looksLikeHeaderBlock =
+      /(^|[\r\n])\s*(Date|Sent|Envoyé)\s?:\s*/im.test(nearbyText)
+      && /(^|[\r\n])\s*(To|À|Cc|Subject|Objet)\s?:\s*/im.test(nearbyText);
+
+    if (!looksLikeHeaderBlock) continue;
+
+    const range = doc.createRange();
+    range.setStart(node, marker);
+    range.setEndAfter(doc.body.lastChild ?? node);
+    const fragment = range.cloneContents();
+    const container = doc.createElement("div");
+    container.appendChild(fragment);
+    range.deleteContents();
+
+    return {
+      visible: doc.body.innerHTML,
+      quoted: container.innerHTML,
+      hasQuote: true,
+    };
+  }
+
+  return { visible: htmlString, quoted: "", hasQuote: false };
+}
+
 function splitHtmlSignature(htmlString: string): { body: string; signature: string } {
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlString, "text/html");
@@ -1483,23 +1530,27 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
       return { bodyHtml: "", signatureHtml: "", quotedHtml: "", hasQuote: false };
     }
     const htmlQuote = message.bodyHtml ? hideQuotedContent(message.bodyHtml) : null;
-    const htmlSignature = message.bodyHtml ? splitHtmlSignature(htmlQuote?.visible ?? message.bodyHtml) : null;
+    const htmlTextQuote = message.bodyHtml ? trimHtmlTextQuoteHeaders(htmlQuote?.visible ?? message.bodyHtml) : null;
+    const htmlVisible = htmlTextQuote?.visible ?? htmlQuote?.visible ?? message.bodyHtml;
+    const htmlQuoted = [htmlQuote?.quoted, htmlTextQuote?.quoted].filter(Boolean).join("");
+    const htmlHasQuote = Boolean(htmlQuote?.hasQuote || htmlTextQuote?.hasQuote);
+    const htmlSignature = message.bodyHtml ? splitHtmlSignature(htmlVisible) : null;
     const plainQuote = message.bodyHtml ? null : splitPlainTextQuote(message.bodyText || "");
     const plainSignature = plainQuote ? splitPlainTextSignature(plainQuote.visible) : null;
     const bodyHtml = message.bodyHtml
-      ? sanitizeEmailHtml(htmlSignature?.body ?? htmlQuote?.visible ?? message.bodyHtml, showImages)
+      ? sanitizeEmailHtml(htmlSignature?.body ?? htmlVisible, showImages)
       : DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainSignature?.body ?? "")}</pre>`);
     const signatureHtml = message.bodyHtml
       ? sanitizeEmailHtml(htmlSignature?.signature ?? "", showImages)
       : plainSignature?.signature ? DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainSignature.signature)}</pre>`) : "";
     const quotedHtml = message.bodyHtml
-      ? sanitizeEmailHtml(htmlQuote?.quoted ?? "", showImages)
+      ? sanitizeEmailHtml(htmlQuoted, showImages)
       : plainQuote?.quoted ? DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainQuote.quoted)}</pre>`) : "";
     return {
       bodyHtml,
       signatureHtml,
       quotedHtml,
-      hasQuote: Boolean((htmlQuote?.hasQuote && quotedHtml) || plainQuote?.hasQuote),
+      hasQuote: Boolean((htmlHasQuote && quotedHtml) || plainQuote?.hasQuote),
     };
   }, [expanded, message.bodyHtml, message.bodyText, showImages]);
 
