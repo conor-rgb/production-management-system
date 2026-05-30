@@ -8,7 +8,22 @@ function contactDisplayName(contact?: { firstName: string; lastName: string | nu
 }
 
 function deriveThreadCategory(messages: ParsedGmailMessage[]): EmailAutoCategory {
+  const participantCount = new Set(messages.flatMap((message) => [
+    message.fromAddress,
+    ...message.toAddresses,
+    ...message.ccAddresses,
+  ]).filter(Boolean).map((email) => email.toLowerCase())).size;
+  const humanReplyCount = messages.filter((message) =>
+    !message.autoCategory || message.autoCategory === EmailAutoCategory.PEOPLE || message.isFromMe
+  ).length;
+
+  if (participantCount >= 3 && humanReplyCount >= 2) {
+    return EmailAutoCategory.PEOPLE;
+  }
+
   const categories = messages.map((message) => message.autoCategory);
+  const peopleCount = categories.filter((category) => category === EmailAutoCategory.PEOPLE).length;
+  if (peopleCount >= 2 && peopleCount >= categories.length / 2) return EmailAutoCategory.PEOPLE;
   if (categories.includes(EmailAutoCategory.PURCHASES)) return EmailAutoCategory.PURCHASES;
   if (categories.includes(EmailAutoCategory.PROMOTIONS)) return EmailAutoCategory.PROMOTIONS;
   if (categories.includes(EmailAutoCategory.NEWSLETTERS)) return EmailAutoCategory.NEWSLETTERS;

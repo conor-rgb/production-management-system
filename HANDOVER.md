@@ -3598,6 +3598,40 @@
 
 ---
 
+# Email Human Thread Category Guard - 2026-05-30
+
+## Scope
+- Backend email classification fix and one-time data cleanup.
+- No schema changes.
+
+## Problem
+- Gmail can label a message in a real project conversation as `CATEGORY_PROMOTIONS`.
+- Thread category derivation previously let one promotional message category make the whole thread `PROMOTIONS`.
+- Example: `GANNI - Drop 3 - Pre-Creative` appeared with a Promo pill despite being a human project thread.
+
+## Fix
+- Thread category derivation now treats multi-participant, multi-reply threads as `PEOPLE` before considering promo/newsletter/purchase labels.
+- If at least half of the visible messages are `PEOPLE`, the thread also resolves to `PEOPLE`.
+- Promotions still apply to actual promotional/newsletter style threads.
+
+## Data Cleanup
+- Reclassified existing non-overridden `PROMOTIONS` threads with at least 3 participants and at least 2 messages.
+- Result:
+  - `promoThreadsScanned`: 182
+  - `movedToPeople`: 8
+
+## Verification
+- Backend build passed:
+  - `cd backend && npm run build`
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend deployed:
+  - `cp -r frontend/dist/* /var/www/agent/`
+- PM2 reloaded:
+  - `pm2 reload 0`
+
+---
+
 # Email Modern Message Canvas - 2026-05-30
 
 ## Scope
