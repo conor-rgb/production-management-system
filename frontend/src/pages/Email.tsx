@@ -37,6 +37,13 @@ type SaveAttachmentState = {
   productionId?: string;
 };
 
+type UnsubscribeResult = {
+  success: boolean;
+  method?: "MAILTO" | "URL";
+  mailto?: string;
+  url?: string;
+};
+
 type LinkTargetsResponse = {
   opportunities?: Array<{ id: string; title: string; clientName?: string | null; brand?: string | null; stage: string; value?: string | null; company?: { id: string; name: string } | null }>;
   productions?: Array<{ id: string; title: string; jobCode?: string | null; clientName?: string | null; brand?: string | null; status: string }>;
@@ -271,6 +278,7 @@ export default function Email() {
   const [peopleThread, setPeopleThread] = useState<EmailThread | null>(null);
   const [opportunityThread, setOpportunityThread] = useState<EmailThread | null>(null);
   const [filingAttachment, setFilingAttachment] = useState("");
+  const [unsubscribeResult, setUnsubscribeResult] = useState<UnsubscribeResult | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -305,7 +313,8 @@ export default function Email() {
     }
   }
 
-  async function loadThread(id: string, messageId?: string | null) {
+  async function loadThread(id: string, messageId?: string | null, options: { keepUnsubscribeResult?: boolean } = {}) {
+    if (!options.keepUnsubscribeResult) setUnsubscribeResult(null);
     const params = new URLSearchParams({ limit: messageId ? "500" : "10" });
     if (messageId) params.set("message", messageId);
     const data = await api.get<EmailThread>(`/api/email/threads/${id}?${params.toString()}`);
@@ -595,10 +604,9 @@ export default function Email() {
             }}
             onUnsubscribe={async () => {
               try {
-                const result = await api.post<{ success: boolean; method?: "MAILTO" | "URL"; mailto?: string; url?: string }>(`/api/email/threads/${thread.id}/unsubscribe`, {});
-                if (result.mailto) window.location.href = result.mailto;
-                if (result.url) window.open(result.url, "_blank", "noopener,noreferrer");
-                await loadThread(thread.id, selectedMessageId);
+                const result = await api.post<UnsubscribeResult>(`/api/email/threads/${thread.id}/unsubscribe`, {});
+                setUnsubscribeResult(result);
+                await loadThread(thread.id, selectedMessageId, { keepUnsubscribeResult: true });
                 await loadThreads();
               } catch (err) {
                 setError(err instanceof Error ? err.message : "No unsubscribe option detected");
@@ -609,6 +617,8 @@ export default function Email() {
               await loadThread(thread.id, selectedMessageId);
               await loadThreads();
             }}
+            unsubscribeResult={unsubscribeResult}
+            onDismissUnsubscribeResult={() => setUnsubscribeResult(null)}
             onOpenPeople={() => setPeopleThread(thread)}
             onCreateOpportunity={() => setOpportunityThread(thread)}
             onLinked={async () => { await loadThread(thread.id, selectedMessageId); await loadThreads(); }}
@@ -752,7 +762,7 @@ function DraftRow({ draft, onClick }: { draft: Draft; onClick: () => void }) {
   );
 }
 
-function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onMarkUnread, onArchive, onUnsubscribe, onMoveCategory, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; focusedMessageId: string | null; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe: () => void; onMoveCategory: (category: EmailAutoCategory | null) => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
+function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder, unsubscribeResult, onDismissUnsubscribeResult, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onMarkUnread, onArchive, onUnsubscribe, onMoveCategory, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; focusedMessageId: string | null; filingAttachment: string; loadingOlder: boolean; unsubscribeResult: UnsubscribeResult | null; onDismissUnsubscribeResult: () => void; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe: () => void; onMoveCategory: (category: EmailAutoCategory | null) => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
   const [expandedAttachments, setExpandedAttachments] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
@@ -838,6 +848,9 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
           />
         )}
       </div>
+      {unsubscribeResult && (
+        <UnsubscribeNotice result={unsubscribeResult} onClose={onDismissUnsubscribeResult} />
+      )}
       <CrmSuggestionBanner thread={thread} onLinked={onLinked} />
       <div className="flex-1 overflow-auto bg-white p-2 pb-28 md:p-4">
         {thread.hasMoreOlder && (
@@ -873,6 +886,47 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
         </button>
       </div>
     </>
+  );
+}
+
+function UnsubscribeNotice({ result, onClose }: { result: UnsubscribeResult; onClose: () => void }) {
+  const copyTarget = result.mailto ?? result.url ?? "";
+  const label = result.success
+    ? "Unsubscribed successfully."
+    : result.method === "MAILTO"
+      ? "This sender only supports email unsubscribe. Nothing has been opened automatically."
+      : "This sender uses a web unsubscribe page. Open it only if you trust the sender.";
+
+  return (
+    <div className="mx-4 mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="font-medium">{label}</p>
+          {copyTarget && <p className="mt-1 truncate text-[11px] text-amber-700">{copyTarget}</p>}
+        </div>
+        {copyTarget && (
+          <button
+            type="button"
+            onClick={() => navigator.clipboard.writeText(copyTarget).catch(console.error)}
+            className="min-h-7 rounded bg-white px-2 text-[11px] font-medium text-amber-800 shadow-sm"
+          >
+            Copy
+          </button>
+        )}
+        {result.url && (
+          <button
+            type="button"
+            onClick={() => window.open(result.url, "_blank", "noopener,noreferrer")}
+            className="min-h-7 rounded bg-white px-2 text-[11px] font-medium text-amber-800 shadow-sm"
+          >
+            Open
+          </button>
+        )}
+        <button type="button" onClick={onClose} className="grid min-h-7 min-w-7 place-items-center rounded text-amber-700 hover:bg-amber-100">
+          <X size={13} />
+        </button>
+      </div>
+    </div>
   );
 }
 

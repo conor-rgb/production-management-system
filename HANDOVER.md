@@ -3686,3 +3686,25 @@
 1. Add sender/domain-level rules: "Always put this sender/domain in People/Promotions/etc."
 2. Add a small visible label in thread detail showing `Automatic: X` and `Moved to: Y` when an override exists.
 3. Add bulk selection actions in the thread list for moving many newsletters/promotions at once.
+
+---
+
+# Email Unsubscribe UX Guard - 2026-05-30
+
+## Scope
+- Frontend-only fix to stop mailto unsubscribe fallbacks from launching the local mail client automatically.
+
+## Problem
+- Some senders only expose a `mailto:` unsubscribe address in `List-Unsubscribe`.
+- The email client was assigning `window.location.href = mailto:...`, which opened Spark Mail with a draft to a strange unsubscribe address.
+
+## Fix
+- Clicking Unsubscribe now keeps the user in-app.
+- If the backend completes one-click unsubscribe, the thread shows a success notice.
+- If the sender only supports `mailto:`, the thread shows a small amber notice with the address and a `Copy` button.
+- If the sender exposes a web unsubscribe URL, the notice shows an explicit `Open` button.
+- Nothing launches Spark or another mail client automatically.
+
+## Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
