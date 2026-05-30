@@ -18,7 +18,7 @@ import {
   syncAccount,
 } from "../services/emailService";
 import { fullGmailSync, syncGmailDraftsForAccount } from "../services/gmailSyncService";
-import { archiveThread as gmailArchiveThread, markThreadRead, markThreadUnread, starThread, unarchiveThread as gmailUnarchiveThread, unstarThread } from "../services/gmailService";
+import { archiveThread as gmailArchiveThread, markThreadRead, markThreadUnread, oneClickUnsubscribe, starThread, unarchiveThread as gmailUnarchiveThread, unstarThread } from "../services/gmailService";
 
 const router = Router();
 
@@ -115,6 +115,14 @@ type AccountBody = {
 function boolQuery(value: unknown): boolean | undefined {
   if (value === undefined) return undefined;
   return value === "true" || value === "1";
+}
+
+function emailCategoryQuery(value: unknown): "people" | "promotions" | "newsletters" | "purchases" | "updates" | "social" | "forums" | "other" | "all" | undefined {
+  if (typeof value !== "string") return undefined;
+  if (["people", "promotions", "newsletters", "purchases", "updates", "social", "forums", "other", "all"].includes(value)) {
+    return value as "people" | "promotions" | "newsletters" | "purchases" | "updates" | "social" | "forums" | "other" | "all";
+  }
+  return undefined;
 }
 
 function intValue(value: unknown): number | undefined {
@@ -441,6 +449,7 @@ router.get("/threads", async (req: Request, res: Response): Promise<void> => {
     isFlagged: boolQuery(req.query.flagged),
     isArchived: boolQuery(req.query.archived),
     linkedTo: typeof req.query.linkedTo === "string" ? req.query.linkedTo : undefined,
+    category: emailCategoryQuery(req.query.category),
     search: typeof req.query.search === "string" ? req.query.search : undefined,
     page: intValue(req.query.page),
   });
@@ -818,6 +827,61 @@ router.post("/threads/:threadId/unarchive", async (req: Request, res: Response):
   if (current.account?.provider === EmailProvider.GOOGLE && current.gmailThreadId) await gmailUnarchiveThread(current.account, current.gmailThreadId);
   const thread = await prisma.emailThread.update({ where: { id: current.id }, data: { isArchived: false, inInbox: true } });
   res.json(thread);
+});
+
+router.post("/threads/:threadId/unsubscribe", async (req: Request, res: Response): Promise<void> => {
+  let current = await prisma.emailThread.findUnique({ where: { id: req.params.threadId }, include: { account: true } });
+  if (!current) {
+    res.status(404).json({ error: "Thread not found" });
+    return;
+  }
+  if (!current.unsubscribeUrl && !current.unsubscribeEmail && current.account?.provider === EmailProvider.GOOGLE && current.gmailThreadId) {
+    const { getGmailThread, parseGmailMessage } = await import("../services/gmailService");
+    const account = current.account;
+    const remoteThread = await getGmailThread(account, current.gmailThreadId);
+    const unsubscribeSource = remoteThread.messages
+      ?.map((message) => parseGmailMessage(message, account.emailAddress))
+      .find((message) => message.unsubscribeUrl || message.unsubscribeEmail);
+    if (unsubscribeSource) {
+      current = await prisma.emailThread.update({
+        where: { id: current.id },
+        data: {
+          unsubscribeUrl: unsubscribeSource.unsubscribeUrl,
+          unsubscribeEmail: unsubscribeSource.unsubscribeEmail,
+          unsubscribeMethod: unsubscribeSource.unsubscribeMethod,
+        },
+        include: { account: true },
+      });
+    }
+  }
+  if (!current.unsubscribeUrl && !current.unsubscribeEmail) {
+    res.status(400).json({ error: "No unsubscribe option detected" });
+    return;
+  }
+  if (current.unsubscribeMethod === "ONE_CLICK" && current.unsubscribeUrl) {
+    await oneClickUnsubscribe(current.unsubscribeUrl);
+    const updated = await prisma.emailThread.update({
+      where: { id: current.id },
+      data: { unsubscribedAt: new Date() },
+      include: emailThreadCrmInclude,
+    });
+    console.log(`[EMAIL] One-click unsubscribed thread ${current.id}`);
+    res.json({ success: true, thread: updated });
+    return;
+  }
+  if (current.unsubscribeEmail) {
+    res.json({
+      success: false,
+      method: "MAILTO",
+      mailto: `mailto:${current.unsubscribeEmail}?subject=Unsubscribe`,
+    });
+    return;
+  }
+  res.json({
+    success: false,
+    method: "URL",
+    url: current.unsubscribeUrl,
+  });
 });
 
 router.patch("/threads/:threadId/link", async (req: Request, res: Response): Promise<void> => {

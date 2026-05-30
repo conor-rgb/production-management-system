@@ -18,6 +18,8 @@ export type PurchaseOrderStatus = "DRAFT" | "SENT" | "ACCEPTED" | "PART_BILLED" 
 export type AdvanceCalcType = "PERCENT_OF_TOTAL" | "PERCENT_OF_PRODUCTION" | "FIXED_AMOUNT";
 export type ReceiptCaptureStatus = "PENDING" | "PARSING" | "PARSED" | "ASSIGNED" | "FAILED";
 export type EmailProvider = "GOOGLE" | "IMAP";
+export type EmailAutoCategory = "PEOPLE" | "PROMOTIONS" | "NEWSLETTERS" | "PURCHASES" | "UPDATES" | "SOCIAL" | "FORUMS" | "OTHER";
+export type EmailUnsubscribeMethod = "ONE_CLICK" | "MAILTO" | "URL";
 export type CalendarEventType = "SHOOT_DAY" | "PPM" | "RECCE" | "FITTING" | "MEETING" | "POST_DELIVERY" | "FOLLOW_UP" | "GOOGLE_SYNC" | "STANDALONE" | "OTHER";
 export type ProjectActionType = "TASK" | "DEADLINE" | "EVENT" | "MEETING" | "TRAVEL" | "SHOOT" | "REMINDER";
 export type ProjectActionStatus = "TODO" | "IN_PROGRESS" | "WAITING" | "DONE" | "BLOCKED" | "CANCELLED";
@@ -295,6 +297,12 @@ export interface EmailThread {
   isRead: boolean;
   isFlagged: boolean;
   isArchived: boolean;
+  autoCategory: EmailAutoCategory;
+  gmailCategory?: string | null;
+  unsubscribeUrl?: string | null;
+  unsubscribeEmail?: string | null;
+  unsubscribeMethod?: EmailUnsubscribeMethod | null;
+  unsubscribedAt?: string | null;
   linkedContactId?: string;
   linkedOpportunityId?: string;
   linkedProductionId?: string;

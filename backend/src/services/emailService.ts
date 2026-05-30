@@ -1,4 +1,4 @@
-import { EmailAccount, EmailProvider, Prisma } from "@prisma/client";
+import { EmailAccount, EmailAutoCategory, EmailProvider, Prisma } from "@prisma/client";
 import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 import { simpleParser, type AddressObject, type ParsedMail } from "mailparser";
@@ -72,6 +72,7 @@ export interface SendEmailOptions {
 export interface ThreadListOptions {
   accountId?: string;
   folder?: "inbox" | "sent" | "flagged" | "archived" | "starred" | "unread" | "all";
+  category?: "people" | "promotions" | "newsletters" | "purchases" | "updates" | "social" | "forums" | "other" | "all";
   isRead?: boolean;
   isFlagged?: boolean;
   isArchived?: boolean;
@@ -82,6 +83,18 @@ export interface ThreadListOptions {
   search?: string;
   page?: number;
 }
+
+const categoryMap: Record<NonNullable<ThreadListOptions["category"]>, EmailAutoCategory | null> = {
+  all: null,
+  people: EmailAutoCategory.PEOPLE,
+  promotions: EmailAutoCategory.PROMOTIONS,
+  newsletters: EmailAutoCategory.NEWSLETTERS,
+  purchases: EmailAutoCategory.PURCHASES,
+  updates: EmailAutoCategory.UPDATES,
+  social: EmailAutoCategory.SOCIAL,
+  forums: EmailAutoCategory.FORUMS,
+  other: EmailAutoCategory.OTHER,
+};
 
 type ThreadAttachmentSummary = {
   messageId: string;
@@ -1001,6 +1014,11 @@ export async function getThreads(options: ThreadListOptions) {
         { linkedProductionId: options.linkedTo },
       ],
     });
+  }
+
+  const requestedCategory = options.category ? categoryMap[options.category] : null;
+  if (requestedCategory) {
+    andFilters.push({ autoCategory: requestedCategory });
   }
 
   if (options.search) {

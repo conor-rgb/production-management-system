@@ -1,4 +1,4 @@
-import { EmailAccount } from "@prisma/client";
+import { EmailAccount, EmailAutoCategory, EmailUnsubscribeMethod } from "@prisma/client";
 import prisma from "../prisma";
 import { decrypt, encrypt } from "./encryptionService";
 
@@ -96,6 +96,11 @@ export type ParsedGmailMessage = {
   isFromMe: boolean;
   hasAttachments: boolean;
   isDraft: boolean;
+  autoCategory: EmailAutoCategory;
+  gmailCategory: string | null;
+  unsubscribeUrl: string | null;
+  unsubscribeEmail: string | null;
+  unsubscribeMethod: EmailUnsubscribeMethod | null;
   attachments: Array<{
     filename: string;
     mimeType: string;
@@ -273,6 +278,50 @@ function extractAttachments(payload?: GmailPayloadPart): ParsedGmailMessage["att
   return attachments;
 }
 
+function gmailCategoryFromLabels(labelIds: string[]): string | null {
+  return labelIds.find((label) => label.startsWith("CATEGORY_")) ?? null;
+}
+
+function firstUnsubscribeLink(header: string, scheme: "http" | "mailto"): string | null {
+  const matches = Array.from(header.matchAll(/<([^>]+)>/g)).map((match) => match[1] ?? "");
+  const rawParts = matches.length ? matches : header.split(",");
+  const found = rawParts.map((part) => part.trim()).find((part) => part.toLowerCase().startsWith(`${scheme}:`));
+  return found ?? null;
+}
+
+function unsubscribeMetadata(headers: GmailHeader[], bodyHtml: string): Pick<ParsedGmailMessage, "unsubscribeUrl" | "unsubscribeEmail" | "unsubscribeMethod"> {
+  const listUnsubscribe = getHeader(headers, "List-Unsubscribe");
+  const oneClick = /list-unsubscribe=one-click/i.test(getHeader(headers, "List-Unsubscribe-Post"));
+  const headerUrl = firstUnsubscribeLink(listUnsubscribe, "http");
+  const mailto = firstUnsubscribeLink(listUnsubscribe, "mailto");
+  const bodyMatch = bodyHtml.match(/href=["'](https?:\/\/[^"']*unsubscribe[^"']*)["']/i);
+  const unsubscribeUrl = headerUrl ?? bodyMatch?.[1] ?? null;
+  const unsubscribeEmail = mailto ? mailto.replace(/^mailto:/i, "").split("?")[0] ?? null : null;
+  const unsubscribeMethod = unsubscribeUrl
+    ? (oneClick ? EmailUnsubscribeMethod.ONE_CLICK : EmailUnsubscribeMethod.URL)
+    : unsubscribeEmail
+      ? EmailUnsubscribeMethod.MAILTO
+      : null;
+  return { unsubscribeUrl, unsubscribeEmail, unsubscribeMethod };
+}
+
+function classifyMessage(labelIds: string[], subject: string, fromAddress: string, bodyText: string, hasUnsubscribe: boolean): EmailAutoCategory {
+  const haystack = `${subject} ${fromAddress} ${bodyText.slice(0, 2000)}`.toLowerCase();
+  if (/\b(receipt|order|ordered|purchase|purchased|invoice|payment|paid|booking|reservation|shipping|delivered|delivery|tracking|transaction)\b/.test(haystack)) {
+    return EmailAutoCategory.PURCHASES;
+  }
+  if (labelIds.includes("CATEGORY_PROMOTIONS") || /\b(sale|discount|offer|promo|promotion|deal|limited time|shop now|save \d|% off)\b/.test(haystack)) {
+    return EmailAutoCategory.PROMOTIONS;
+  }
+  if (labelIds.includes("CATEGORY_SOCIAL")) return EmailAutoCategory.SOCIAL;
+  if (labelIds.includes("CATEGORY_FORUMS")) return EmailAutoCategory.FORUMS;
+  if (hasUnsubscribe || /\b(newsletter|digest|subscribe|unsubscribe|weekly update|roundup)\b/.test(haystack)) {
+    return EmailAutoCategory.NEWSLETTERS;
+  }
+  if (labelIds.includes("CATEGORY_UPDATES")) return EmailAutoCategory.UPDATES;
+  return EmailAutoCategory.PEOPLE;
+}
+
 export function parseGmailMessage(message: GmailMessage, accountEmail: string): ParsedGmailMessage {
   const headers = message.payload?.headers ?? [];
   const from = parseAddressHeader(getHeader(headers, "From"))[0] ?? { address: accountEmail.toLowerCase(), name: "" };
@@ -282,6 +331,9 @@ export function parseGmailMessage(message: GmailMessage, accountEmail: string): 
   const labelIds = message.labelIds ?? [];
   const body = extractBody(message.payload);
   const attachments = extractAttachments(message.payload);
+  const subject = getHeader(headers, "Subject") || "(no subject)";
+  const bodyText = body.text || body.html.replace(/<[^>]+>/g, " ");
+  const unsubscribe = unsubscribeMetadata(headers, body.html);
   return {
     gmailMessageId: message.id,
     gmailThreadId: message.threadId,
@@ -295,14 +347,17 @@ export function parseGmailMessage(message: GmailMessage, accountEmail: string): 
     toAddresses,
     ccAddresses,
     bccAddresses,
-    subject: getHeader(headers, "Subject") || "(no subject)",
+    subject,
     bodyHtml: body.html,
-    bodyText: body.text || body.html.replace(/<[^>]+>/g, " "),
+    bodyText,
     snippet: message.snippet ?? "",
     sentAt: new Date(Number(message.internalDate)),
     isFromMe: from.address === accountEmail.toLowerCase() || labelIds.includes("SENT"),
     hasAttachments: attachments.some((attachment) => !attachment.isInline),
     isDraft: labelIds.includes("DRAFT"),
+    autoCategory: classifyMessage(labelIds, subject, from.address, bodyText, Boolean(unsubscribe.unsubscribeUrl || unsubscribe.unsubscribeEmail)),
+    gmailCategory: gmailCategoryFromLabels(labelIds),
+    ...unsubscribe,
     attachments,
   };
 }
@@ -443,4 +498,16 @@ export async function deleteGmailMessage(account: EmailAccount, gmailMessageId: 
 
 export async function updateDraftGmailMessage(account: EmailAccount, gmailMessageId: string, rawBody: object): Promise<void> {
   await gmailPut(account, `messages/${gmailMessageId}`, rawBody);
+}
+
+export async function oneClickUnsubscribe(unsubscribeUrl: string): Promise<void> {
+  const response = await fetch(unsubscribeUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "List-Unsubscribe=One-Click",
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`One-click unsubscribe failed: ${response.status} ${body}`);
+  }
 }

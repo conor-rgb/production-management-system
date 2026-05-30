@@ -13,10 +13,12 @@ import {
   Paperclip,
   PencilLine,
   Plus,
+  Receipt,
   Reply,
   Search,
   Send,
   Star,
+  Tags,
   Users,
   X,
 } from "lucide-react";
@@ -28,6 +30,7 @@ import { useDrafts, type Draft } from "../store/draftStore";
 
 type Folder = "inbox" | "sent" | "drafts" | "starred" | "unread" | "archived";
 type Filter = "all" | "unread" | "flagged";
+type AutoFilter = "all" | "people" | "promotions" | "newsletters" | "purchases";
 
 type SaveAttachmentState = {
   attachment: EmailAttachmentSummary;
@@ -131,6 +134,18 @@ function folderTitle(folder: Folder) {
     archived: "Archive",
   };
   return labels[folder];
+}
+
+const autoFilters: Array<{ key: AutoFilter; label: string; icon: ReactNode }> = [
+  { key: "all", label: "All", icon: <Mail size={13} /> },
+  { key: "people", label: "People", icon: <Users size={13} /> },
+  { key: "promotions", label: "Promotions", icon: <Tags size={13} /> },
+  { key: "newsletters", label: "Newsletters", icon: <NewspaperIcon /> },
+  { key: "purchases", label: "Purchases", icon: <Receipt size={13} /> },
+];
+
+function NewspaperIcon() {
+  return <span className="text-[13px] leading-none">▤</span>;
 }
 
 function fileTone(mimeType: string) {
@@ -240,6 +255,7 @@ export default function Email() {
   const [activeAccountId, setActiveAccountId] = useState("");
   const [folder, setFolder] = useState<Folder>("inbox");
   const [filter, setFilter] = useState<Filter>("all");
+  const [autoFilter, setAutoFilter] = useState<AutoFilter>("all");
   const [search, setSearch] = useState("");
   const [saveAttachment, setSaveAttachment] = useState<SaveAttachmentState | null>(null);
   const [previewFile, setPreviewFile] = useState<JobFile | null>(null);
@@ -267,6 +283,7 @@ export default function Email() {
       const params = new URLSearchParams();
       if (activeAccountId) params.set("accountId", activeAccountId);
       params.set("folder", folder);
+      if (autoFilter !== "all") params.set("category", autoFilter);
       if (search) params.set("search", search);
       if (filter === "unread") params.set("unread", "true");
       if (filter === "flagged") params.set("flagged", "true");
@@ -351,7 +368,7 @@ export default function Email() {
       return;
     }
     loadThreads().catch(console.error);
-  }, [activeAccountId, folder, filter, refreshDrafts]);
+  }, [activeAccountId, folder, filter, autoFilter, refreshDrafts]);
   useEffect(() => {
     const timer = setTimeout(() => { loadThreads().catch(console.error); }, 250);
     return () => clearTimeout(timer);
@@ -489,10 +506,23 @@ export default function Email() {
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search email" className="h-full flex-1 border-0 bg-transparent text-xs outline-none" />
         </div>
         {folder !== "drafts" && (
-          <div className="flex gap-2 border-b border-gray-100 px-3 py-2">
-            {(["all", "unread", "flagged"] as Filter[]).map((item) => (
-              <button key={item} onClick={() => setFilter(item)} className={`min-h-7 rounded-full px-3 text-[11px] capitalize ${filter === item ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600"}`}>{item}</button>
-            ))}
+          <div className="border-b border-gray-100 px-3 py-2">
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {autoFilters.map((item) => (
+                <button
+                  key={item.key}
+                  onClick={() => setAutoFilter(item.key)}
+                  className={`inline-flex min-h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] ${autoFilter === item.key ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                >
+                  {item.icon}{item.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-1 flex gap-1.5">
+              {(["all", "unread", "flagged"] as Filter[]).map((item) => (
+                <button key={item} onClick={() => setFilter(item)} className={`min-h-6 rounded-full px-2.5 text-[10px] capitalize ${filter === item ? "bg-gray-800 text-white" : "text-gray-400 hover:bg-gray-100 hover:text-gray-700"}`}>{item}</button>
+              ))}
+            </div>
           </div>
         )}
         {error && <p className="p-3 text-sm text-red-600">{error}</p>}
@@ -553,6 +583,17 @@ export default function Email() {
               else await api.post(`/api/email/threads/${thread.id}/archive`, {});
               clearSelectedThread();
               await loadThreads();
+            }}
+            onUnsubscribe={async () => {
+              try {
+                const result = await api.post<{ success: boolean; method?: "MAILTO" | "URL"; mailto?: string; url?: string }>(`/api/email/threads/${thread.id}/unsubscribe`, {});
+                if (result.mailto) window.location.href = result.mailto;
+                if (result.url) window.open(result.url, "_blank", "noopener,noreferrer");
+                await loadThread(thread.id, selectedMessageId);
+                await loadThreads();
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "No unsubscribe option detected");
+              }
             }}
             onOpenPeople={() => setPeopleThread(thread)}
             onCreateOpportunity={() => setOpportunityThread(thread)}
@@ -697,7 +738,7 @@ function DraftRow({ draft, onClick }: { draft: Draft; onClick: () => void }) {
   );
 }
 
-function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onMarkUnread, onArchive, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; focusedMessageId: string | null; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onMarkUnread: () => void; onArchive: () => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
+function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onMarkUnread, onArchive, onUnsubscribe, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; focusedMessageId: string | null; filingAttachment: string; loadingOlder: boolean; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe: () => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
   const [expandedAttachments, setExpandedAttachments] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
@@ -710,6 +751,7 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
     return new Set(thread.messages.filter((message) => message.id === latestId || (!message.isFromMe && !thread.isRead)).map((message) => message.id));
   }, [thread.messages, latestId, thread.isRead, focusedMessageId]);
   const participantNames = thread.participantNames?.join(", ") || thread.participants.join(", ");
+  const canTryUnsubscribe = !thread.unsubscribedAt && (Boolean(thread.unsubscribeUrl || thread.unsubscribeEmail) || thread.autoCategory === "NEWSLETTERS" || thread.autoCategory === "PROMOTIONS");
 
   async function createActionFromMessage(message: EmailMessage) {
     setActionSavingId(message.id);
@@ -759,6 +801,9 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
         <button onClick={() => setLinkOpen((current) => !current)} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-100 px-3 text-[11px] text-gray-700 hover:bg-gray-200"><Link2 size={13} /> Link</button>
         <button onClick={onOpenPeople} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-100 px-3 text-[11px] text-gray-700 hover:bg-gray-200"><Users size={13} /> People</button>
         <button onClick={onCreateOpportunity} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-900 px-3 text-[11px] text-white"><Plus size={13} /> Opportunity</button>
+        {canTryUnsubscribe && (
+          <button onClick={onUnsubscribe} className="hidden min-h-8 items-center rounded-full bg-amber-50 px-3 text-[11px] font-medium text-amber-700 hover:bg-amber-100 md:inline-flex">Unsubscribe</button>
+        )}
         <button onClick={onArchive} className="hidden min-h-8 items-center rounded-full px-2 text-[11px] text-gray-500 hover:bg-gray-100 md:inline-flex">Archive</button>
         <button onClick={onFlag} className="grid min-h-8 min-w-8 place-items-center rounded-full text-gray-500 hover:bg-gray-100"><Star size={14} className={thread.isFlagged ? "fill-amber-400 text-amber-400" : ""} /></button>
         <button onClick={() => setActionMenuOpen((current) => !current)} className="grid min-h-8 min-w-8 place-items-center rounded-full text-gray-500 hover:bg-gray-100"><MoreHorizontal size={14} /></button>
@@ -771,6 +816,7 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
             onOpportunity={onCreateOpportunity}
             onMarkUnread={onMarkUnread}
             onArchive={onArchive}
+            onUnsubscribe={canTryUnsubscribe ? onUnsubscribe : undefined}
             onStar={onFlag}
             starred={thread.isFlagged}
           />
@@ -814,7 +860,7 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
   );
 }
 
-function ThreadActionMenu({ onClose, onReply, onPeople, onOpportunity, onMarkUnread, onArchive, onStar, starred }: { onClose: () => void; onReply: () => void; onPeople: () => void; onOpportunity: () => void; onMarkUnread: () => void; onArchive: () => void; onStar: () => void; starred: boolean }) {
+function ThreadActionMenu({ onClose, onReply, onPeople, onOpportunity, onMarkUnread, onArchive, onUnsubscribe, onStar, starred }: { onClose: () => void; onReply: () => void; onPeople: () => void; onOpportunity: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe?: () => void; onStar: () => void; starred: boolean }) {
   const run = (handler: () => void) => {
     handler();
     onClose();
@@ -827,6 +873,7 @@ function ThreadActionMenu({ onClose, onReply, onPeople, onOpportunity, onMarkUnr
       <div className="my-1 h-px bg-gray-100" />
       <button type="button" onClick={() => run(onMarkUnread)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Mail size={14} /> Mark unread</button>
       <button type="button" onClick={() => run(onArchive)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Archive size={14} /> Archive</button>
+      {onUnsubscribe && <button type="button" onClick={() => run(onUnsubscribe)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-amber-700 hover:bg-amber-50"><X size={14} /> Unsubscribe</button>}
       <button type="button" onClick={() => run(onStar)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Star size={14} className={starred ? "fill-amber-400 text-amber-400" : ""} /> {starred ? "Unstar" : "Star"}</button>
     </div>
   );

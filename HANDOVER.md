@@ -3520,3 +3520,76 @@
    - collapsed quoted sections,
    - cleaner sender chips,
    - message-level action menu for link-to-task/link-to-project actions.
+
+---
+
+# Email Automatic Categories + Unsubscribe - 2026-05-29
+
+## Scope
+- Added Apple Mail-style automatic email filters on top of the Gmail API sync data.
+- Added unsubscribe metadata capture and a one-click unsubscribe action where supported.
+- Gmail sync, local email listing, and the email client UI were updated; unrelated modules were not touched.
+
+## Data Model
+- Added `EmailAutoCategory` on threads:
+  - `PEOPLE`, `PROMOTIONS`, `NEWSLETTERS`, `PURCHASES`, `UPDATES`, `SOCIAL`, `FORUMS`, `OTHER`.
+- Added unsubscribe fields on threads:
+  - `unsubscribeUrl`,
+  - `unsubscribeEmail`,
+  - `unsubscribeMethod`,
+  - `unsubscribedAt`.
+- Migration applied:
+  - `20260530001000_email_auto_categories_unsubscribe`.
+
+## Sync / Classification
+- Gmail message parsing now reads:
+  - Gmail category labels,
+  - `List-Unsubscribe`,
+  - `List-Unsubscribe-Post`.
+- Thread category is derived automatically from labels and message signals:
+  - purchase/receipt/order language -> Purchases,
+  - Gmail promotions label or promo terms -> Promotions,
+  - unsubscribe/newsletter/digest signals -> Newsletters,
+  - otherwise People by default.
+- Existing local threads were backfilled into categories after the migration.
+
+## API
+- `GET /api/email/threads` now accepts `category`:
+  - `all`,
+  - `people`,
+  - `promotions`,
+  - `newsletters`,
+  - `purchases`,
+  - `updates`,
+  - `social`,
+  - `forums`,
+  - `other`.
+- Added `POST /api/email/threads/:threadId/unsubscribe`.
+  - Uses one-click POST if Gmail headers support it.
+  - Falls back to returning a `mailto:` unsubscribe target or hosted unsubscribe URL.
+  - If older synced rows do not have unsubscribe metadata, the route fetches the Gmail thread on demand and parses current headers before deciding.
+
+## Frontend
+- Email inbox now has automatic category pills:
+  - All,
+  - People,
+  - Promotions,
+  - Newsletters,
+  - Purchases.
+- Selecting a pill refetches threads with the matching category.
+- Thread header and ellipsis menu show `Unsubscribe` for newsletters/promotions or any thread with detected unsubscribe metadata.
+
+## Verification
+- Prisma migration deployed and client generated:
+  - `cd backend && npx prisma migrate deploy && npx prisma generate`
+- Existing thread category backfill completed.
+- Backend build passed:
+  - `cd backend && npm run build`
+- Frontend build passed:
+  - `cd frontend && npm run build`
+
+## Next Steps
+1. Add a scheduled classifier refresh for old threads whose Gmail labels change after initial sync.
+2. Add a small "why this category?" hover/debug label while tuning automatic filtering.
+3. Add user overrides: "Always treat this sender as Newsletter/People".
+4. Add bulk unsubscribe/report tools for newsletters and promotions once the single-thread action has been tested on real mail.

@@ -1607,6 +1607,12 @@ model EmailThread {
   isStarred           Boolean        @default(false)
   isUnread            Boolean        @default(false)
   isTrashed           Boolean        @default(false)
+  autoCategory        EmailAutoCategory @default(PEOPLE)
+  gmailCategory       String?
+  unsubscribeUrl      String?
+  unsubscribeEmail    String?
+  unsubscribeMethod   EmailUnsubscribeMethod?
+  unsubscribedAt      DateTime?
   linkedContactId     String?
   linkedContact       Contact?       @relation(fields: [linkedContactId], references: [id], onDelete: SetNull)
   linkedOpportunityId String?
@@ -1626,10 +1632,32 @@ model EmailThread {
   @@index([accountId, inSent, lastSentMessageAt])
   @@index([accountId, isStarred])
   @@index([accountId, isUnread])
+  @@index([accountId, autoCategory])
   @@index([linkedContactId])
   @@index([linkedOpportunityId])
   @@index([linkedProductionId])
   @@map("pms_email_threads")
+}
+
+enum EmailAutoCategory {
+  PEOPLE
+  PROMOTIONS
+  NEWSLETTERS
+  PURCHASES
+  UPDATES
+  SOCIAL
+  FORUMS
+  OTHER
+
+  @@map("pms_email_auto_category")
+}
+
+enum EmailUnsubscribeMethod {
+  ONE_CLICK
+  MAILTO
+  URL
+
+  @@map("pms_email_unsubscribe_method")
 }
 
 model ActivityNote {

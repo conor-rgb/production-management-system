@@ -1,10 +1,22 @@
-import { EmailAccount } from "@prisma/client";
+import { EmailAccount, EmailAutoCategory } from "@prisma/client";
 import prisma from "../prisma";
-import { getGmailDraft, getHistory, getGmailThread, listGmailDrafts, listThreads, parseGmailMessage } from "./gmailService";
+import { getGmailDraft, getHistory, getGmailThread, listGmailDrafts, listThreads, parseGmailMessage, type ParsedGmailMessage } from "./gmailService";
 
 function contactDisplayName(contact?: { firstName: string; lastName: string | null } | null): string | null {
   if (!contact) return null;
   return `${contact.firstName}${contact.lastName ? ` ${contact.lastName}` : ""}`;
+}
+
+function deriveThreadCategory(messages: ParsedGmailMessage[]): EmailAutoCategory {
+  const categories = messages.map((message) => message.autoCategory);
+  if (categories.includes(EmailAutoCategory.PURCHASES)) return EmailAutoCategory.PURCHASES;
+  if (categories.includes(EmailAutoCategory.PROMOTIONS)) return EmailAutoCategory.PROMOTIONS;
+  if (categories.includes(EmailAutoCategory.NEWSLETTERS)) return EmailAutoCategory.NEWSLETTERS;
+  if (categories.includes(EmailAutoCategory.SOCIAL)) return EmailAutoCategory.SOCIAL;
+  if (categories.includes(EmailAutoCategory.FORUMS)) return EmailAutoCategory.FORUMS;
+  if (categories.includes(EmailAutoCategory.UPDATES)) return EmailAutoCategory.UPDATES;
+  if (categories.includes(EmailAutoCategory.PEOPLE)) return EmailAutoCategory.PEOPLE;
+  return EmailAutoCategory.OTHER;
 }
 
 export async function fullGmailSync(account: EmailAccount): Promise<void> {
@@ -100,6 +112,9 @@ export async function syncThread(account: EmailAccount, gmailThreadId: string): 
   const lastSentMessageAt = sentMessages.length ? new Date(Math.max(...sentMessages.map((message) => message.sentAt.getTime()))) : null;
   const subject = visibleMessages[0]?.subject ?? "(no subject)";
   const snippet = visibleMessages[visibleMessages.length - 1]?.snippet ?? "";
+  const autoCategory = deriveThreadCategory(visibleMessages);
+  const gmailCategory = visibleMessages.find((message) => message.gmailCategory)?.gmailCategory ?? null;
+  const unsubscribeSource = visibleMessages.find((message) => message.unsubscribeUrl || message.unsubscribeEmail);
 
   const thread = await prisma.emailThread.upsert({
     where: {
@@ -120,6 +135,11 @@ export async function syncThread(account: EmailAccount, gmailThreadId: string): 
       isFlagged: isStarred,
       isArchived,
       isTrashed,
+      autoCategory,
+      gmailCategory,
+      unsubscribeUrl: unsubscribeSource?.unsubscribeUrl ?? null,
+      unsubscribeEmail: unsubscribeSource?.unsubscribeEmail ?? null,
+      unsubscribeMethod: unsubscribeSource?.unsubscribeMethod ?? null,
       participants,
       participantNames,
       lastMessageAt,
@@ -141,6 +161,11 @@ export async function syncThread(account: EmailAccount, gmailThreadId: string): 
       isFlagged: isStarred,
       isArchived,
       isTrashed,
+      autoCategory,
+      gmailCategory,
+      unsubscribeUrl: unsubscribeSource?.unsubscribeUrl ?? null,
+      unsubscribeEmail: unsubscribeSource?.unsubscribeEmail ?? null,
+      unsubscribeMethod: unsubscribeSource?.unsubscribeMethod ?? null,
       participants,
       participantNames,
       lastMessageAt,
