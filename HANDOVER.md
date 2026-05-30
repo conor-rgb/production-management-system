@@ -3505,6 +3505,35 @@
 
 ---
 
+# Email Spark-Style Message Headers - 2026-05-30
+
+## Scope
+- Frontend-only email reading interaction pass.
+
+## Changes
+- Message header click now toggles collapsed/expanded state for every message.
+- Clicking the sender avatar or sender name now expands a detailed header instead of collapsing the message.
+- Detailed header shows:
+  - from address,
+  - to recipients,
+  - cc recipients,
+  - bcc recipients when available.
+- Collapsed messages now read more like Spark rows:
+  - avatar,
+  - sender,
+  - inline preview,
+  - timestamp.
+- Expanded messages now have a stronger card treatment and slightly larger body typography.
+
+## Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend bundle copied to `/var/www/agent`.
+- PM2 process reloaded:
+  - `pm2 reload 0`
+
+---
+
 # Email Outlook Quote Tightening - 2026-05-30
 
 ## Scope

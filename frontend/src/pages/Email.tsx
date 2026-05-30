@@ -142,6 +142,14 @@ function contactName(contact?: { firstName?: string; lastName?: string | null } 
   return `${contact.firstName ?? ""}${contact.lastName ? ` ${contact.lastName}` : ""}`.trim();
 }
 
+function compactAddress(address: string) {
+  return address.replace(/^"?([^"<]*)"?\s*<([^>]*)>$/, "$1").trim() || address;
+}
+
+function addressLine(addresses: string[]) {
+  return addresses.map(compactAddress).filter(Boolean).join(", ");
+}
+
 function folderTitle(folder: Folder) {
   const labels: Record<Folder, string> = {
     inbox: "Inbox",
@@ -968,7 +976,6 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
                 message={message}
                 filingAttachment={filingAttachment}
                 onOpenAttachment={onOpenAttachment}
-                latest={message.id === latestId}
                 defaultExpanded={defaultExpanded.has(message.id)}
                 focused={focusedMessageId === message.id}
                 showNewDivider={index > 0 && !message.isFromMe && !thread.isRead}
@@ -1441,13 +1448,17 @@ function AttachmentChip({ attachment, filing, onOpen }: { attachment: EmailAttac
   );
 }
 
-function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, defaultExpanded, focused, showNewDivider, onCreateAction, creatingAction }: { message: EmailMessage; filingAttachment: string; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; latest: boolean; defaultExpanded: boolean; focused: boolean; showNewDivider: boolean; onCreateAction: () => void; creatingAction: boolean }) {
+function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpanded, focused, showNewDivider, onCreateAction, creatingAction }: { message: EmailMessage; filingAttachment: string; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; defaultExpanded: boolean; focused: boolean; showNewDivider: boolean; onCreateAction: () => void; creatingAction: boolean }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const articleRef = useRef<HTMLElement | null>(null);
   const [showImages, setShowImages] = useState(false);
   const [showQuoted, setShowQuoted] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const name = message.resolvedFromName || message.fromName || message.fromAddress;
-  const toLabel = message.isFromMe ? `to ${message.toAddresses[0] ?? "recipient"}` : "to me";
+  const primaryTo = message.isFromMe ? compactAddress(message.toAddresses[0] ?? "recipient") : "me";
+  const recipientCount = message.toAddresses.length + message.ccAddresses.length + message.bccAddresses.length;
+  const toLabel = `to ${primaryTo}${recipientCount > 1 ? ` +${recipientCount - 1}` : ""}`;
+  const previewText = (message.bodyText || "").replace(/\s+/g, " ").trim();
   const hasImages = expanded && /<img[\s>]/i.test(message.bodyHtml);
   const renderedBody = useMemo(() => {
     if (!expanded) {
@@ -1495,21 +1506,51 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, def
           <span className="h-px flex-1 bg-gray-200" />
         </div>
       )}
-      <article ref={articleRef} className={`group mb-2 overflow-hidden rounded-xl border border-gray-100 transition-shadow hover:shadow-sm ${focused ? "relative z-[1] ring-2 ring-blue-200" : ""} ${message.isFromMe ? "bg-[#fafaf8]" : "bg-white"}`}>
+      <article ref={articleRef} className={`group mb-3 overflow-hidden transition-all ${expanded ? "rounded-2xl border border-gray-200 bg-white shadow-sm" : "rounded-xl border border-gray-100 bg-white shadow-[0_1px_5px_rgba(0,0,0,0.04)] hover:shadow-sm"} ${focused ? "relative z-[1] ring-2 ring-blue-200" : ""}`}>
         <button
-          onClick={() => !latest && setExpanded((current) => !current)}
-          className="grid min-h-11 w-full grid-cols-[34px_1fr_auto_auto] items-center gap-2 px-3 text-left transition-all duration-200"
+          onClick={() => setExpanded((current) => !current)}
+          className={`grid w-full grid-cols-[38px_1fr_auto_auto] items-center gap-3 px-4 text-left transition-all duration-200 ${expanded ? "min-h-14 pt-3" : "min-h-14"}`}
         >
-          <span className="grid h-7 w-7 place-items-center rounded-full text-[10px] font-medium text-white" style={{ background: message.avatarColor ?? "#5B8DEF" }}>{initials(name)}</span>
+          <span
+            onClick={(event) => { event.stopPropagation(); setDetailsOpen((current) => !current); }}
+            className="grid h-9 w-9 place-items-center rounded-full text-[11px] font-medium text-white"
+            style={{ background: message.avatarColor ?? "#5B8DEF" }}
+            title="Show sender details"
+          >
+            {initials(name)}
+          </span>
           <span className="min-w-0">
             <span className="flex min-w-0 items-baseline gap-2">
-              <span className="truncate text-[13px] font-medium text-gray-900">{name}</span>
-              <span className="shrink-0 text-xs text-gray-500">{toLabel}</span>
+              <span
+                onClick={(event) => { event.stopPropagation(); setDetailsOpen((current) => !current); }}
+                className={`truncate font-semibold text-gray-950 ${expanded ? "text-[14px]" : "text-[13px]"}`}
+                title={message.fromAddress}
+              >
+                {name}
+              </span>
+              {expanded ? (
+                <span
+                  onClick={(event) => { event.stopPropagation(); setDetailsOpen((current) => !current); }}
+                  className="min-w-0 truncate text-xs text-blue-600"
+                >
+                  {toLabel}
+                </span>
+              ) : (
+                <span className="min-w-0 truncate text-[13px] text-gray-700">{previewText.slice(0, 140)}</span>
+              )}
             </span>
-            {!expanded && <span className="block truncate text-xs text-gray-500">{(message.bodyText || "").slice(0, 110)}</span>}
+            {expanded && detailsOpen && (
+              <span className="mt-1 block space-y-1 text-xs text-gray-500">
+                <span className="block"><span className="mr-2 text-gray-400">from</span><span className="text-blue-600">{name} &lt;{message.fromAddress}&gt;</span></span>
+                {message.toAddresses.length > 0 && <span className="block"><span className="mr-2 text-gray-400">to</span><span className="text-blue-600">{addressLine(message.toAddresses)}</span></span>}
+                {message.ccAddresses.length > 0 && <span className="block"><span className="mr-2 text-gray-400">cc</span><span className="text-blue-600">{addressLine(message.ccAddresses)}</span></span>}
+                {message.bccAddresses.length > 0 && <span className="block"><span className="mr-2 text-gray-400">bcc</span><span className="text-blue-600">{addressLine(message.bccAddresses)}</span></span>}
+              </span>
+            )}
           </span>
-          <span className="text-xs text-gray-400">{fullTimeLabel(message.sentAt)}</span>
+          <span className="whitespace-nowrap text-xs text-gray-400">{fullTimeLabel(message.sentAt)}</span>
           <span className="flex items-center gap-1">
+            {expanded && <span className="hidden rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase text-gray-500 md:inline-flex">Shared</span>}
             <span
               onClick={(event) => { event.stopPropagation(); onCreateAction(); }}
               className="hidden items-center gap-1 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-gray-500 shadow-sm ring-1 ring-gray-200 hover:text-gray-900 group-hover:inline-flex"
@@ -1522,9 +1563,9 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, latest, def
           </span>
         </button>
         {expanded && (
-          <div className="px-14 pb-4">
-            {hasImages && !showImages && <button onClick={() => setShowImages(true)} className="mb-3 min-h-9 rounded bg-gray-100 px-3 text-xs text-gray-700">Show images</button>}
-            <div className="prose prose-sm max-w-none text-[13px] leading-6 text-gray-800" dangerouslySetInnerHTML={{ __html: renderedBody.bodyHtml }} />
+          <div className="px-16 pb-5 pt-2">
+            {hasImages && !showImages && <button onClick={() => setShowImages(true)} className="mb-3 min-h-8 rounded-full bg-gray-100 px-3 text-xs text-gray-700">Show images</button>}
+            <div className="prose prose-sm max-w-none text-[14px] leading-7 text-gray-900" dangerouslySetInnerHTML={{ __html: renderedBody.bodyHtml }} />
             {renderedBody.signatureHtml && (
               <div className="prose prose-sm mt-3 max-w-none text-xs italic text-gray-400" dangerouslySetInnerHTML={{ __html: renderedBody.signatureHtml }} />
             )}
