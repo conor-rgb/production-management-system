@@ -140,6 +140,13 @@ function addressLine(addresses: string[]) {
   return addresses.map(compactAddress).filter(Boolean).join(", ");
 }
 
+function participantSummary(names: string[], addresses: string[]) {
+  const source = names.length ? names : addresses;
+  const primary = source[0] ?? "No participants";
+  const extraCount = Math.max(source.length - 1, 0);
+  return extraCount > 0 ? `${primary} + ${extraCount}` : primary;
+}
+
 function folderTitle(folder: Folder) {
   const labels: Record<Folder, string> = {
     inbox: "Inbox",
@@ -863,12 +870,14 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
   const [actionSavingId, setActionSavingId] = useState<string | null>(null);
   const attachments = thread.attachments ?? [];
   const visibleAttachments = expandedAttachments ? attachments : attachments.slice(0, 3);
+  const attachmentSize = attachments.reduce((sum, attachment) => sum + attachment.sizeBytes, 0);
   const latestId = thread.messages[thread.messages.length - 1]?.id;
   const defaultExpanded = useMemo(() => {
     if (focusedMessageId) return new Set([focusedMessageId]);
     return new Set(thread.messages.filter((message) => message.id === latestId || (!message.isFromMe && !thread.isRead)).map((message) => message.id));
   }, [thread.messages, latestId, thread.isRead, focusedMessageId]);
-  const participantNames = thread.participantNames?.join(", ") || thread.participants.join(", ");
+  const participantLabel = participantSummary(thread.participantNames ?? [], thread.participants);
+  const participantTitle = (thread.participantNames?.length ? thread.participantNames : thread.participants).join(", ");
   const canTryUnsubscribe = !thread.unsubscribedAt && (Boolean(thread.unsubscribeUrl || thread.unsubscribeEmail) || thread.autoCategory === "NEWSLETTERS" || thread.autoCategory === "PROMOTIONS");
 
   async function createActionFromMessage(message: EmailMessage) {
@@ -896,29 +905,46 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
           <button onClick={onArchive} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><Archive size={17} /></button>
           <button onClick={() => setActionMenuOpen((current) => !current)} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><MoreHorizontal size={16} /></button>
         </div>
-        <p className="truncate text-xs text-gray-500">{participantNames}</p>
+        <button
+          type="button"
+          onClick={onOpenPeople}
+          title={participantTitle}
+          className="block max-w-full truncate text-left text-xs text-gray-500 hover:text-gray-900"
+        >
+          {participantLabel}
+        </button>
         <LinkedRecordPills thread={thread} onLinked={onLinked} />
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button onClick={() => setLinkOpen((current) => !current)} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-100 px-3 text-[11px] text-gray-700 hover:bg-gray-200"><Link2 size={13} /> Link</button>
           <button onClick={onOpenPeople} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-100 px-3 text-[11px] text-gray-700 hover:bg-gray-200"><Users size={13} /> People</button>
-          <button onClick={onCreateOpportunity} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-gray-900 px-3 text-[11px] text-white"><Plus size={13} /> Opportunity</button>
           <button onClick={onOpenReply} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-[#1a1a1f] px-3 text-[11px] text-white"><Reply size={13} /> Reply</button>
           {canTryUnsubscribe && (
             <button onClick={onUnsubscribe} className="inline-flex min-h-8 items-center rounded-full bg-amber-50 px-3 text-[11px] font-medium text-amber-700 hover:bg-amber-100">Unsubscribe</button>
           )}
         </div>
         {attachments.length > 0 && (
-          <div className="mt-2 hidden flex-wrap gap-2 md:flex">
-            {visibleAttachments.map((attachment) => (
-              <AttachmentChip
-                key={`${attachment.messageId}-${attachment.attachmentIndex}`}
-                attachment={attachment}
-                filing={filingAttachment === `${attachment.messageId}-${attachment.attachmentIndex}`}
-                onOpen={onOpenAttachment}
-              />
-            ))}
-            {attachments.length > 3 && !expandedAttachments && (
-              <button onClick={() => setExpandedAttachments(true)} className="min-h-8 rounded bg-[#f0f0ee] px-2 text-xs text-gray-600">+ {attachments.length - 3} more</button>
+          <div className="mt-2 hidden md:block">
+            <button
+              type="button"
+              onClick={() => setExpandedAttachments((current) => !current)}
+              className="inline-flex min-h-8 items-center gap-2 rounded-full bg-[#f0f0ee] px-3 text-xs text-gray-600 hover:bg-gray-200"
+            >
+              <Paperclip size={13} className="text-blue-600" />
+              {attachments.length} attachment{attachments.length === 1 ? "" : "s"}
+              <span className="text-gray-400">{formatBytes(attachmentSize)}</span>
+              <ChevronDown size={13} className={`text-gray-400 transition-transform ${expandedAttachments ? "rotate-180" : ""}`} />
+            </button>
+            {expandedAttachments && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {visibleAttachments.map((attachment) => (
+                  <AttachmentChip
+                    key={`${attachment.messageId}-${attachment.attachmentIndex}`}
+                    attachment={attachment}
+                    filing={filingAttachment === `${attachment.messageId}-${attachment.attachmentIndex}`}
+                    onOpen={onOpenAttachment}
+                  />
+                ))}
+              </div>
             )}
           </div>
         )}

@@ -3505,6 +3505,30 @@
 
 ---
 
+# Email Thread Header Simplification - 2026-05-30
+
+## Scope
+- Frontend-only refinement to the email thread detail header.
+- Gmail sync, CRM linking, draft sync, and backend routes were not changed.
+
+## Changes
+- Participant lists in the thread header now collapse to a compact `Name + N` label.
+- Clicking the participant label opens the People panel; the full participant list remains available as a tooltip.
+- The visible thread actions were tightened to Link, People, Reply, optional Unsubscribe, and the overflow menu.
+- Create Opportunity remains available from the overflow menu instead of occupying the primary action row.
+- Attachments now render as one summary pill with total count and size.
+- Clicking the attachment summary expands the individual attachment chips inline.
+
+## Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend deployed:
+  - `cp -r frontend/dist/* /var/www/agent/`
+- PM2 reloaded:
+  - `pm2 reload 0`
+
+---
+
 # Email Modern Message Canvas - 2026-05-30
 
 ## Scope
