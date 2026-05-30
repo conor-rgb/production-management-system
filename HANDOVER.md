@@ -3551,6 +3551,29 @@
 
 ---
 
+# Email Message Rendering Polish - 2026-05-30
+
+## Scope
+- Frontend-only pass on how individual email messages render inside a thread.
+- No Gmail sync, CRM, composer, or backend changes.
+
+## Changes
+- Collapsed previews now strip noisy `mailto:` fragments, quoted header labels, and external-warning boilerplate before rendering.
+- Sanitized email HTML now removes inline font/size/color/width/height attributes so Outlook/Gmail formatting cannot dominate the app layout.
+- Expanded message body content now aligns under the sender area in a Spark-like text column.
+- Expanded message cards keep readable spacing while using app-controlled typography, link styling, and table constraints.
+- Collapsed and expanded card states were tuned separately so thread scanning remains compact but open messages still feel clear.
+
+## Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend deployed:
+  - `cp -r frontend/dist/* /var/www/agent/`
+- PM2 reloaded:
+  - `pm2 reload 0`
+
+---
+
 # Email Modern Message Canvas - 2026-05-30
 
 ## Scope

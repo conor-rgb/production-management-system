@@ -242,6 +242,18 @@ function splitPlainTextQuote(text: string): { visible: string; quoted: string; h
   return { visible: text.slice(0, splitIndex).trim(), quoted: text.slice(splitIndex), hasQuote: true };
 }
 
+function cleanEmailPreview(text: string) {
+  const quoteSplit = splitPlainTextQuote(text || "");
+  return quoteSplit.visible
+    .replace(/<mailto:[^>]+>/gi, "")
+    .replace(/\bmailto:[^\s)>,]+/gi, "")
+    .replace(/\[[^\]]*cid:[^\]]+\]/gi, "")
+    .replace(/\b(From|Sent|Date|To|Cc|Subject|De|Envoyé|À|Objet)\s?:\s?.*$/gim, "")
+    .replace(/\b(This Message is From an External Sender|Caution:|VIGILANCE\s?:).*$/gim, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function isOutlookQuoteHeader(text: string) {
   const normalized = text.replace(/\u00a0/g, " ").trim();
   return (
@@ -346,7 +358,10 @@ function splitHtmlSignature(htmlString: string): { body: string; signature: stri
 }
 
 function sanitizeEmailHtml(html: string, showImages: boolean) {
-  return DOMPurify.sanitize(html, showImages ? undefined : { FORBID_TAGS: ["img"] });
+  return DOMPurify.sanitize(html, {
+    FORBID_ATTR: ["style", "width", "height", "face", "size", "color"],
+    ...(showImages ? {} : { FORBID_TAGS: ["img"] }),
+  });
 }
 
 function escapeHtml(text: string) {
@@ -1461,7 +1476,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
   const primaryTo = message.isFromMe ? compactAddress(message.toAddresses[0] ?? "recipient") : "me";
   const recipientCount = message.toAddresses.length + message.ccAddresses.length + message.bccAddresses.length;
   const toLabel = `to ${primaryTo}${recipientCount > 1 ? ` +${recipientCount - 1}` : ""}`;
-  const previewText = (message.bodyText || "").replace(/\s+/g, " ").trim();
+  const previewText = cleanEmailPreview(message.bodyText || "");
   const hasImages = expanded && /<img[\s>]/i.test(message.bodyHtml);
   const renderedBody = useMemo(() => {
     if (!expanded) {
@@ -1509,10 +1524,10 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
           <span className="h-px flex-1 bg-gray-200" />
         </div>
       )}
-      <article ref={articleRef} className={`group mb-2.5 overflow-hidden bg-white transition-all ${expanded ? "rounded-[18px] border border-gray-200 shadow-[0_8px_24px_rgba(15,23,42,0.07),0_1px_2px_rgba(15,23,42,0.05)]" : "rounded-[14px] border border-gray-200/80 shadow-[0_3px_10px_rgba(15,23,42,0.045),0_1px_2px_rgba(15,23,42,0.035)] hover:shadow-[0_6px_16px_rgba(15,23,42,0.06)]"} ${focused ? "relative z-[1] ring-2 ring-blue-200" : ""}`}>
+      <article ref={articleRef} className={`group mb-3 overflow-hidden bg-white transition-all ${expanded ? "rounded-[20px] border border-gray-200 shadow-[0_10px_28px_rgba(15,23,42,0.075),0_1px_2px_rgba(15,23,42,0.05)]" : "rounded-[15px] border border-gray-200/80 shadow-[0_3px_10px_rgba(15,23,42,0.045),0_1px_2px_rgba(15,23,42,0.035)] hover:shadow-[0_6px_16px_rgba(15,23,42,0.06)]"} ${focused ? "relative z-[1] ring-2 ring-blue-200" : ""}`}>
         <button
           onClick={() => setExpanded((current) => !current)}
-          className={`grid w-full grid-cols-[34px_1fr_auto_auto] items-center gap-3 px-4 text-left transition-all duration-200 ${expanded ? "min-h-14 pt-3" : "min-h-[54px]"}`}
+          className={`grid w-full grid-cols-[36px_1fr_auto_auto] items-center gap-3 text-left transition-all duration-200 ${expanded ? "px-5 pt-4" : "min-h-[54px] px-4"}`}
         >
           <span
             onClick={(event) => { event.stopPropagation(); setDetailsOpen((current) => !current); }}
@@ -1522,7 +1537,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
           >
             {initials(name)}
           </span>
-          <span className="min-w-0">
+          <span className={`min-w-0 ${expanded ? "pb-2" : ""}`}>
             <span className="flex min-w-0 items-baseline gap-2">
               <span
                 onClick={(event) => { event.stopPropagation(); setDetailsOpen((current) => !current); }}
@@ -1539,7 +1554,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
                   {toLabel}
                 </span>
               ) : (
-                <span className="min-w-0 truncate text-[13px] text-gray-800">{previewText.slice(0, 150)}</span>
+                <span className="min-w-0 truncate text-[13px] leading-5 text-gray-800">{previewText.slice(0, 170)}</span>
               )}
             </span>
             {expanded && detailsOpen && (
@@ -1551,8 +1566,8 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
               </span>
             )}
           </span>
-          <span className="whitespace-nowrap text-xs text-gray-500">{fullTimeLabel(message.sentAt)}</span>
-          <span className="flex items-center gap-1">
+          <span className={`whitespace-nowrap text-xs text-gray-500 ${expanded ? "self-start pt-0.5" : ""}`}>{fullTimeLabel(message.sentAt)}</span>
+          <span className={`flex items-center gap-1 ${expanded ? "self-start" : ""}`}>
             {expanded && <span className="hidden rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase text-gray-500 md:inline-flex">Shared</span>}
             <span
               onClick={(event) => { event.stopPropagation(); onCreateAction(); }}
@@ -1566,9 +1581,13 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
           </span>
         </button>
         {expanded && (
-          <div className="px-14 pb-5 pt-2">
+          <div className="px-5 pb-5">
+            <div className="ml-11 max-w-[1040px]">
             {hasImages && !showImages && <button onClick={() => setShowImages(true)} className="mb-3 min-h-8 rounded-full bg-gray-100 px-3 text-xs text-gray-700">Show images</button>}
-            <div className="prose prose-sm max-w-none text-[14px] leading-7 text-gray-950" dangerouslySetInnerHTML={{ __html: renderedBody.bodyHtml }} />
+            <div
+              className="prose prose-sm max-w-none text-[15px] leading-7 text-gray-950 prose-p:my-3 prose-a:text-blue-600 prose-blockquote:border-l-gray-200 prose-blockquote:text-gray-500 [&_*]:max-w-full [&_table]:w-auto [&_table]:max-w-full [&_td]:align-top"
+              dangerouslySetInnerHTML={{ __html: renderedBody.bodyHtml }}
+            />
             {renderedBody.signatureHtml && (
               <div className="prose prose-sm mt-3 max-w-none text-xs italic text-gray-400" dangerouslySetInnerHTML={{ __html: renderedBody.signatureHtml }} />
             )}
@@ -1599,6 +1618,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
                 ))}
               </div>
             )}
+            </div>
           </div>
         )}
       </article>
