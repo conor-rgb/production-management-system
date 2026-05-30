@@ -305,9 +305,29 @@ function unsubscribeMetadata(headers: GmailHeader[], bodyHtml: string): Pick<Par
   return { unsubscribeUrl, unsubscribeEmail, unsubscribeMethod };
 }
 
+function isAutomatedSender(fromAddress: string): boolean {
+  const localPart = fromAddress.split("@")[0]?.toLowerCase() ?? "";
+  return /^(no-?reply|do-?not-?reply|noreply|notifications?|receipts?|billing|invoice|invoices|statements?|orders?|support|hello|email|account|accounts|\w+\+statements)/i.test(localPart)
+    || fromAddress.includes("@stripe.com")
+    || fromAddress.includes("@post.xero.com")
+    || fromAddress.includes("@account.")
+    || fromAddress.includes("@update.");
+}
+
+function hasTransactionalSubject(subject: string): boolean {
+  return /\b(your receipt|payment receipt|invoice number|tax invoice|your invoice|receipt from|order confirmation|order confirmed|your order|purchase confirmation|payment processed|subscription receipt)\b/i.test(subject);
+}
+
+function hasTransactionalBody(bodyText: string): boolean {
+  return /\b(thank you for your purchase|your payment .* processed|this email is your invoice|invoice and payment receipt|order total|receipt number|view invoice|download invoice)\b/i.test(bodyText.slice(0, 2500));
+}
+
 function classifyMessage(labelIds: string[], subject: string, fromAddress: string, bodyText: string, hasUnsubscribe: boolean): EmailAutoCategory {
   const haystack = `${subject} ${fromAddress} ${bodyText.slice(0, 2000)}`.toLowerCase();
-  if (/\b(receipt|order|ordered|purchase|purchased|invoice|payment|paid|booking|reservation|shipping|delivered|delivery|tracking|transaction)\b/.test(haystack)) {
+  const automatedSender = isAutomatedSender(fromAddress);
+  const transactional = hasTransactionalSubject(subject) || (automatedSender && hasTransactionalBody(bodyText));
+
+  if (transactional && !labelIds.includes("CATEGORY_PROMOTIONS")) {
     return EmailAutoCategory.PURCHASES;
   }
   if (labelIds.includes("CATEGORY_PROMOTIONS") || /\b(sale|discount|offer|promo|promotion|deal|limited time|shop now|save \d|% off)\b/.test(haystack)) {
@@ -315,6 +335,7 @@ function classifyMessage(labelIds: string[], subject: string, fromAddress: strin
   }
   if (labelIds.includes("CATEGORY_SOCIAL")) return EmailAutoCategory.SOCIAL;
   if (labelIds.includes("CATEGORY_FORUMS")) return EmailAutoCategory.FORUMS;
+  if (labelIds.includes("CATEGORY_PERSONAL")) return EmailAutoCategory.PEOPLE;
   if (hasUnsubscribe || /\b(newsletter|digest|subscribe|unsubscribe|weekly update|roundup)\b/.test(haystack)) {
     return EmailAutoCategory.NEWSLETTERS;
   }

@@ -3593,3 +3593,48 @@
 2. Add a small "why this category?" hover/debug label while tuning automatic filtering.
 3. Add user overrides: "Always treat this sender as Newsletter/People".
 4. Add bulk unsubscribe/report tools for newsletters and promotions once the single-thread action has been tested on real mail.
+
+---
+
+# Email Purchase Classifier Tightening - 2026-05-30
+
+## Scope
+- Backend-only refinement of the automatic email category classifier.
+- No schema changes and no frontend changes.
+
+## Problem
+- The first automatic category pass treated broad terms like `invoice`, `payment`, `booking`, `reservation`, `delivery`, and `PO` as Purchases.
+- That pulled real client/supplier conversations into the Purchases category when people were simply discussing money, venues, or purchase orders.
+
+## Fix
+- Purchases now means automated transactional mail only:
+  - receipts,
+  - invoice/payment receipt confirmations,
+  - order confirmations,
+  - explicit purchase confirmations.
+- Gmail `CATEGORY_PERSONAL` messages now stay in People unless they are clearly automated transactional messages.
+- Generic booking/reminder/cancellation emails now fall back to Updates instead of Purchases.
+
+## Backfill
+- Existing local threads were reclassified with the safer logic.
+- Result after cleanup:
+  - `PEOPLE: 115`
+  - `PROMOTIONS: 182`
+  - `NEWSLETTERS: 28`
+  - `PURCHASES: 5`
+  - `UPDATES: 135`
+- Current Purchases examples are now clear transactional records:
+  - Canva invoice,
+  - Models.com payment receipt,
+  - Spark receipt,
+  - Mews receipt,
+  - Anthropic receipt.
+
+## Verification
+- Backend build passed:
+  - `cd backend && npm run build`
+
+## Next Steps
+1. Add manual category override per thread/sender if the automatic category still misses edge cases.
+2. Consider renaming Purchases to `Receipts` if the product language should be more precise.
+3. Add a small audit action in the category menu: "Move to People/Updates/Promotions".
