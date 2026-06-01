@@ -49,7 +49,10 @@ type UnsubscribeResult = {
 
 type MessageTaskDraft = {
   title: string;
-  productionId: string;
+  productionId?: string;
+  blackbookEntryId?: string;
+  roleRequirementId?: string;
+  optionCandidateId?: string;
   startAt: string;
   description: string;
 };
@@ -58,6 +61,9 @@ type LinkTargetsResponse = {
   opportunities?: Array<{ id: string; title: string; clientName?: string | null; brand?: string | null; stage: string; value?: string | null; company?: { id: string; name: string } | null }>;
   productions?: Array<{ id: string; title: string; jobCode?: string | null; clientName?: string | null; brand?: string | null; status: string }>;
   contacts?: Array<{ id: string; firstName: string; lastName?: string | null; email?: string | null; type: string; company?: { id: string; name: string } | null }>;
+  blackbook?: Array<{ id: string; displayName: string; entryType: string; category: string; email?: string | null; phone?: string | null; companyName?: string | null; lifecycleStatus: string }>;
+  requirements?: Array<{ id: string; name: string; displayLabel: string; type: string; activeState: string; group: { id: string; name: string } }>;
+  candidates?: Array<{ id: string; name: string; subtitle?: string | null; activeState: string; group: { id: string; name: string }; blackbookEntry?: { id: string; displayName: string } | null }>;
 };
 
 type ThreadPerson = {
@@ -1031,13 +1037,16 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
     try {
       await api.post(`/api/project-actions/email/messages/${message.id}/actions`, {
         title: draft.title,
-        productionId: draft.productionId,
+        productionId: draft.productionId || undefined,
+        blackbookEntryId: draft.blackbookEntryId || undefined,
+        roleRequirementId: draft.roleRequirementId || undefined,
+        optionCandidateId: draft.optionCandidateId || undefined,
         startAt: draft.startAt ? new Date(draft.startAt).toISOString() : undefined,
         description: draft.description,
       });
       setTaskMessage(null);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Link this thread to a production before creating a task.");
+      window.alert(err instanceof Error ? err.message : "Could not create the linked action.");
     } finally {
       setActionSavingId(null);
     }
@@ -1213,6 +1222,7 @@ function dateInputValue(value: Date) {
 
 function CreateMessageTaskDrawer({ thread, message, saving, onClose, onCreate }: { thread: EmailThread; message: EmailMessage; saving: boolean; onClose: () => void; onCreate: (draft: MessageTaskDraft) => void }) {
   const [productions, setProductions] = useState<Production[]>([]);
+  const [targets, setTargets] = useState<LinkTargetsResponse>({});
   const [draft, setDraft] = useState<MessageTaskDraft>(() => ({
     title: `Follow up: ${thread.subject}`,
     productionId: thread.linkedProductionId ?? "",
@@ -1224,10 +1234,17 @@ function CreateMessageTaskDrawer({ thread, message, saving, onClose, onCreate }:
     api.get<Production[]>("/api/productions?includeWrapped=true")
       .then((items) => {
         setProductions(items);
-        setDraft((current) => ({ ...current, productionId: current.productionId || items[0]?.id || "" }));
       })
       .catch(console.error);
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams({ type: "all" });
+    if (draft.productionId) params.set("productionId", draft.productionId);
+    api.get<LinkTargetsResponse>(`/api/email/threads/search-link-targets?${params.toString()}`)
+      .then(setTargets)
+      .catch(console.error);
+  }, [draft.productionId]);
 
   return (
     <div className="fixed inset-0 z-[80] flex justify-end bg-black/20">
@@ -1244,10 +1261,34 @@ function CreateMessageTaskDrawer({ thread, message, saving, onClose, onCreate }:
             <input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
           </DrawerField>
           <DrawerField label="Project">
-            <select value={draft.productionId} onChange={(event) => setDraft({ ...draft, productionId: event.target.value })}>
-              <option value="">Select a production...</option>
+            <select value={draft.productionId ?? ""} onChange={(event) => setDraft({ ...draft, productionId: event.target.value, roleRequirementId: "", optionCandidateId: "" })}>
+              <option value="">No project / general task</option>
               {productions.map((production) => (
                 <option key={production.id} value={production.id}>{production.jobCode ?? "No code"} · {production.clientName ?? production.title}</option>
+              ))}
+            </select>
+          </DrawerField>
+          <DrawerField label="Crew / supplier requirement">
+            <select value={draft.roleRequirementId ?? ""} onChange={(event) => setDraft({ ...draft, roleRequirementId: event.target.value })}>
+              <option value="">Not linked</option>
+              {(targets.requirements ?? []).map((requirement) => (
+                <option key={requirement.id} value={requirement.id}>{requirement.group.name} · {requirement.displayLabel || requirement.name}</option>
+              ))}
+            </select>
+          </DrawerField>
+          <DrawerField label="Option candidate">
+            <select value={draft.optionCandidateId ?? ""} onChange={(event) => setDraft({ ...draft, optionCandidateId: event.target.value, blackbookEntryId: draft.blackbookEntryId || (targets.candidates ?? []).find((candidate) => candidate.id === event.target.value)?.blackbookEntry?.id || "" })}>
+              <option value="">Not linked</option>
+              {(targets.candidates ?? []).map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>{candidate.group.name} · {candidate.name}</option>
+              ))}
+            </select>
+          </DrawerField>
+          <DrawerField label="Blackbook">
+            <select value={draft.blackbookEntryId ?? ""} onChange={(event) => setDraft({ ...draft, blackbookEntryId: event.target.value })}>
+              <option value="">Not linked</option>
+              {(targets.blackbook ?? []).map((entry) => (
+                <option key={entry.id} value={entry.id}>{entry.displayName}{entry.companyName ? ` · ${entry.companyName}` : ""}</option>
               ))}
             </select>
           </DrawerField>
@@ -1271,7 +1312,7 @@ function CreateMessageTaskDrawer({ thread, message, saving, onClose, onCreate }:
             <button onClick={onClose} className="min-h-11 px-3 text-sm text-gray-500">Cancel</button>
             <button
               onClick={() => onCreate(draft)}
-              disabled={saving || !draft.title.trim() || !draft.productionId}
+              disabled={saving || !draft.title.trim()}
               className="min-h-11 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-40"
             >
               {saving ? "Creating..." : "Create task →"}

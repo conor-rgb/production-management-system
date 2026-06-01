@@ -9,6 +9,7 @@ const router = Router();
 const LANE_COLORS = ["#f7c59f", "#c8d8f0", "#ead1dc", "#fff2cc", "#e6b8af", "#b4a7d6", "#cfe2f3", "#d9ead3"];
 
 type ActionBody = {
+  productionId?: string | null;
   title?: string;
   description?: string | null;
   actionType?: ProjectActionType;
@@ -117,7 +118,7 @@ async function syncCalendarEvent(actionId: string): Promise<void> {
 
   const startDate = action.startAt;
   const endDate = action.endAt ?? defaultEnd(startDate, action.isAllDay);
-  const color = action.workstream?.color ?? (action.production.jobCode ? getProductionColor(action.production.jobCode) : "#5B8DEF");
+  const color = action.workstream?.color ?? (action.production?.jobCode ? getProductionColor(action.production.jobCode) : "#5B8DEF");
   const notes = [
     action.description,
     action.reminderMinutes ? `Reminder: ${action.reminderMinutes} minutes before` : null,
@@ -134,7 +135,7 @@ async function syncCalendarEvent(actionId: string): Promise<void> {
     notes: notes || null,
     color,
     eventType: calendarType(action.actionType),
-    productionId: action.productionId,
+    productionId: action.productionId ?? null,
   };
 
   const event = action.calendarEventId
@@ -156,6 +157,24 @@ const actionInclude = {
   emailMessage: { select: { id: true, subject: true, fromAddress: true, fromName: true, sentAt: true, snippet: true } },
   calendarEvent: true,
 } as const;
+
+async function inferActionProductionId(body: ActionBody, fallbackProductionId?: string | null): Promise<string | null> {
+  if (body.productionId) return body.productionId;
+  if (fallbackProductionId) return fallbackProductionId;
+  if (body.workstreamId) {
+    const workstream = await prisma.projectWorkstream.findUnique({ where: { id: body.workstreamId }, select: { productionId: true } });
+    if (workstream) return workstream.productionId;
+  }
+  if (body.roleRequirementId) {
+    const requirement = await prisma.optionRequirement.findUnique({ where: { id: body.roleRequirementId }, select: { productionId: true } });
+    if (requirement) return requirement.productionId;
+  }
+  if (body.optionCandidateId) {
+    const candidate = await prisma.optionCandidate.findUnique({ where: { id: body.optionCandidateId }, select: { productionId: true } });
+    if (candidate) return candidate.productionId;
+  }
+  return null;
+}
 
 router.get("/production/:productionId", async (req: Request, res: Response): Promise<void> => {
   const production = await prisma.production.findUnique({
@@ -323,8 +342,7 @@ router.post("/email/messages/:messageId/actions", async (req: Request, res: Resp
   });
   if (!message) { res.status(404).json({ error: "Email message not found" }); return; }
   const body = req.body as ActionBody & { productionId?: string };
-  const productionId = body.productionId ?? message.thread.linkedProductionId;
-  if (!productionId) { res.status(400).json({ error: "Thread is not linked to a production" }); return; }
+  const productionId = await inferActionProductionId(body, message.thread.linkedProductionId);
 
   const title = body.title?.trim() || `Follow up: ${message.subject}`;
   const action = await prisma.projectAction.create({
@@ -338,7 +356,13 @@ router.post("/email/messages/:messageId/actions", async (req: Request, res: Resp
       startAt: body.startAt ? new Date(body.startAt) : null,
       endAt: body.endAt ? new Date(body.endAt) : null,
       isAllDay: body.isAllDay ?? true,
+      location: body.location ?? null,
+      zoomLink: body.zoomLink ?? null,
+      reminderMinutes: body.reminderMinutes ?? null,
       workstreamId: body.workstreamId ?? null,
+      roleRequirementId: body.roleRequirementId ?? null,
+      optionCandidateId: body.optionCandidateId ?? null,
+      blackbookEntryId: body.blackbookEntryId ?? null,
       emailThreadId: message.threadId,
       emailMessageId: message.id,
     },

@@ -36,6 +36,8 @@ type LinkTargets = {
   contactId?: string;
 };
 
+type LinkSearchType = "all" | "opportunity" | "production" | "contact" | "blackbook" | "requirement" | "candidate" | "action";
+
 type EmailCategoryScope = "thread" | "sender" | "domain";
 
 type DraftBody = {
@@ -508,11 +510,16 @@ router.get("/threads", async (req: Request, res: Response): Promise<void> => {
 
 router.get("/threads/search-link-targets", async (req: Request, res: Response): Promise<void> => {
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-  const type = typeof req.query.type === "string" ? req.query.type : "all";
+  const type = (typeof req.query.type === "string" ? req.query.type : "all") as LinkSearchType;
+  const productionId = typeof req.query.productionId === "string" && req.query.productionId.trim() ? req.query.productionId.trim() : undefined;
   const results: {
     opportunities?: Array<{ id: string; title: string; clientName: string | null; brand: string | null; stage: string; value: string | null; company?: { id: string; name: string } | null }>;
     productions?: Array<{ id: string; title: string; jobCode: string | null; clientName: string | null; brand: string | null; status: string }>;
     contacts?: Array<{ id: string; firstName: string; lastName: string | null; email: string | null; type: string; company?: { id: string; name: string } | null }>;
+    blackbook?: Array<{ id: string; displayName: string; entryType: string; category: string; email: string | null; phone: string | null; companyName: string | null; lifecycleStatus: string }>;
+    requirements?: Array<{ id: string; name: string; displayLabel: string; type: string; activeState: string; group: { id: string; name: string } }>;
+    candidates?: Array<{ id: string; name: string; subtitle: string | null; activeState: string; group: { id: string; name: string }; blackbookEntry: { id: string; displayName: string } | null }>;
+    actions?: Array<{ id: string; title: string; actionType: string; status: string; startAt: Date | null; production: { id: string; title: string | null; jobCode: string | null } | null }>;
   } = {};
   const contains = { contains: q, mode: "insensitive" as const };
 
@@ -568,6 +575,81 @@ router.get("/threads/search-link-targets", async (req: Request, res: Response): 
       select: { id: true, firstName: true, lastName: true, email: true, type: true, company: { select: { id: true, name: true } } },
       orderBy: { createdAt: "desc" },
       take: 8,
+    });
+  }
+
+  if (type === "all" || type === "blackbook") {
+    results.blackbook = await prisma.blackbookEntry.findMany({
+      where: q ? {
+        OR: [
+          { displayName: contains },
+          { companyName: contains },
+          { email: contains },
+          { phone: contains },
+          { tags: { has: q } },
+        ],
+      } : {},
+      select: { id: true, displayName: true, entryType: true, category: true, email: true, phone: true, companyName: true, lifecycleStatus: true },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+    });
+  }
+
+  if (type === "all" || type === "requirement") {
+    results.requirements = await prisma.optionRequirement.findMany({
+      where: {
+        ...(productionId ? { productionId } : {}),
+        ...(q ? { OR: [{ name: contains }, { displayLabel: contains }, { group: { name: contains } }] } : {}),
+      },
+      select: { id: true, name: true, displayLabel: true, type: true, activeState: true, group: { select: { id: true, name: true } } },
+      orderBy: [{ productionId: "asc" }, { order: "asc" }],
+      take: 10,
+    });
+  }
+
+  if (type === "all" || type === "candidate") {
+    results.candidates = await prisma.optionCandidate.findMany({
+      where: {
+        ...(productionId ? { productionId } : {}),
+        ...(q ? {
+          OR: [
+            { name: contains },
+            { subtitle: contains },
+            { contactEmail: contains },
+            { group: { name: contains } },
+            { blackbookEntry: { displayName: contains } },
+          ],
+        } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        subtitle: true,
+        activeState: true,
+        group: { select: { id: true, name: true } },
+        blackbookEntry: { select: { id: true, displayName: true } },
+      },
+      orderBy: [{ productionId: "asc" }, { order: "asc" }],
+      take: 10,
+    });
+  }
+
+  if (type === "all" || type === "action") {
+    results.actions = await prisma.projectAction.findMany({
+      where: {
+        ...(productionId ? { productionId } : {}),
+        ...(q ? { OR: [{ title: contains }, { description: contains }] } : {}),
+      },
+      select: {
+        id: true,
+        title: true,
+        actionType: true,
+        status: true,
+        startAt: true,
+        production: { select: { id: true, title: true, jobCode: true } },
+      },
+      orderBy: [{ startAt: "desc" }, { createdAt: "desc" }],
+      take: 10,
     });
   }
 

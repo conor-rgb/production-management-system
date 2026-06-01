@@ -14,6 +14,7 @@ import {
   BlackbookOutreachStatus,
   CandidateDateHoldStatus,
   ContactType,
+  CrewStatus,
   OptionAvailability,
   OptionCandidateState,
   OptionColumnType,
@@ -1946,6 +1947,73 @@ router.patch("/matrix/requirements/:requirementId/dates/:dateId/assignment", asy
     create: { requirementId: requirement.id, dateId: req.params.dateId, isRequired: true },
   });
   res.json(await matrixResponse(requirement.productionId));
+});
+
+router.post("/production/:productionId/sync-crew-list", async (req: Request, res: Response): Promise<void> => {
+  const production = await prisma.production.findUnique({ where: { id: req.params.productionId }, select: { id: true } });
+  if (!production) {
+    res.status(404).json({ error: "Production not found" });
+    return;
+  }
+
+  const assignments = await prisma.optionSlotAssignment.findMany({
+    where: { requirement: { productionId: production.id } },
+    include: {
+      requirement: true,
+      candidate: { include: { blackbookEntry: true } },
+      date: true,
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  let created = 0;
+  let updated = 0;
+  for (const assignment of assignments) {
+    const candidate = assignment.candidate;
+    const blackbook = candidate.blackbookEntry;
+    const roleName = assignment.requirement.displayLabel || assignment.requirement.name;
+    const role = await prisma.crewRole.upsert({
+      where: { name: roleName },
+      update: {},
+      create: { name: roleName },
+    });
+    const existing = await prisma.crewMember.findFirst({
+      where: {
+        productionId: production.id,
+        optionCandidateId: candidate.id,
+        roleRequirementId: assignment.requirementId,
+      },
+      select: { id: true },
+    });
+    const data = {
+      roleId: role.id,
+      name: blackbook?.displayName ?? candidate.name,
+      email: blackbook?.email ?? candidate.contactEmail,
+      phone: blackbook?.phone ?? candidate.contactPhone,
+      status: CrewStatus.CONFIRMED,
+      dayRate: candidate.rate != null ? new Prisma.Decimal(candidate.rate) : null,
+      notes: [assignment.requirement.notes, candidate.internalNotes].filter(Boolean).join("\n") || null,
+      blackbookEntryId: blackbook?.id ?? null,
+      optionCandidateId: candidate.id,
+      roleRequirementId: assignment.requirementId,
+      dietaryNotes: blackbook?.dietaryNotes ?? null,
+      dietaryFlags: blackbook?.dietaryFlags ?? [],
+    };
+    if (existing) {
+      await prisma.crewMember.update({ where: { id: existing.id }, data });
+      updated += 1;
+    } else {
+      await prisma.crewMember.create({
+        data: {
+          productionId: production.id,
+          ...data,
+        },
+      });
+      created += 1;
+    }
+  }
+
+  res.json({ synced: true, created, updated, totalAssignments: assignments.length });
 });
 
 router.post("/matrix/groups/:groupId/columns", async (req: Request, res: Response): Promise<void> => {

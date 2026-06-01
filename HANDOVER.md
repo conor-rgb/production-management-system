@@ -1,3 +1,67 @@
+# HANDOVER - 2026-06-01 - Universal Actions And Crew Source Links
+
+## Built This Session
+- Made `ProjectAction` the general action/task source of truth:
+  - `productionId` is now optional, so email-only follow-ups can exist without being forced onto a production,
+  - timeline/project actions still link to productions exactly as before,
+  - message-created actions can now infer production from linked production, workstream, option requirement, or option candidate.
+- Extended email message task creation:
+  - the task drawer now allows `No project / general task`,
+  - tasks can optionally link to a crew/supplier requirement,
+  - tasks can optionally link to an option candidate,
+  - tasks can optionally link to a Blackbook entry,
+  - the backend preserves exact `emailMessageId` and `emailThreadId` links.
+- Extended email CRM target search:
+  - `/api/email/threads/search-link-targets` now returns Blackbook entries, option requirements, option candidates, and project actions in addition to opportunities, productions, and legacy contacts,
+  - target search can be scoped with `productionId` so project-specific requirement/candidate lists stay relevant.
+- Linked crew-list rows back to source data:
+  - `CrewMember` now has optional `blackbookEntryId`, `optionCandidateId`, and `roleRequirementId`,
+  - crew rows can store dietary notes/flags, detail request/received timestamps, and call/wrap times,
+  - this prepares confirmed option assignments to flow into call-sheet planning without copying everything manually.
+- Added crew-list sync endpoint:
+  - `POST /api/options/production/:productionId/sync-crew-list`
+  - reads confirmed option slot assignments,
+  - creates or updates crew rows linked to the candidate, requirement, and Blackbook entry,
+  - copies email/phone/rate/dietary notes from the Blackbook/candidate source.
+
+## Files Changed
+- `backend/prisma/schema.prisma`
+- `backend/prisma/migrations/20260601133000_universal_actions_crew_links/migration.sql`
+- `backend/src/routes/email.ts`
+- `backend/src/routes/options.ts`
+- `backend/src/routes/projectActions.ts`
+- `frontend/src/pages/Email.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Prisma migration applied with non-interactive `migrate deploy`.
+- Prisma client regenerated.
+- Backend build passed:
+  - `cd backend && npm run build`
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+
+## Current State
+- Email message tasks are no longer blocked by missing production links.
+- Message tasks can carry structured links into Blackbook/options/crew-supplier requirements.
+- Confirmed option assignments can now be pushed into the Crew List via API, but there is not yet a visible “Sync crew list” button in the UI.
+- Crew List still renders mostly from the legacy crew UI; the new Blackbook/source links are stored and ready for the next UI pass.
+
+## Next Steps
+1. Add a Crew & Suppliers action/menu item: “Sync confirmed to Crew List”.
+2. Surface Blackbook/option/requirement links inside Crew List rows and the call-sheet planning UI.
+3. Add message-level quick actions in the email UI:
+   - link message to requirement/candidate/Blackbook,
+   - create chase task,
+   - create timeline event from detected date,
+   - create supplier onboarding/details request.
+4. Replace legacy Contact-first People panel actions with Blackbook-first create/link/update.
+5. Build a compact “Actions” view for standalone email tasks that are not attached to a production.
+
+---
+
 # HANDOVER - 2026-06-01 - Composer Attachments And Blackbook Direction
 
 ## Built This Session

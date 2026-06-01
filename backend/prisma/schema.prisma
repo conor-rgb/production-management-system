@@ -490,6 +490,7 @@ model BlackbookEntry {
   optionCandidates OptionCandidate[]
   purchaseOrders   PurchaseOrderGroup[]
   projectActions   ProjectAction[]
+  crewMembers      CrewMember[]
   contactId        String?
   contact          Contact?                   @relation(fields: [contactId], references: [id], onDelete: SetNull)
   categoryConfig   BlackbookConfigCategory?   @relation(fields: [categoryConfigId], references: [id], onDelete: SetNull)
@@ -725,6 +726,7 @@ model OptionRequirement {
   dateNeeds    RequirementDateNeed[]
   assignments  OptionSlotAssignment[]
   projectActions ProjectAction[]
+  crewMembers CrewMember[]
   createdAt    DateTime               @default(now())
   updatedAt    DateTime               @updatedAt
 
@@ -797,6 +799,7 @@ model OptionCandidate {
   columnValues       OptionColumnValue[]
   purchaseOrders    PurchaseOrderGroup[]
   projectActions    ProjectAction[]
+  crewMembers       CrewMember[]
   createdAt         DateTime                    @default(now())
   updatedAt         DateTime                    @updatedAt
 
@@ -1132,7 +1135,7 @@ model ProjectWorkstream {
 
 model ProjectAction {
   id                String                  @id @default(uuid())
-  productionId      String
+  productionId      String?
   workstreamId      String?
   title             String
   description       String?
@@ -1154,7 +1157,7 @@ model ProjectAction {
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
-  production      Production         @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  production      Production?        @relation(fields: [productionId], references: [id], onDelete: SetNull)
   workstream      ProjectWorkstream? @relation(fields: [workstreamId], references: [id], onDelete: SetNull)
   roleRequirement OptionRequirement? @relation(fields: [roleRequirementId], references: [id], onDelete: SetNull)
   optionCandidate OptionCandidate?   @relation(fields: [optionCandidateId], references: [id], onDelete: SetNull)
@@ -1192,6 +1195,12 @@ model CrewMember {
   production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
   contactId    String?
   contact      Contact?   @relation(fields: [contactId], references: [id])
+  blackbookEntryId String?
+  blackbookEntry   BlackbookEntry? @relation(fields: [blackbookEntryId], references: [id], onDelete: SetNull)
+  optionCandidateId String?
+  optionCandidate   OptionCandidate? @relation(fields: [optionCandidateId], references: [id], onDelete: SetNull)
+  roleRequirementId String?
+  roleRequirement   OptionRequirement? @relation(fields: [roleRequirementId], references: [id], onDelete: SetNull)
   roleId       String?
   role         CrewRole?  @relation(fields: [roleId], references: [id])
   name         String
@@ -1200,10 +1209,19 @@ model CrewMember {
   status       CrewStatus @default(REQUESTED)
   dayRate      Decimal?   @db.Decimal(10, 2)
   numberOfDays Decimal    @default(1) @db.Decimal(6, 2)
+  dietaryNotes String?
+  dietaryFlags String[] @default([])
+  detailsRequestedAt DateTime?
+  detailsReceivedAt DateTime?
+  callTime     String?
+  wrapTime     String?
   notes        String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  @@index([blackbookEntryId])
+  @@index([optionCandidateId])
+  @@index([roleRequirementId])
   @@map("pms_crew_members")
 }
 
