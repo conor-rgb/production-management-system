@@ -32,6 +32,7 @@ import { useDrafts, type Draft } from "../store/draftStore";
 type Folder = "inbox" | "sent" | "drafts" | "starred" | "unread" | "archived";
 type Filter = "all" | "unread" | "flagged";
 type AutoFilter = "all" | "people" | "promotions" | "newsletters" | "purchases";
+type CategoryScope = "thread" | "sender" | "domain";
 
 type SaveAttachmentState = {
   attachment: EmailAttachmentSummary;
@@ -229,8 +230,6 @@ function splitPlainTextQuote(text: string): { visible: string; quoted: string; h
     /^-{3,}\s*Original Message\s*-{3,}/im,
     /^From:\s.+\n(?:Sent|Date):\s/im,
     /^De\s?:\s.+\n(?:Envoyé|Date)\s?:\s/im,
-    /^This Message is From an External Sender/im,
-    /^VIGILANCE\s?:/im,
     /^_{5,}$/m,
   ];
   let splitIndex = -1;
@@ -242,11 +241,21 @@ function splitPlainTextQuote(text: string): { visible: string; quoted: string; h
   return { visible: text.slice(0, splitIndex).trim(), quoted: text.slice(splitIndex), hasQuote: true };
 }
 
+function stripPlainTextNoise(text: string) {
+  return text
+    .replace(/^\s*(This Message is From an External Sender|External Sender|Caution:|VIGILANCE\s?:|Attention\s?:).*(?:\n|$)/gim, "")
+    .replace(/^\s*(Caution|Vigilance|Attention).*do not click.*(?:\n|$)/gim, "")
+    .replace(/([A-Za-z0-9À-ÿ .,'_-]+)<mailto:[^>]+>/gi, "$1")
+    .replace(/([A-Za-z0-9À-ÿ .,'_-]+)<https?:\/\/[^>]+>/gi, "$1");
+}
+
 function cleanEmailPreview(text: string) {
-  const quoteSplit = splitPlainTextQuote(text || "");
+  const quoteSplit = splitPlainTextQuote(stripPlainTextNoise(text || ""));
   return quoteSplit.visible
     .replace(/<mailto:[^>]+>/gi, "")
+    .replace(/<https?:\/\/[^>]+>/gi, "")
     .replace(/\bmailto:[^\s)>,]+/gi, "")
+    .replace(/\bhttps?:\/\/[^\s)>,]+/gi, "")
     .replace(/\[[^\]]*cid:[^\]]+\]/gi, "")
     .replace(/\b(From|Sent|Date|To|Cc|Subject|De|Envoyé|À|Objet)\s?:\s?.*$/gim, "")
     .replace(/\b(This Message is From an External Sender|Caution:|VIGILANCE\s?:).*$/gim, "")
@@ -266,6 +275,15 @@ function isOutlookQuoteHeader(text: string) {
 function hideQuotedContent(htmlString: string): { visible: string; quoted: string; hasQuote: boolean } {
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlString, "text/html");
+
+  doc.querySelectorAll("style, script").forEach((element) => element.remove());
+  doc.querySelectorAll("div, p, span, table, td").forEach((element) => {
+    const text = (element.textContent ?? "").replace(/\s+/g, " ").trim();
+    const isWarning =
+      /^(This Message is From an External Sender|External Sender|Caution:|VIGILANCE\s?:|Attention\s?:)/i.test(text)
+      || /(do not click links|n'ouvrez pas les pièces jointes|personne externe)/i.test(text);
+    if (isWarning && text.length < 700) element.remove();
+  });
 
   const nodeHtml = (node: Node) => {
     if (node instanceof Element) return node.outerHTML;
@@ -352,7 +370,7 @@ function trimHtmlTextQuoteHeaders(htmlString: string): { visible: string; quoted
   for (let index = 0; index < textNodes.length; index += 1) {
     const node = textNodes[index];
     const text = node.textContent ?? "";
-    const marker = text.search(/(^|[\r\n])\s*(From|De)\s?:\s*/i);
+    const marker = text.search(/(^|[\r\n]|\s)(From|De)\s?:\s*/i);
     if (marker === -1) continue;
 
     const nearbyText = textNodes
@@ -361,8 +379,8 @@ function trimHtmlTextQuoteHeaders(htmlString: string): { visible: string; quoted
       .join("\n");
 
     const looksLikeHeaderBlock =
-      /(^|[\r\n])\s*(Date|Sent|Envoyé)\s?:\s*/im.test(nearbyText)
-      && /(^|[\r\n])\s*(To|À|Cc|Subject|Objet)\s?:\s*/im.test(nearbyText);
+      /(^|[\r\n]|\s)(Date|Sent|Envoyé)\s?:\s*/im.test(nearbyText)
+      && /(^|[\r\n]|\s)(To|À|Cc|Subject|Objet)\s?:\s*/im.test(nearbyText);
 
     if (!looksLikeHeaderBlock) continue;
 
@@ -407,7 +425,7 @@ function splitHtmlSignature(htmlString: string): { body: string; signature: stri
 function sanitizeEmailHtml(html: string, showImages: boolean) {
   return DOMPurify.sanitize(html, {
     FORBID_ATTR: ["style", "width", "height", "face", "size", "color"],
-    ...(showImages ? {} : { FORBID_TAGS: ["img"] }),
+    FORBID_TAGS: showImages ? ["style", "script"] : ["img", "style", "script"],
   });
 }
 
@@ -768,8 +786,8 @@ export default function Email() {
                 setError(err instanceof Error ? err.message : "No unsubscribe option detected");
               }
             }}
-            onMoveCategory={async (category) => {
-              await api.patch(`/api/email/threads/${thread.id}/category`, { category });
+            onMoveCategory={async (category, scope = "thread") => {
+              await api.patch(`/api/email/threads/${thread.id}/category`, { category, scope });
               await loadThread(thread.id, selectedMessageId);
               await loadThreads();
             }}
@@ -925,7 +943,7 @@ function DraftRow({ draft, onClick }: { draft: Draft; onClick: () => void }) {
   );
 }
 
-function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder, unsubscribeResult, onDismissUnsubscribeResult, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onMarkUnread, onArchive, onUnsubscribe, onMoveCategory, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; focusedMessageId: string | null; filingAttachment: string; loadingOlder: boolean; unsubscribeResult: UnsubscribeResult | null; onDismissUnsubscribeResult: () => void; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe: () => void; onMoveCategory: (category: EmailAutoCategory | null) => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
+function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder, unsubscribeResult, onDismissUnsubscribeResult, onOpenAttachment, onLoadOlder, onBack, onOpenReply, onFlag, onMarkUnread, onArchive, onUnsubscribe, onMoveCategory, onOpenPeople, onCreateOpportunity, onLinked }: { thread: EmailThread; focusedMessageId: string | null; filingAttachment: string; loadingOlder: boolean; unsubscribeResult: UnsubscribeResult | null; onDismissUnsubscribeResult: () => void; onOpenAttachment: (attachment: EmailAttachmentSummary) => void; onLoadOlder: () => void; onBack: () => void; onOpenReply: () => void; onFlag: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe: () => void; onMoveCategory: (category: EmailAutoCategory | null, scope?: CategoryScope) => void; onOpenPeople: () => void; onCreateOpportunity: () => void; onLinked: () => void }) {
   const [expandedAttachments, setExpandedAttachments] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
@@ -1111,13 +1129,13 @@ function UnsubscribeNotice({ result, onClose }: { result: UnsubscribeResult; onC
   );
 }
 
-function ThreadActionMenu({ onClose, onReply, onPeople, onOpportunity, onMarkUnread, onArchive, onUnsubscribe, onMoveCategory, currentCategory, onStar, starred }: { onClose: () => void; onReply: () => void; onPeople: () => void; onOpportunity: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe?: () => void; onMoveCategory: (category: EmailAutoCategory | null) => void; currentCategory: EmailAutoCategory; onStar: () => void; starred: boolean }) {
+function ThreadActionMenu({ onClose, onReply, onPeople, onOpportunity, onMarkUnread, onArchive, onUnsubscribe, onMoveCategory, currentCategory, onStar, starred }: { onClose: () => void; onReply: () => void; onPeople: () => void; onOpportunity: () => void; onMarkUnread: () => void; onArchive: () => void; onUnsubscribe?: () => void; onMoveCategory: (category: EmailAutoCategory | null, scope?: CategoryScope) => void; currentCategory: EmailAutoCategory; onStar: () => void; starred: boolean }) {
   const run = (handler: () => void) => {
     handler();
     onClose();
   };
   return (
-    <div className="absolute right-4 top-12 z-40 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-xl">
+    <div className="absolute right-4 top-12 z-40 max-h-[80vh] w-52 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-xl">
       <button type="button" onClick={() => run(onReply)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Reply size={14} /> Reply</button>
       <button type="button" onClick={() => run(onPeople)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Users size={14} /> People in thread</button>
       <button type="button" onClick={() => run(onOpportunity)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Plus size={14} /> Create opportunity</button>
@@ -1127,16 +1145,39 @@ function ThreadActionMenu({ onClose, onReply, onPeople, onOpportunity, onMarkUnr
       {onUnsubscribe && <button type="button" onClick={() => run(onUnsubscribe)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-amber-700 hover:bg-amber-50"><X size={14} /> Unsubscribe</button>}
       <button type="button" onClick={() => run(onStar)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-gray-700 hover:bg-gray-50"><Star size={14} className={starred ? "fill-amber-400 text-amber-400" : ""} /> {starred ? "Unstar" : "Star"}</button>
       <div className="my-1 h-px bg-gray-100" />
-      <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400">Move to</div>
+      <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400">Move thread</div>
       {moveCategoryOptions.map((item) => (
         <button
-          key={item.label}
+          key={`thread-${item.label}`}
           type="button"
           onClick={() => run(() => onMoveCategory(item.category))}
           className="flex min-h-8 w-full items-center justify-between px-3 text-left text-gray-700 hover:bg-gray-50"
         >
           <span>{item.label}</span>
           {item.category && item.category === currentCategory && <span className="text-[10px] text-gray-400">current</span>}
+        </button>
+      ))}
+      <div className="my-1 h-px bg-gray-100" />
+      <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400">Always sort sender</div>
+      {moveCategoryOptions.filter((item) => item.category).map((item) => (
+        <button
+          key={`sender-${item.label}`}
+          type="button"
+          onClick={() => run(() => onMoveCategory(item.category, "sender"))}
+          className="flex min-h-8 w-full items-center justify-between px-3 text-left text-gray-700 hover:bg-gray-50"
+        >
+          <span>{item.label}</span>
+        </button>
+      ))}
+      <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400">Always sort domain</div>
+      {moveCategoryOptions.filter((item) => item.category).map((item) => (
+        <button
+          key={`domain-${item.label}`}
+          type="button"
+          onClick={() => run(() => onMoveCategory(item.category, "domain"))}
+          className="flex min-h-8 w-full items-center justify-between px-3 text-left text-gray-700 hover:bg-gray-50"
+        >
+          <span>{item.label}</span>
         </button>
       ))}
     </div>
@@ -1535,7 +1576,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
     const htmlQuoted = [htmlQuote?.quoted, htmlTextQuote?.quoted].filter(Boolean).join("");
     const htmlHasQuote = Boolean(htmlQuote?.hasQuote || htmlTextQuote?.hasQuote);
     const htmlSignature = message.bodyHtml ? splitHtmlSignature(htmlVisible) : null;
-    const plainQuote = message.bodyHtml ? null : splitPlainTextQuote(message.bodyText || "");
+    const plainQuote = message.bodyHtml ? null : splitPlainTextQuote(stripPlainTextNoise(message.bodyText || ""));
     const plainSignature = plainQuote ? splitPlainTextSignature(plainQuote.visible) : null;
     const bodyHtml = message.bodyHtml
       ? sanitizeEmailHtml(htmlSignature?.body ?? htmlVisible, showImages)

@@ -1542,10 +1542,26 @@ model EmailAccount {
   gmailHistoryId        String?
   threads               EmailThread[]
   drafts                EmailDraft[]
+  categoryRules         EmailCategoryRule[]
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 
   @@map("pms_email_accounts")
+}
+
+model EmailCategoryRule {
+  id        String                     @id @default(uuid())
+  accountId String
+  account   EmailAccount               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  matchType EmailCategoryRuleMatchType
+  value     String
+  category  EmailAutoCategory
+  createdAt DateTime                   @default(now())
+  updatedAt DateTime                   @updatedAt
+
+  @@unique([accountId, matchType, value])
+  @@index([accountId, category])
+  @@map("pms_email_category_rules")
 }
 
 model EmailDraft {
@@ -1653,6 +1669,13 @@ enum EmailAutoCategory {
   OTHER
 
   @@map("pms_email_auto_category")
+}
+
+enum EmailCategoryRuleMatchType {
+  SENDER
+  DOMAIN
+
+  @@map("pms_email_category_rule_match_type")
 }
 
 enum EmailUnsubscribeMethod {

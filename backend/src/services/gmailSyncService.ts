@@ -1,4 +1,4 @@
-import { EmailAccount, EmailAutoCategory } from "@prisma/client";
+import { EmailAccount, EmailAutoCategory, EmailCategoryRuleMatchType } from "@prisma/client";
 import prisma from "../prisma";
 import { getGmailDraft, getHistory, getGmailThread, listGmailDrafts, listThreads, parseGmailMessage, type ParsedGmailMessage } from "./gmailService";
 
@@ -32,6 +32,32 @@ function deriveThreadCategory(messages: ParsedGmailMessage[]): EmailAutoCategory
   if (categories.includes(EmailAutoCategory.UPDATES)) return EmailAutoCategory.UPDATES;
   if (categories.includes(EmailAutoCategory.PEOPLE)) return EmailAutoCategory.PEOPLE;
   return EmailAutoCategory.OTHER;
+}
+
+function emailDomain(address: string): string | null {
+  const domain = address.toLowerCase().split("@")[1]?.trim();
+  return domain || null;
+}
+
+async function categoryRuleForThread(accountId: string, messages: ParsedGmailMessage[]): Promise<EmailAutoCategory | null> {
+  const senders = Array.from(new Set(messages.map((message) => message.fromAddress.toLowerCase()).filter(Boolean)));
+  const domains = Array.from(new Set(senders.map(emailDomain).filter((domain): domain is string => Boolean(domain))));
+  if (!senders.length && !domains.length) return null;
+
+  const or: Array<{ matchType: EmailCategoryRuleMatchType; value: { in: string[] } }> = [];
+  if (senders.length) or.push({ matchType: EmailCategoryRuleMatchType.SENDER, value: { in: senders } });
+  if (domains.length) or.push({ matchType: EmailCategoryRuleMatchType.DOMAIN, value: { in: domains } });
+
+  const rules = await prisma.emailCategoryRule.findMany({
+    where: {
+      accountId,
+      OR: or,
+    },
+  });
+
+  const senderRule = rules.find((rule) => rule.matchType === EmailCategoryRuleMatchType.SENDER);
+  if (senderRule) return senderRule.category;
+  return rules.find((rule) => rule.matchType === EmailCategoryRuleMatchType.DOMAIN)?.category ?? null;
 }
 
 export async function fullGmailSync(account: EmailAccount): Promise<void> {
@@ -127,7 +153,7 @@ export async function syncThread(account: EmailAccount, gmailThreadId: string): 
   const lastSentMessageAt = sentMessages.length ? new Date(Math.max(...sentMessages.map((message) => message.sentAt.getTime()))) : null;
   const subject = visibleMessages[0]?.subject ?? "(no subject)";
   const snippet = visibleMessages[visibleMessages.length - 1]?.snippet ?? "";
-  const autoCategory = deriveThreadCategory(visibleMessages);
+  const autoCategory = await categoryRuleForThread(account.id, visibleMessages) ?? deriveThreadCategory(visibleMessages);
   const gmailCategory = visibleMessages.find((message) => message.gmailCategory)?.gmailCategory ?? null;
   const unsubscribeSource = visibleMessages.find((message) => message.unsubscribeUrl || message.unsubscribeEmail);
 

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { ContactSource, ContactType, EmailAutoCategory, EmailProvider, PmsJobType, Prisma } from "@prisma/client";
+import { ContactSource, ContactType, EmailAutoCategory, EmailCategoryRuleMatchType, EmailProvider, PmsJobType, Prisma } from "@prisma/client";
 import prisma from "../prisma";
 import { encrypt } from "../services/encryptionService";
 import {
@@ -27,6 +27,8 @@ type LinkTargets = {
   productionId?: string;
   contactId?: string;
 };
+
+type EmailCategoryScope = "thread" | "sender" | "domain";
 
 type DraftBody = {
   to?: string[];
@@ -133,6 +135,15 @@ function emailCategoryBody(value: unknown): EmailAutoCategory | null | undefined
     return normalized as EmailAutoCategory;
   }
   return undefined;
+}
+
+function emailCategoryScope(value: unknown): EmailCategoryScope {
+  return value === "sender" || value === "domain" ? value : "thread";
+}
+
+function emailDomain(address: string): string | null {
+  const domain = address.toLowerCase().split("@")[1]?.trim();
+  return domain || null;
 }
 
 function intValue(value: unknown): number | undefined {
@@ -895,27 +906,97 @@ router.post("/threads/:threadId/unsubscribe", async (req: Request, res: Response
 });
 
 router.patch("/threads/:threadId/category", async (req: Request, res: Response): Promise<void> => {
-  const category = emailCategoryBody((req.body as { category?: unknown }).category);
+  const body = req.body as { category?: unknown; scope?: unknown };
+  const category = emailCategoryBody(body.category);
+  const scope = emailCategoryScope(body.scope);
   if (category === undefined) {
     res.status(400).json({ error: "Valid category required" });
     return;
   }
 
-  const current = await prisma.emailThread.findUnique({ where: { id: req.params.threadId } });
+  const current = await prisma.emailThread.findUnique({
+    where: { id: req.params.threadId },
+    include: {
+      account: true,
+      messages: {
+        where: { isDuplicateSuppressed: false, isDraftArtifact: false },
+        orderBy: { sentAt: "desc" },
+        select: { fromAddress: true, isFromMe: true },
+      },
+    },
+  });
   if (!current) {
     res.status(404).json({ error: "Thread not found" });
     return;
   }
+  if (scope !== "thread" && !category) {
+    res.status(400).json({ error: "Sender and domain rules require a category" });
+    return;
+  }
 
+  if (scope !== "thread" && category) {
+    if (!current.accountId) {
+      res.status(400).json({ error: "Thread has no email account" });
+      return;
+    }
+    const sender = current.messages.find((message) => !message.isFromMe)?.fromAddress
+      ?? current.messages[0]?.fromAddress
+      ?? "";
+    const value = scope === "domain" ? emailDomain(sender) : sender.toLowerCase().trim();
+    if (!value) {
+      res.status(400).json({ error: "No sender available for category rule" });
+      return;
+    }
+    const matchType = scope === "domain" ? EmailCategoryRuleMatchType.DOMAIN : EmailCategoryRuleMatchType.SENDER;
+    await prisma.emailCategoryRule.upsert({
+      where: {
+        accountId_matchType_value: {
+          accountId: current.accountId,
+          matchType,
+          value,
+        },
+      },
+      update: { category },
+      create: {
+        accountId: current.accountId,
+        matchType,
+        value,
+        category,
+      },
+    });
+    await prisma.emailThread.updateMany({
+      where: {
+        accountId: current.accountId,
+        categoryOverride: null,
+        messages: {
+          some: {
+            isDuplicateSuppressed: false,
+            isDraftArtifact: false,
+            fromAddress: scope === "domain"
+              ? { endsWith: `@${value}`, mode: "insensitive" }
+              : { equals: value, mode: "insensitive" },
+          },
+        },
+      },
+      data: { autoCategory: category },
+    });
+    console.log(`[EMAIL] Added ${scope} category rule ${value} → ${category}`);
+  }
+
+  const scopedCategory = category as EmailAutoCategory;
   const updated = await prisma.emailThread.update({
     where: { id: current.id },
-    data: {
+    data: scope === "thread" ? {
       categoryOverride: category,
       categoryOverrideAt: category ? new Date() : null,
+    } : {
+      autoCategory: scopedCategory,
+      categoryOverride: null,
+      categoryOverrideAt: null,
     },
     include: emailThreadCrmInclude,
   });
-  console.log(`[EMAIL] ${category ? `Moved thread ${current.id} to ${category}` : `Cleared category override for thread ${current.id}`}`);
+  console.log(`[EMAIL] ${category ? `Moved thread ${current.id} to ${category} (${scope})` : `Cleared category override for thread ${current.id}`}`);
   res.json(updated);
 });
 

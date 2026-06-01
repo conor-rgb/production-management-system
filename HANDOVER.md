@@ -3505,6 +3505,61 @@
 
 ---
 
+# Email Sender/Domain Category Rules + Body Cleanup - 2026-06-01
+
+## Scope
+- Added persistent sender/domain category rules for the email client.
+- Tightened rendered email cleanup so Outlook/French reply headers, external warning blocks, raw `mailto:` links, and angle-bracket URLs do not dominate previews or message bodies.
+
+## Data Model
+- Added `EmailCategoryRule`:
+  - `accountId`
+  - `matchType`: `SENDER` or `DOMAIN`
+  - `value`: sender email or domain
+  - `category`: `EmailAutoCategory`
+- Added `EmailCategoryRuleMatchType` enum.
+- Added `EmailAccount.categoryRules`.
+- Migration applied:
+  - `20260601090000_email_category_rules`
+
+## API
+- Extended:
+  - `PATCH /api/email/threads/:threadId/category`
+- Body now supports:
+  - `{ category, scope: "thread" | "sender" | "domain" }`
+- Existing thread-level behavior is unchanged.
+- Sender/domain scopes create or update a persistent rule and apply it to matching uncategorized threads immediately.
+
+## Sync
+- Gmail sync now checks category rules before falling back to automatic classifier heuristics.
+- Sender rules win over domain rules.
+- Existing `disney.com` and `ganni.com` threads were corrected to `PEOPLE` and matching domain rules were seeded for `conor@unlimited.bond`.
+
+## Frontend
+- Thread ellipsis menu now has:
+  - `Move thread`
+  - `Always sort sender`
+  - `Always sort domain`
+- Each section offers the same category targets so one correction can stick for future mail.
+- Message preview/body cleanup now removes more quoted Outlook/French header noise and external warning boilerplate.
+
+## Verification
+- Prisma migration deployed and client generated:
+  - `cd backend && npx prisma migrate deploy && npx prisma generate`
+- Backend build passed:
+  - `cd backend && npm run build`
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend copied to `/var/www/agent`.
+- PM2 app `0` reloaded.
+
+## Next Steps
+1. Add a small rules manager in email settings so sender/domain rules can be reviewed and removed.
+2. Add bulk-select category correction in the thread list.
+3. Add a diagnostic badge in thread detail showing whether a category came from automatic classification, thread override, sender rule, or domain rule.
+
+---
+
 # Email Thread Header Simplification - 2026-05-30
 
 ## Scope
