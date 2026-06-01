@@ -1,3 +1,37 @@
+# HANDOVER - 2026-06-01 - Email HTML Rendering Tuning
+
+## Built This Session
+- Adjusted email message rendering so HTML signatures are no longer stripped into a separate muted block.
+- Preserved sender signature/layout HTML more faithfully while still sanitizing unsafe content.
+- Added targeted display normalization for problematic email markup:
+  - removes `center` wrappers,
+  - removes centered/right/justified alignment attributes,
+  - strips oversized/bold wrapper styles only when they are likely affecting an entire message body.
+- This addresses messages rendering as blunt plain text, missing styled signatures, or unexpectedly bold/centered bodies.
+
+## Files Changed
+- `frontend/src/pages/Email.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend copied to `/var/www/agent`.
+- Backend health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Email HTML is still sanitized, but less destructively.
+- Styled signatures should now remain part of the expanded email body.
+- Quote hiding remains active; further tuning may be needed for unusual Outlook/French forward chains.
+
+## Next Steps
+1. Add a per-message `View original formatting` toggle for emails where strict normalization removes too much.
+2. Add test fixtures for Outlook, Gmail, Apple Mail, and branded signature emails.
+3. Move quote/signature cleanup into a shared utility with fixture-based regression tests.
+
+---
+
 # HANDOVER - 2026-06-01 - Email Category Rule Management
 
 ## Built This Session

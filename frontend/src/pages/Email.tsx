@@ -402,29 +402,50 @@ function trimHtmlTextQuoteHeaders(htmlString: string): { visible: string; quoted
   return { visible: htmlString, quoted: "", hasQuote: false };
 }
 
-function splitHtmlSignature(htmlString: string): { body: string; signature: string } {
+function normalizeEmailHtmlForDisplay(htmlString: string) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlString, "text/html");
-  const allElements = doc.querySelectorAll("div, p, span");
-  for (const el of allElements) {
-    if ((el.textContent ?? "").trim() === "--") {
-      const signature = el.parentElement?.innerHTML ?? el.outerHTML;
-      let sibling = el.nextSibling;
-      while (sibling) {
-        const next = sibling.nextSibling;
-        sibling.parentNode?.removeChild(sibling);
-        sibling = next;
-      }
-      el.remove();
-      return { body: doc.body.innerHTML, signature };
-    }
-  }
-  return { body: htmlString, signature: "" };
+
+  doc.querySelectorAll("style, script").forEach((element) => element.remove());
+  doc.querySelectorAll("center").forEach((element) => {
+    const wrapper = doc.createElement("div");
+    wrapper.innerHTML = element.innerHTML;
+    element.replaceWith(wrapper);
+  });
+
+  doc.querySelectorAll<HTMLElement>("body, div, p, span, table, tbody, tr, td").forEach((element) => {
+    const align = element.getAttribute("align")?.toLowerCase();
+    if (align === "center" || align === "right" || align === "justify") element.removeAttribute("align");
+
+    const style = element.getAttribute("style");
+    if (!style) return;
+
+    const text = (element.textContent ?? "").replace(/\s+/g, " ").trim();
+    const cleaned = style
+      .split(";")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .filter((part) => {
+        const [rawProperty, rawValue = ""] = part.split(":");
+        const property = rawProperty.trim().toLowerCase();
+        const value = rawValue.trim().toLowerCase();
+
+        if (property === "text-align" && ["center", "right", "justify"].includes(value)) return false;
+        if (property === "font-weight" && text.length > 80 && /^(bold|[7-9]00)$/.test(value)) return false;
+        if (property === "font-size" && text.length > 80 && /(?:2[2-9]|[3-9]\d)px/.test(value)) return false;
+        return true;
+      })
+      .join("; ");
+
+    if (cleaned) element.setAttribute("style", cleaned);
+    else element.removeAttribute("style");
+  });
+
+  return doc.body.innerHTML;
 }
 
 function sanitizeEmailHtml(html: string, showImages: boolean) {
-  return DOMPurify.sanitize(html, {
-    FORBID_ATTR: ["style", "width", "height", "face", "size", "color"],
+  return DOMPurify.sanitize(normalizeEmailHtmlForDisplay(html), {
     FORBID_TAGS: showImages ? ["style", "script"] : ["img", "style", "script"],
   });
 }
@@ -1575,14 +1596,13 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
     const htmlVisible = htmlTextQuote?.visible ?? htmlQuote?.visible ?? message.bodyHtml;
     const htmlQuoted = [htmlQuote?.quoted, htmlTextQuote?.quoted].filter(Boolean).join("");
     const htmlHasQuote = Boolean(htmlQuote?.hasQuote || htmlTextQuote?.hasQuote);
-    const htmlSignature = message.bodyHtml ? splitHtmlSignature(htmlVisible) : null;
     const plainQuote = message.bodyHtml ? null : splitPlainTextQuote(stripPlainTextNoise(message.bodyText || ""));
     const plainSignature = plainQuote ? splitPlainTextSignature(plainQuote.visible) : null;
     const bodyHtml = message.bodyHtml
-      ? sanitizeEmailHtml(htmlSignature?.body ?? htmlVisible, showImages)
+      ? sanitizeEmailHtml(htmlVisible, showImages)
       : DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainSignature?.body ?? "")}</pre>`);
     const signatureHtml = message.bodyHtml
-      ? sanitizeEmailHtml(htmlSignature?.signature ?? "", showImages)
+      ? ""
       : plainSignature?.signature ? DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainSignature.signature)}</pre>`) : "";
     const quotedHtml = message.bodyHtml
       ? sanitizeEmailHtml(htmlQuoted, showImages)
