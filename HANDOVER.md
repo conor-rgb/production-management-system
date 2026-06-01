@@ -1,3 +1,36 @@
+# HANDOVER - 2026-06-01 - Email Sender Formatting Preference
+
+## Built This Session
+- Added sender-level persistence for the email `Original formatting` mode.
+- Expanded HTML messages now show:
+  - `Original formatting` for the current message only,
+  - `Always for sender` / `Sender defaults original` to remember that sender in local storage.
+- When a sender is marked as original-format preferred, future messages from that address open using the safer original HTML renderer by default.
+- No Gmail sync or backend routes were changed.
+
+## Files Changed
+- `frontend/src/pages/Email.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend copied to `/var/www/agent`.
+- Backend health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Default email rendering remains the normalized, cleaner app view.
+- Sender-specific opt-in handles branded/signature-heavy senders where normalization is too blunt.
+- Preference is browser-local via `localStorage` key `pms.email.senderFormatPreferences`.
+
+## Next Steps
+1. Add fixture tests for Outlook/French forwarded chains that still expose quoted headers.
+2. Move email HTML normalization and quote trimming into a shared tested utility.
+3. Consider syncing sender display preferences server-side if multiple devices need the same rendering defaults.
+
+---
+
 # HANDOVER - 2026-06-01 - Email Original Formatting Toggle
 
 ## Built This Session

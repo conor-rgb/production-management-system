@@ -33,6 +33,7 @@ type Folder = "inbox" | "sent" | "drafts" | "starred" | "unread" | "archived";
 type Filter = "all" | "unread" | "flagged";
 type AutoFilter = "all" | "people" | "promotions" | "newsletters" | "purchases";
 type CategoryScope = "thread" | "sender" | "domain";
+type EmailSenderFormatPreference = "original";
 
 type SaveAttachmentState = {
   attachment: EmailAttachmentSummary;
@@ -69,6 +70,36 @@ type ThreadPerson = {
     company?: { id: string; name: string } | null;
   };
 };
+
+const EMAIL_SENDER_FORMAT_PREFS_KEY = "pms.email.senderFormatPreferences";
+
+function emailSenderFormatKey(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function readEmailSenderFormatPreferences(): Record<string, EmailSenderFormatPreference> {
+  try {
+    const raw = window.localStorage.getItem(EMAIL_SENDER_FORMAT_PREFS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, EmailSenderFormatPreference>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function senderPrefersOriginalFormatting(email: string) {
+  return readEmailSenderFormatPreferences()[emailSenderFormatKey(email)] === "original";
+}
+
+function setSenderOriginalFormattingPreference(email: string, enabled: boolean) {
+  const key = emailSenderFormatKey(email);
+  if (!key) return;
+  const prefs = readEmailSenderFormatPreferences();
+  if (enabled) prefs[key] = "original";
+  else delete prefs[key];
+  window.localStorage.setItem(EMAIL_SENDER_FORMAT_PREFS_KEY, JSON.stringify(prefs));
+}
 
 type OpportunityPrefill = {
   title: string;
@@ -1586,7 +1617,8 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
   const articleRef = useRef<HTMLElement | null>(null);
   const [showImages, setShowImages] = useState(false);
   const [showQuoted, setShowQuoted] = useState(false);
-  const [showOriginalFormatting, setShowOriginalFormatting] = useState(false);
+  const [senderOriginalPreferred, setSenderOriginalPreferred] = useState(() => senderPrefersOriginalFormatting(message.fromAddress));
+  const [showOriginalFormatting, setShowOriginalFormatting] = useState(() => senderPrefersOriginalFormatting(message.fromAddress));
   const [detailsOpen, setDetailsOpen] = useState(false);
   const name = message.resolvedFromName || message.fromName || message.fromAddress;
   const primaryTo = message.isFromMe ? compactAddress(message.toAddresses[0] ?? "recipient") : "me";
@@ -1629,12 +1661,24 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
   }, [defaultExpanded, message.id]);
 
   useEffect(() => {
+    const preferred = senderPrefersOriginalFormatting(message.fromAddress);
+    setSenderOriginalPreferred(preferred);
+    setShowOriginalFormatting(preferred);
+  }, [message.fromAddress, message.id]);
+
+  useEffect(() => {
     if (!focused) return;
     const timer = window.setTimeout(() => {
       articleRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
     }, 80);
     return () => window.clearTimeout(timer);
   }, [focused]);
+
+  function updateSenderFormatPreference(enabled: boolean) {
+    setSenderOriginalFormattingPreference(message.fromAddress, enabled);
+    setSenderOriginalPreferred(enabled);
+    setShowOriginalFormatting(enabled);
+  }
 
   return (
     <>
@@ -1707,12 +1751,21 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
             <div className="mb-3 flex flex-wrap gap-2">
               {hasImages && !showImages && <button onClick={() => setShowImages(true)} className="min-h-8 rounded-full bg-gray-100 px-3 text-xs text-gray-700">Show images</button>}
               {message.bodyHtml && (
-                <button
-                  onClick={() => setShowOriginalFormatting((current) => !current)}
-                  className={`min-h-8 rounded-full px-3 text-xs ${showOriginalFormatting ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
-                >
-                  {showOriginalFormatting ? "Using original formatting" : "Original formatting"}
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowOriginalFormatting((current) => !current)}
+                    className={`min-h-8 rounded-full px-3 text-xs ${showOriginalFormatting ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                  >
+                    {showOriginalFormatting ? "Using original formatting" : "Original formatting"}
+                  </button>
+                  <button
+                    onClick={() => updateSenderFormatPreference(!senderOriginalPreferred)}
+                    title={senderOriginalPreferred ? "Stop defaulting this sender to original formatting" : "Always open this sender in original formatting"}
+                    className={`min-h-8 rounded-full px-3 text-xs ${senderOriginalPreferred ? "bg-blue-50 text-blue-700 ring-1 ring-blue-100" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                  >
+                    {senderOriginalPreferred ? "Sender defaults original" : "Always for sender"}
+                  </button>
+                </>
               )}
             </div>
             <div
