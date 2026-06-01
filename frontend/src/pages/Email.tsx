@@ -450,6 +450,12 @@ function sanitizeEmailHtml(html: string, showImages: boolean) {
   });
 }
 
+function sanitizeOriginalEmailHtml(html: string, showImages: boolean) {
+  return DOMPurify.sanitize(html, {
+    FORBID_TAGS: showImages ? ["script"] : ["img", "script"],
+  });
+}
+
 function escapeHtml(text: string) {
   return text.replace(/[<>&]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[char] ?? char));
 }
@@ -1580,6 +1586,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
   const articleRef = useRef<HTMLElement | null>(null);
   const [showImages, setShowImages] = useState(false);
   const [showQuoted, setShowQuoted] = useState(false);
+  const [showOriginalFormatting, setShowOriginalFormatting] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const name = message.resolvedFromName || message.fromName || message.fromAddress;
   const primaryTo = message.isFromMe ? compactAddress(message.toAddresses[0] ?? "recipient") : "me";
@@ -1599,7 +1606,9 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
     const plainQuote = message.bodyHtml ? null : splitPlainTextQuote(stripPlainTextNoise(message.bodyText || ""));
     const plainSignature = plainQuote ? splitPlainTextSignature(plainQuote.visible) : null;
     const bodyHtml = message.bodyHtml
-      ? sanitizeEmailHtml(htmlVisible, showImages)
+      ? showOriginalFormatting
+        ? sanitizeOriginalEmailHtml(htmlVisible, showImages)
+        : sanitizeEmailHtml(htmlVisible, showImages)
       : DOMPurify.sanitize(`<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(plainSignature?.body ?? "")}</pre>`);
     const signatureHtml = message.bodyHtml
       ? ""
@@ -1613,7 +1622,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
       quotedHtml,
       hasQuote: Boolean((htmlHasQuote && quotedHtml) || plainQuote?.hasQuote),
     };
-  }, [expanded, message.bodyHtml, message.bodyText, showImages]);
+  }, [expanded, message.bodyHtml, message.bodyText, showImages, showOriginalFormatting]);
 
   useEffect(() => {
     setExpanded(defaultExpanded);
@@ -1695,7 +1704,17 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
         {expanded && (
           <div className="px-5 pb-5">
             <div className="ml-11 max-w-[1040px]">
-            {hasImages && !showImages && <button onClick={() => setShowImages(true)} className="mb-3 min-h-8 rounded-full bg-gray-100 px-3 text-xs text-gray-700">Show images</button>}
+            <div className="mb-3 flex flex-wrap gap-2">
+              {hasImages && !showImages && <button onClick={() => setShowImages(true)} className="min-h-8 rounded-full bg-gray-100 px-3 text-xs text-gray-700">Show images</button>}
+              {message.bodyHtml && (
+                <button
+                  onClick={() => setShowOriginalFormatting((current) => !current)}
+                  className={`min-h-8 rounded-full px-3 text-xs ${showOriginalFormatting ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                >
+                  {showOriginalFormatting ? "Using original formatting" : "Original formatting"}
+                </button>
+              )}
+            </div>
             <div
               className="prose prose-sm max-w-none text-[15px] leading-7 text-gray-950 prose-p:my-3 prose-a:text-blue-600 prose-blockquote:border-l-gray-200 prose-blockquote:text-gray-500 [&_*]:max-w-full [&_table]:w-auto [&_table]:max-w-full [&_td]:align-top"
               dangerouslySetInnerHTML={{ __html: renderedBody.bodyHtml }}

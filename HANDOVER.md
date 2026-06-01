@@ -1,3 +1,37 @@
+# HANDOVER - 2026-06-01 - Email Original Formatting Toggle
+
+## Built This Session
+- Added a per-message `Original formatting` toggle on expanded HTML emails.
+- The normal view still applies the cleaner app-level formatting pass.
+- The original view preserves sender HTML/CSS more faithfully for emails where the normalized view looks too blunt or loses branded signatures.
+- Safety remains in place:
+  - scripts are blocked,
+  - images stay blocked until `Show images` is clicked.
+
+## Files Changed
+- `frontend/src/pages/Email.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend copied to `/var/www/agent`.
+- Backend health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+
+## Current State
+- Expanded HTML messages now have two render modes:
+  - normalized app view,
+  - safer original-format view.
+- This gives a quick way to inspect styled signatures and odd sender layouts without weakening the default email display.
+
+## Next Steps
+1. Add sender-specific rendering preference if certain senders should always use original formatting.
+2. Add fixture tests for signature-heavy HTML emails.
+3. Continue quote trimming against real Outlook/French forwarding examples.
+
+---
+
 # HANDOVER - 2026-06-01 - Email HTML Rendering Tuning
 
 ## Built This Session
