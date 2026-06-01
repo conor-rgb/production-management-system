@@ -47,6 +47,13 @@ type UnsubscribeResult = {
   url?: string;
 };
 
+type MessageTaskDraft = {
+  title: string;
+  productionId: string;
+  startAt: string;
+  description: string;
+};
+
 type LinkTargetsResponse = {
   opportunities?: Array<{ id: string; title: string; clientName?: string | null; brand?: string | null; stage: string; value?: string | null; company?: { id: string; name: string } | null }>;
   productions?: Array<{ id: string; title: string; jobCode?: string | null; clientName?: string | null; brand?: string | null; status: string }>;
@@ -1006,6 +1013,7 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
   const [linkOpen, setLinkOpen] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [actionSavingId, setActionSavingId] = useState<string | null>(null);
+  const [taskMessage, setTaskMessage] = useState<EmailMessage | null>(null);
   const attachments = thread.attachments ?? [];
   const visibleAttachments = expandedAttachments ? attachments : attachments.slice(0, 3);
   const attachmentSize = attachments.reduce((sum, attachment) => sum + attachment.sizeBytes, 0);
@@ -1018,14 +1026,16 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
   const participantTitle = (thread.participantNames?.length ? thread.participantNames : thread.participants).join(", ");
   const canTryUnsubscribe = !thread.unsubscribedAt && (Boolean(thread.unsubscribeUrl || thread.unsubscribeEmail) || thread.autoCategory === "NEWSLETTERS" || thread.autoCategory === "PROMOTIONS");
 
-  async function createActionFromMessage(message: EmailMessage) {
+  async function createActionFromMessage(message: EmailMessage, draft: MessageTaskDraft) {
     setActionSavingId(message.id);
     try {
       await api.post(`/api/project-actions/email/messages/${message.id}/actions`, {
-        title: `Follow up: ${thread.subject}`,
-        productionId: thread.linkedProduction?.id,
-        startAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        title: draft.title,
+        productionId: draft.productionId,
+        startAt: draft.startAt ? new Date(draft.startAt).toISOString() : undefined,
+        description: draft.description,
       });
+      setTaskMessage(null);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Link this thread to a production before creating a task.");
     } finally {
@@ -1130,7 +1140,7 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
                 defaultExpanded={defaultExpanded.has(message.id)}
                 focused={focusedMessageId === message.id}
                 showNewDivider={index > 0 && !message.isFromMe && !thread.isRead}
-                onCreateAction={() => createActionFromMessage(message)}
+                onCreateAction={() => setTaskMessage(message)}
                 creatingAction={actionSavingId === message.id}
               />
             </Fragment>
@@ -1142,6 +1152,15 @@ function ThreadDetail({ thread, focusedMessageId, filingAttachment, loadingOlder
           <Reply size={16} /> Reply to {[...thread.messages].reverse().find((message) => !message.isFromMe)?.resolvedFromName ?? "sender"}...
         </button>
       </div>
+      {taskMessage && (
+        <CreateMessageTaskDrawer
+          thread={thread}
+          message={taskMessage}
+          saving={actionSavingId === taskMessage.id}
+          onClose={() => setTaskMessage(null)}
+          onCreate={(draft) => createActionFromMessage(taskMessage, draft)}
+        />
+      )}
     </>
   );
 }
@@ -1182,6 +1201,83 @@ function UnsubscribeNotice({ result, onClose }: { result: UnsubscribeResult; onC
         <button type="button" onClick={onClose} className="grid min-h-7 min-w-7 place-items-center rounded text-amber-700 hover:bg-amber-100">
           <X size={13} />
         </button>
+      </div>
+    </div>
+  );
+}
+
+function dateInputValue(value: Date) {
+  const local = new Date(value.getTime() - value.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function CreateMessageTaskDrawer({ thread, message, saving, onClose, onCreate }: { thread: EmailThread; message: EmailMessage; saving: boolean; onClose: () => void; onCreate: (draft: MessageTaskDraft) => void }) {
+  const [productions, setProductions] = useState<Production[]>([]);
+  const [draft, setDraft] = useState<MessageTaskDraft>(() => ({
+    title: `Follow up: ${thread.subject}`,
+    productionId: thread.linkedProductionId ?? "",
+    startAt: dateInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000)),
+    description: cleanEmailPreview(message.bodyText || message.bodyHtml || message.subject).slice(0, 500),
+  }));
+
+  useEffect(() => {
+    api.get<Production[]>("/api/productions?includeWrapped=true")
+      .then((items) => {
+        setProductions(items);
+        setDraft((current) => ({ ...current, productionId: current.productionId || items[0]?.id || "" }));
+      })
+      .catch(console.error);
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[80] flex justify-end bg-black/20">
+      <div className="h-full w-full overflow-auto bg-white shadow-xl md:w-[390px]">
+        <header className="sticky top-0 z-10 flex min-h-14 items-center border-b border-gray-100 bg-white px-4">
+          <div className="min-w-0">
+            <h2 className="text-sm font-medium text-gray-900">Create task from email</h2>
+            <p className="truncate text-[11px] text-gray-400">{message.resolvedFromName || message.fromName || message.fromAddress} · {fullTimeLabel(message.sentAt)}</p>
+          </div>
+          <button onClick={onClose} className="ml-auto grid min-h-11 min-w-11 place-items-center text-gray-500"><X size={17} /></button>
+        </header>
+        <div className="space-y-3 p-4">
+          <DrawerField label="Task">
+            <input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+          </DrawerField>
+          <DrawerField label="Project">
+            <select value={draft.productionId} onChange={(event) => setDraft({ ...draft, productionId: event.target.value })}>
+              <option value="">Select a production...</option>
+              {productions.map((production) => (
+                <option key={production.id} value={production.id}>{production.jobCode ?? "No code"} · {production.clientName ?? production.title}</option>
+              ))}
+            </select>
+          </DrawerField>
+          <DrawerField label="Due">
+            <input type="datetime-local" value={draft.startAt} onChange={(event) => setDraft({ ...draft, startAt: event.target.value })} />
+          </DrawerField>
+          <label className="block text-xs text-gray-500">
+            Notes
+            <textarea
+              value={draft.description}
+              onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+              rows={5}
+              className="mt-1 min-h-28 w-full rounded-lg border border-gray-200 p-3 text-sm text-gray-900 outline-none focus:border-gray-400"
+            />
+          </label>
+          <div className="rounded-lg bg-gray-50 p-3 text-xs text-gray-500">
+            Linked message<br />
+            <span className="text-gray-900">{message.subject}</span>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={onClose} className="min-h-11 px-3 text-sm text-gray-500">Cancel</button>
+            <button
+              onClick={() => onCreate(draft)}
+              disabled={saving || !draft.title.trim() || !draft.productionId}
+              className="min-h-11 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-40"
+            >
+              {saving ? "Creating..." : "Create task →"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1429,31 +1525,34 @@ function PeoplePanel({ thread, accountEmail, onClose, onChanged }: { thread: Ema
 
   return (
     <div className="fixed inset-0 z-[70] flex justify-end bg-black/20">
-      <div className="h-full w-full overflow-auto bg-white shadow-xl md:w-[360px]">
+      <div className="h-full w-full overflow-auto bg-white shadow-xl md:w-[380px]">
         <header className="sticky top-0 z-10 flex min-h-14 items-center border-b border-gray-100 bg-white px-4">
-          <h2 className="text-sm font-medium text-gray-900">People in this thread</h2>
+          <div>
+            <h2 className="text-sm font-medium text-gray-900">People</h2>
+            <p className="text-[11px] text-gray-400">{people.length || "Loading"} addresses in this thread</p>
+          </div>
           <button onClick={onClose} className="ml-auto grid min-h-11 min-w-11 place-items-center text-gray-500"><X size={17} /></button>
         </header>
-        <div className="divide-y divide-gray-100 p-3">
+        <div className="divide-y divide-gray-100 p-2">
           {people.map((person) => {
             const isMe = person.isMe || person.email === accountEmail?.toLowerCase();
             return (
-              <div key={person.email} className="py-3">
-                <div className="flex items-center gap-3">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-medium text-white" style={{ background: getEmailColor(person.email) }}>{initials(person.name)}</span>
+              <div key={person.email} className="rounded-lg px-2 py-2 hover:bg-gray-50">
+                <div className="flex items-center gap-2">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[11px] font-medium text-white" style={{ background: getEmailColor(person.email) }}>{initials(person.name)}</span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-900">{person.name}</p>
+                    <p className="truncate text-[13px] font-medium text-gray-900">{person.name}</p>
                     <p className="truncate text-[11px] text-gray-500">{person.email}</p>
-                    <p className="truncate text-[11px] italic text-gray-400">{person.roles.join(" · ")} · {person.existingContact?.company?.name ?? person.inferredCompany}</p>
+                    <p className="truncate text-[10px] uppercase tracking-[0.08em] text-gray-400">{person.roles.join(" · ")} · {person.existingContact?.company?.name ?? person.inferredCompany}</p>
                   </div>
                   {isMe ? (
-                    <span className="rounded-full bg-gray-100 px-2 py-1 text-[11px] text-gray-500">You</span>
+                    <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] text-gray-500">You</span>
                   ) : person.existingContact ? (
-                    <button onClick={() => linkContact(person.existingContact!.id)} className="min-h-8 rounded-full bg-emerald-50 px-2 text-[11px] text-emerald-700">
+                    <button onClick={() => linkContact(person.existingContact!.id)} className="min-h-7 rounded-full bg-emerald-50 px-2 text-[10px] text-emerald-700">
                       {person.isLinkedToThread ? "Linked ✓" : "Contact"}
                     </button>
                   ) : (
-                    <button onClick={() => startCreate(person)} className="min-h-8 rounded-full bg-blue-50 px-2 text-[11px] text-blue-700">+ Create</button>
+                    <button onClick={() => startCreate(person)} className="min-h-7 rounded-full bg-blue-50 px-2 text-[10px] text-blue-700">+ Create</button>
                   )}
                 </div>
                 {creating === person.email && (
@@ -1689,10 +1788,10 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
           <span className="h-px flex-1 bg-gray-200" />
         </div>
       )}
-      <article ref={articleRef} className={`group mb-3 overflow-hidden bg-white transition-all ${expanded ? "rounded-[20px] border border-gray-200 shadow-[0_10px_28px_rgba(15,23,42,0.075),0_1px_2px_rgba(15,23,42,0.05)]" : "rounded-[15px] border border-gray-200/80 shadow-[0_3px_10px_rgba(15,23,42,0.045),0_1px_2px_rgba(15,23,42,0.035)] hover:shadow-[0_6px_16px_rgba(15,23,42,0.06)]"} ${focused ? "relative z-[1] ring-2 ring-blue-200" : ""}`}>
+      <article ref={articleRef} className={`group mb-2.5 overflow-visible bg-white transition-all ${expanded ? "rounded-[18px] border border-gray-200 shadow-[0_8px_22px_rgba(15,23,42,0.065),0_1px_2px_rgba(15,23,42,0.045)]" : "rounded-[14px] border border-gray-200/80 shadow-[0_2px_8px_rgba(15,23,42,0.04),0_1px_2px_rgba(15,23,42,0.03)] hover:shadow-[0_5px_14px_rgba(15,23,42,0.055)]"} ${focused ? "relative z-[1] ring-2 ring-blue-200" : ""}`}>
         <button
           onClick={() => setExpanded((current) => !current)}
-          className={`grid w-full grid-cols-[36px_1fr_auto_auto] items-center gap-3 text-left transition-all duration-200 ${expanded ? "px-5 pt-4" : "min-h-[54px] px-4"}`}
+          className={`grid w-full grid-cols-[32px_1fr_auto_auto] items-center gap-2.5 text-left transition-all duration-200 ${expanded ? "px-4 pt-3" : "min-h-[48px] px-3.5"}`}
         >
           <span
             onClick={(event) => { event.stopPropagation(); setDetailsOpen((current) => !current); }}
@@ -1702,11 +1801,11 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
           >
             {initials(name)}
           </span>
-          <span className={`min-w-0 ${expanded ? "pb-2" : ""}`}>
+          <span className={`min-w-0 ${expanded ? "pb-1.5" : ""}`}>
             <span className="flex min-w-0 items-baseline gap-2">
               <span
                 onClick={(event) => { event.stopPropagation(); setDetailsOpen((current) => !current); }}
-                className={`truncate font-semibold text-gray-950 ${expanded ? "text-[14px]" : "text-[13px]"}`}
+                className={`truncate font-semibold text-gray-950 ${expanded ? "text-[13px]" : "text-[13px]"}`}
                 title={message.fromAddress}
               >
                 {name}
@@ -1719,17 +1818,9 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
                   {toLabel}
                 </span>
               ) : (
-                <span className="min-w-0 truncate text-[13px] leading-5 text-gray-800">{previewText.slice(0, 170)}</span>
+                <span className="min-w-0 truncate text-[13px] leading-5 text-gray-800">{previewText.slice(0, 190)}</span>
               )}
             </span>
-            {expanded && detailsOpen && (
-              <span className="mt-1 block space-y-1 text-xs text-gray-500">
-                <span className="block"><span className="mr-2 text-gray-400">from</span><span className="text-blue-600">{name} &lt;{message.fromAddress}&gt;</span></span>
-                {message.toAddresses.length > 0 && <span className="block"><span className="mr-2 text-gray-400">to</span><span className="text-blue-600">{addressLine(message.toAddresses)}</span></span>}
-                {message.ccAddresses.length > 0 && <span className="block"><span className="mr-2 text-gray-400">cc</span><span className="text-blue-600">{addressLine(message.ccAddresses)}</span></span>}
-                {message.bccAddresses.length > 0 && <span className="block"><span className="mr-2 text-gray-400">bcc</span><span className="text-blue-600">{addressLine(message.bccAddresses)}</span></span>}
-              </span>
-            )}
           </span>
           <span className={`whitespace-nowrap text-xs text-gray-500 ${expanded ? "self-start pt-0.5" : ""}`}>{fullTimeLabel(message.sentAt)}</span>
           <span className={`flex items-center gap-1 ${expanded ? "self-start" : ""}`}>
@@ -1745,9 +1836,25 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
             {expanded ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
           </span>
         </button>
+        {detailsOpen && (
+          <div className="mx-4 mb-2 ml-16 rounded-xl border border-gray-200 bg-white p-3 text-xs text-gray-500 shadow-lg">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="grid h-8 w-8 place-items-center rounded-full text-[11px] font-medium text-white" style={{ background: message.avatarColor ?? "#5B8DEF" }}>{initials(name)}</span>
+              <span className="min-w-0">
+                <span className="block truncate text-[13px] font-medium text-gray-900">{name}</span>
+                <a href={`mailto:${message.fromAddress}`} className="block truncate text-[11px] text-blue-600">{message.fromAddress}</a>
+              </span>
+            </div>
+            <div className="space-y-1 border-t border-gray-100 pt-2">
+              {message.toAddresses.length > 0 && <p className="truncate"><span className="mr-2 text-gray-400">to</span>{addressLine(message.toAddresses)}</p>}
+              {message.ccAddresses.length > 0 && <p className="truncate"><span className="mr-2 text-gray-400">cc</span>{addressLine(message.ccAddresses)}</p>}
+              {message.bccAddresses.length > 0 && <p className="truncate"><span className="mr-2 text-gray-400">bcc</span>{addressLine(message.bccAddresses)}</p>}
+            </div>
+          </div>
+        )}
         {expanded && (
-          <div className="px-5 pb-5">
-            <div className="ml-11 max-w-[1040px]">
+          <div className="px-4 pb-4">
+            <div className="ml-10 max-w-[1040px]">
             <div className="mb-3 flex flex-wrap gap-2">
               {hasImages && !showImages && <button onClick={() => setShowImages(true)} className="min-h-8 rounded-full bg-gray-100 px-3 text-xs text-gray-700">Show images</button>}
               {message.bodyHtml && (
@@ -1769,7 +1876,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
               )}
             </div>
             <div
-              className="prose prose-sm max-w-none text-[15px] leading-7 text-gray-950 prose-p:my-3 prose-a:text-blue-600 prose-blockquote:border-l-gray-200 prose-blockquote:text-gray-500 [&_*]:max-w-full [&_table]:w-auto [&_table]:max-w-full [&_td]:align-top"
+              className="prose prose-sm max-w-none text-[14px] leading-6 text-gray-950 prose-p:my-2.5 prose-a:text-blue-600 prose-blockquote:border-l-gray-200 prose-blockquote:text-gray-500 [&_*]:max-w-full [&_table]:w-auto [&_table]:max-w-full [&_td]:align-top"
               dangerouslySetInnerHTML={{ __html: renderedBody.bodyHtml }}
             />
             {renderedBody.signatureHtml && (
@@ -1782,7 +1889,7 @@ function MessageBlock({ message, filingAttachment, onOpenAttachment, defaultExpa
               <div className="mt-3 border-l-2 border-gray-200 pl-3 text-xs text-gray-500" dangerouslySetInnerHTML={{ __html: renderedBody.quotedHtml }} />
             )}
             {message.attachments.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-wrap gap-1.5">
                 {message.attachments.map((attachment, index) => (
                   <AttachmentChip
                     key={`${attachment.filename}-${index}`}

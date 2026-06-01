@@ -1,3 +1,51 @@
+# HANDOVER - 2026-06-01 - Spark-Style Email Reading And Message Tasks
+
+## Built This Session
+- Tightened the Spark-style thread reader:
+  - collapsed message cards are denser with cleaner sender, preview, date, and action layout,
+  - expanded messages have reduced whitespace, softer card treatment, and neater attachment spacing,
+  - clicking the message row expands/collapses it,
+  - clicking the avatar/sender opens compact sender details without expanding the whole header.
+- Added a specific email-message task flow:
+  - message `Task` now opens a right-side drawer,
+  - task title, linked production, due date, and notes are editable before creation,
+  - task creation uses the existing message-level action route so the task links to the exact email message, not just the thread.
+- Made the People panel more compact:
+  - smaller rows,
+  - clearer role/company metadata,
+  - less padding so large recipient threads scan better.
+- Polished the composer tray:
+  - recipient chips are cleaner and easier to scan,
+  - contact autocomplete suggestions now show avatar, name, email, and company,
+  - CC/BCC reveal buttons are subtler,
+  - composer window is slightly wider with a more Spark-like header.
+
+## Files Changed
+- `frontend/src/pages/Email.tsx`
+- `frontend/src/components/email/ComposerTray.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- No backend changes were needed in this pass.
+
+## Current State
+- Gmail draft sync is already present and remains unchanged:
+  - local drafts sync to Gmail Drafts,
+  - Gmail drafts import into the app,
+  - sending uses Gmail-backed draft send where available.
+- Composer attachment handling is still disabled. The UI now labels this clearly, but real attachment support needs a draft attachment schema and Gmail MIME upload path.
+- Specific message-to-task linking is now available from the expanded message actions.
+
+## Next Steps
+1. Add `EmailDraftAttachment` support so composer attachments sync to Gmail drafts and sends.
+2. Add message-level linking to events/options, matching the new task flow.
+3. Add a compact contact popover from the sender details that can link/create Blackbook records directly.
+4. Add visual regression fixtures for collapsed/expanded email cards so Spark-style density does not drift.
+
+---
+
 # HANDOVER - 2026-06-01 - Email Sender Formatting Preference
 
 ## Built This Session

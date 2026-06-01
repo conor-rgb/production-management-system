@@ -106,9 +106,12 @@ function RecipientInput({ value, onChange, placeholder }: { value: string[]; onC
   return (
     <div className="flex flex-1 flex-wrap items-center gap-1 py-1">
       {value.map((email) => (
-        <span key={email} className="inline-flex max-w-[190px] items-center gap-1 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-xs text-gray-900" title={email}>
+        <span key={email} className="inline-flex max-w-[210px] items-center gap-1.5 rounded-full border border-gray-200 bg-[#f8f8f6] py-0.5 pl-1 pr-1.5 text-xs text-gray-900" title={email}>
+          <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-gray-900 text-[8px] font-semibold uppercase text-white">
+            {email.slice(0, 1)}
+          </span>
           <span className="truncate">{email}</span>
-          <button type="button" onClick={() => removeRecipient(email)} className="text-gray-400 hover:text-gray-900">×</button>
+          <button type="button" onClick={() => removeRecipient(email)} className="grid h-4 w-4 place-items-center rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-900">×</button>
         </span>
       ))}
       <div className="relative min-w-[100px] flex-1">
@@ -131,8 +134,11 @@ function RecipientInput({ value, onChange, placeholder }: { value: string[]; onC
                   onClick={() => addRecipient(contact.email ?? "")}
                   className={`flex min-h-10 w-full items-center gap-2 px-3 text-left ${index === activeIndex ? "bg-gray-100" : "hover:bg-gray-50"}`}
                 >
-                  <span className="text-xs font-medium text-gray-900">{name || contact.email}</span>
-                  <span className="truncate text-[11px] text-gray-400">{contact.email}</span>
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gray-900 text-[10px] font-semibold text-white">{(name || contact.email || "?").slice(0, 1)}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-medium text-gray-900">{name || contact.email}</span>
+                    <span className="block truncate text-[11px] text-gray-400">{contact.email}{contact.company?.name ? ` · ${contact.company.name}` : ""}</span>
+                  </span>
                 </button>
               );
             })}
@@ -224,8 +230,8 @@ function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: s
   }
 
   return (
-    <section className="mb-0 flex max-h-[560px] w-[480px] flex-col overflow-hidden rounded-t-lg bg-white shadow-[0_-4px_32px_rgba(0,0,0,0.12),0_0_0_0.5px_rgba(0,0,0,0.12)] pointer-events-auto max-md:fixed max-md:inset-0 max-md:z-[1100] max-md:max-h-none max-md:w-screen max-md:rounded-none">
-      <header className="flex min-h-11 shrink-0 items-center gap-2 border-b border-gray-200 px-3">
+    <section className="mb-0 flex max-h-[560px] w-[500px] flex-col overflow-hidden rounded-t-xl bg-white shadow-[0_-4px_32px_rgba(0,0,0,0.12),0_0_0_0.5px_rgba(0,0,0,0.12)] pointer-events-auto max-md:fixed max-md:inset-0 max-md:z-[1100] max-md:max-h-none max-md:w-screen max-md:rounded-none">
+      <header className="flex min-h-12 shrink-0 items-center gap-2 border-b border-gray-200 px-3">
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-medium text-gray-900">{titleForDraft(draft)}</span>
           <span className="block truncate text-[10px] uppercase tracking-[0.08em] text-gray-400">{draft.replyToThreadId ? "Reply" : "New message"} · {draftSavedLabel(draft)}</span>
@@ -273,9 +279,9 @@ function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: s
             <RecipientInput value={draft.bcc} onChange={(bcc) => updateDraft(draft.id, { bcc })} placeholder="BCC recipients" />
           </div>
         )}
-        <div className="flex gap-3 pb-2">
-          {!showCc && <button type="button" onClick={() => setShowCc(true)} className="min-h-6 text-[11px] text-gray-400 hover:text-gray-900">+ Cc</button>}
-          {!showBcc && <button type="button" onClick={() => setShowBcc(true)} className="min-h-6 text-[11px] text-gray-400 hover:text-gray-900">+ Bcc</button>}
+        <div className="flex gap-2 pb-2 pl-7">
+          {!showCc && <button type="button" onClick={() => setShowCc(true)} className="min-h-6 rounded-full bg-gray-50 px-2 text-[11px] text-gray-500 hover:bg-gray-100 hover:text-gray-900">+ Cc</button>}
+          {!showBcc && <button type="button" onClick={() => setShowBcc(true)} className="min-h-6 rounded-full bg-gray-50 px-2 text-[11px] text-gray-500 hover:bg-gray-100 hover:text-gray-900">+ Bcc</button>}
         </div>
       </div>
 
@@ -338,7 +344,7 @@ function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: s
       )}
 
       <footer className="flex h-11 shrink-0 items-center gap-1 border-t border-gray-200 px-3">
-        <button type="button" disabled className={iconButtonClass(true)} title="Attach"><Paperclip size={16} /></button>
+        <button type="button" disabled className={iconButtonClass(true)} title="Attachments will sync in the next mail pass"><Paperclip size={16} /></button>
         <button type="button" disabled className={iconButtonClass(true)} title="Reminder"><Bell size={16} /></button>
         <button type="button" onClick={() => setShowFormatting((current) => !current)} className={iconButtonClass()} title="Formatting"><Type size={16} /></button>
         <div className="flex-1" />
