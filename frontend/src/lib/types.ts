@@ -343,6 +343,17 @@ export interface EmailAccount {
   updatedAt: string;
 }
 
+export interface EmailCategoryRule {
+  id: string;
+  accountId: string;
+  matchType: "SENDER" | "DOMAIN";
+  value: string;
+  category: EmailAutoCategory;
+  createdAt: string;
+  updatedAt: string;
+  account?: Pick<EmailAccount, "id" | "label" | "emailAddress">;
+}
+
 export interface EmailTemplate {
   id: string;
   name: string;

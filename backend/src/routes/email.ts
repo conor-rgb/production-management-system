@@ -1000,6 +1000,56 @@ router.patch("/threads/:threadId/category", async (req: Request, res: Response):
   res.json(updated);
 });
 
+router.get("/category-rules", async (req: Request, res: Response): Promise<void> => {
+  const accountId = typeof req.query.accountId === "string" ? req.query.accountId : undefined;
+  const rules = await prisma.emailCategoryRule.findMany({
+    where: accountId ? { accountId } : undefined,
+    orderBy: [{ matchType: "asc" }, { value: "asc" }],
+    include: {
+      account: { select: { id: true, label: true, emailAddress: true } },
+    },
+  });
+  res.json(rules);
+});
+
+router.patch("/category-rules/:ruleId", async (req: Request, res: Response): Promise<void> => {
+  const category = emailCategoryBody((req.body as { category?: unknown }).category);
+  if (!category) {
+    res.status(400).json({ error: "Valid category required" });
+    return;
+  }
+  const rule = await prisma.emailCategoryRule.update({
+    where: { id: req.params.ruleId },
+    data: { category },
+    include: {
+      account: { select: { id: true, label: true, emailAddress: true } },
+    },
+  });
+  await prisma.emailThread.updateMany({
+    where: {
+      accountId: rule.accountId,
+      categoryOverride: null,
+      messages: {
+        some: {
+          isDuplicateSuppressed: false,
+          isDraftArtifact: false,
+          fromAddress: rule.matchType === EmailCategoryRuleMatchType.DOMAIN
+            ? { endsWith: `@${rule.value}`, mode: "insensitive" }
+            : { equals: rule.value, mode: "insensitive" },
+        },
+      },
+    },
+    data: { autoCategory: category },
+  });
+  console.log(`[EMAIL] Updated category rule ${rule.matchType}:${rule.value} → ${category}`);
+  res.json(rule);
+});
+
+router.delete("/category-rules/:ruleId", async (req: Request, res: Response): Promise<void> => {
+  await prisma.emailCategoryRule.delete({ where: { id: req.params.ruleId } });
+  res.json({ deleted: true });
+});
+
 router.patch("/threads/:threadId/link", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as LinkTargets;
   if (!body.opportunityId && !body.productionId && !body.contactId) {

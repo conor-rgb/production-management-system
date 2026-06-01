@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Mail, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
-import type { CrewRole, EmailAccount, EmailTemplate, SectionTemplate, StorageInfo } from "../lib/types";
+import type { CrewRole, EmailAccount, EmailAutoCategory, EmailCategoryRule, EmailTemplate, SectionTemplate, StorageInfo } from "../lib/types";
 import { formatBytes } from "../lib/types";
 
 type BlackbookCategory = "CREW" | "SERVICE" | "LOCATION" | "EQUIPMENT" | "TALENT" | "TRANSPORT" | "POST" | "OTHER";
@@ -25,6 +25,23 @@ interface BlackbookConfigCategory {
   types: BlackbookConfigType[];
 }
 
+const EMAIL_CATEGORY_OPTIONS: EmailAutoCategory[] = [
+  "PEOPLE",
+  "PROMOTIONS",
+  "NEWSLETTERS",
+  "PURCHASES",
+  "UPDATES",
+  "SOCIAL",
+  "FORUMS",
+  "OTHER",
+];
+
+function emailCategoryLabel(category: EmailAutoCategory): string {
+  return category
+    .toLowerCase()
+    .replace(/(^|_)([a-z])/g, (_match, prefix: string, letter: string) => `${prefix ? " " : ""}${letter.toUpperCase()}`);
+}
+
 export default function SettingsPage() {
   const { email } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
@@ -39,6 +56,7 @@ export default function SettingsPage() {
   const [budgetTemplates, setBudgetTemplates] = useState<SectionTemplate[]>([]);
   const [catalogError] = useState("");
   const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
+  const [emailCategoryRules, setEmailCategoryRules] = useState<EmailCategoryRule[]>([]);
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
   const [emailHealth, setEmailHealth] = useState<Record<string, boolean>>({});
   const [emailSignature, setEmailSignature] = useState("");
@@ -72,13 +90,15 @@ export default function SettingsPage() {
   }
 
   async function loadEmailSettings() {
-    const [accounts, templates, signature, health] = await Promise.all([
+    const [accounts, templates, signature, health, categoryRules] = await Promise.all([
       api.get<EmailAccount[]>("/api/email/accounts"),
       api.get<EmailTemplate[]>("/api/email/templates"),
       api.get<{ signature: string }>("/api/email/signature"),
       api.get<{ accountId: string; connected: boolean }[]>("/api/email/health"),
+      api.get<EmailCategoryRule[]>("/api/email/category-rules"),
     ]);
     setEmailAccounts(accounts);
+    setEmailCategoryRules(categoryRules);
     setEmailTemplates(templates);
     setEmailSignature(signature.signature || "Conor | unlimited.bond | conor@unlimited.bond");
     setEmailHealth(Object.fromEntries(health.map((item) => [item.accountId, item.connected])));
@@ -204,6 +224,17 @@ export default function SettingsPage() {
     await loadEmailSettings();
   }
 
+  async function updateEmailCategoryRule(ruleId: string, category: EmailAutoCategory) {
+    await api.patch(`/api/email/category-rules/${ruleId}`, { category });
+    await loadEmailSettings();
+  }
+
+  async function deleteEmailCategoryRule(ruleId: string) {
+    if (!window.confirm("Delete this sorting rule? Future messages will fall back to automatic classification.")) return;
+    await api.delete(`/api/email/category-rules/${ruleId}`);
+    await loadEmailSettings();
+  }
+
   async function saveSignature() {
     await api.patch("/api/email/signature", { signature: emailSignature });
   }
@@ -323,6 +354,46 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
+
+        <div className="mb-5 rounded-lg border border-gray-200 p-3">
+          <div className="mb-3">
+            <h3 className="text-sm font-medium text-gray-900">Sorting rules</h3>
+            <p className="mt-1 text-xs text-gray-500">Sender and domain corrections created from the mail menu. Rule changes re-sort matching threads that do not have a one-off thread override.</p>
+          </div>
+          {emailCategoryRules.length > 0 ? (
+            <div className="divide-y divide-gray-100">
+              {emailCategoryRules.map((rule) => (
+                <div key={rule.id} className="grid gap-2 py-2 sm:grid-cols-[92px_1fr_154px_40px] sm:items-center">
+                  <span className="w-fit rounded bg-gray-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+                    {rule.matchType === "DOMAIN" ? "Domain" : "Sender"}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-gray-900">{rule.value}</p>
+                    <p className="truncate text-xs text-gray-400">{rule.account?.emailAddress ?? "All accounts"}</p>
+                  </div>
+                  <select
+                    value={rule.category}
+                    onChange={(event) => updateEmailCategoryRule(rule.id, event.target.value as EmailAutoCategory)}
+                    className="min-h-10 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700"
+                  >
+                    {EMAIL_CATEGORY_OPTIONS.map((category) => (
+                      <option key={category} value={category}>{emailCategoryLabel(category)}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => deleteEmailCategoryRule(rule.id)}
+                    className="grid min-h-10 min-w-10 place-items-center rounded-lg text-red-500 hover:bg-red-50"
+                    title="Delete sorting rule"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-400">No sorting rules yet. Use an email thread's category menu to always sort a sender or domain.</p>
+          )}
+        </div>
 
         <div className="mb-5 rounded-lg border border-gray-200 p-3">
           <h3 className="mb-2 text-sm font-medium text-gray-900">Email signature</h3>

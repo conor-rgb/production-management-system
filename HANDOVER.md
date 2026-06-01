@@ -1,3 +1,45 @@
+# HANDOVER - 2026-06-01 - Email Category Rule Management
+
+## Built This Session
+- Added editable management for email sender/domain category rules created from the mail thread category menu.
+- Added backend endpoints:
+  - `GET /api/email/category-rules`
+  - `PATCH /api/email/category-rules/:ruleId`
+  - `DELETE /api/email/category-rules/:ruleId`
+- Updating a rule now re-sorts matching uncategorized threads immediately while preserving explicit per-thread overrides.
+- Added a Settings → Email → Sorting rules table:
+  - shows sender/domain rule type,
+  - rule value,
+  - account email,
+  - editable category dropdown,
+  - delete action.
+
+## Files Changed
+- `backend/src/routes/email.ts`
+- `frontend/src/lib/types.ts`
+- `frontend/src/pages/SettingsPage.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Backend build passed:
+  - `cd backend && npm run build`
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+
+## Current State
+- Automatic Apple Mail-style sorting now has a visible control surface.
+- Sender/domain corrections are no longer hidden database state.
+- Disney/GANNI-style people-domain corrections can be audited and changed from Settings.
+
+## Next Steps
+1. Add bulk category changes from the thread list selection UI.
+2. Add a small category provenance label in thread detail: Gmail category, automatic rule, or manual override.
+3. Add a rule creation form in Settings for domains/senders that are not currently visible in the inbox.
+
+---
+
 # HANDOVER - 2026-05-29 - Email Client Drafts Folder
 
 ## Built This Session
