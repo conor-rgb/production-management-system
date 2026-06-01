@@ -36,6 +36,12 @@ function draftSavedLabel(draft: Draft) {
   return `${draft.gmailDraftId ? "Gmail draft" : "Saved"} · ${date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
+function formatBytes(value: number) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
 function iconButtonClass(disabled = false) {
   return `grid min-h-7 min-w-7 place-items-center rounded ${disabled ? "cursor-not-allowed text-gray-300" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`;
 }
@@ -182,7 +188,7 @@ function MinimizedTab({ draft, isExpanded, onToggle, onClose }: { draft: Draft; 
 }
 
 function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: string }) {
-  const { updateDraft, minimizeDraft, closeDraft, sendDraft, isSending, quotedHtmlByDraftId } = useDrafts();
+  const { updateDraft, minimizeDraft, closeDraft, sendDraft, uploadAttachments, deleteAttachment, isSending, quotedHtmlByDraftId } = useDrafts();
   const [showCc, setShowCc] = useState(draft.cc.length > 0);
   const [showBcc, setShowBcc] = useState(draft.bcc.length > 0);
   const [showFormatting, setShowFormatting] = useState(false);
@@ -190,6 +196,8 @@ function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: s
   const [showSignature, setShowSignature] = useState(true);
   const [signature, setSignature] = useState("");
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const quotedHtml = quotedHtmlByDraftId[draft.id] ?? "";
   const sending = Boolean(isSending[draft.id]);
   const canSend = draft.to.length > 0 && draft.subject.trim().length > 0;
@@ -328,6 +336,33 @@ function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: s
         )}
       </div>
 
+      {draft.attachments && draft.attachments.length > 0 && (
+        <div className="flex max-h-24 flex-wrap gap-1 overflow-auto border-t border-gray-100 px-3 py-2">
+          {draft.attachments.map((attachment) => (
+            <a
+              key={attachment.id}
+              href={`/api/email/drafts/${draft.id}/attachments/${attachment.id}/download`}
+              className="group inline-flex max-w-[220px] items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-200"
+              title={attachment.filename}
+            >
+              <Paperclip size={12} />
+              <span className="truncate">{attachment.filename}</span>
+              <span className="shrink-0 text-gray-400">{formatBytes(attachment.sizeBytes)}</span>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  deleteAttachment(draft.id, attachment.id).catch(() => undefined);
+                }}
+                className="ml-1 grid h-4 w-4 shrink-0 place-items-center rounded-full text-gray-400 hover:bg-white hover:text-red-600"
+              >
+                ×
+              </button>
+            </a>
+          ))}
+        </div>
+      )}
+
       {showFormatting && (
         <div className="flex gap-1 border-t border-gray-200 bg-gray-50 px-3 py-1.5">
           <FormatButton label="B" active={editor?.isActive("bold")} onClick={() => editor?.chain().focus().toggleBold().run()} className="font-bold" />
@@ -344,7 +379,32 @@ function ComposerWindow({ draft, accountEmail }: { draft: Draft; accountEmail: s
       )}
 
       <footer className="flex h-11 shrink-0 items-center gap-1 border-t border-gray-200 px-3">
-        <button type="button" disabled className={iconButtonClass(true)} title="Attachments will sync in the next mail pass"><Paperclip size={16} /></button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            const files = event.target.files;
+            if (!files?.length) return;
+            setUploadingAttachments(true);
+            uploadAttachments(draft.id, files)
+              .catch(() => undefined)
+              .finally(() => {
+                setUploadingAttachments(false);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+              });
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploadingAttachments}
+          className={iconButtonClass(uploadingAttachments)}
+          title="Attach files"
+        >
+          <Paperclip size={16} />
+        </button>
         <button type="button" disabled className={iconButtonClass(true)} title="Reminder"><Bell size={16} /></button>
         <button type="button" onClick={() => setShowFormatting((current) => !current)} className={iconButtonClass()} title="Formatting"><Type size={16} /></button>
         <div className="flex-1" />

@@ -111,6 +111,12 @@ export type ParsedGmailMessage = {
   }>;
 };
 
+export type GmailOutgoingAttachment = {
+  filename: string;
+  mimeType: string;
+  content: Buffer;
+};
+
 async function refreshGoogleToken(account: EmailAccount): Promise<EmailAccount> {
   if (!account.encryptedRefreshToken) throw new Error(`No refresh token for ${account.emailAddress}`);
   const refreshToken = decrypt(account.encryptedRefreshToken);
@@ -426,25 +432,68 @@ export type GmailSendOptions = {
   inReplyTo?: string;
   references?: string;
   gmailThreadId?: string | null;
+  attachments?: GmailOutgoingAttachment[];
 };
 
+function encodeBase64Url(value: string | Buffer): string {
+  return Buffer.from(value)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function encodeMimeHeader(value: string): string {
+  if (/^[\x20-\x7e]+$/.test(value)) return value.replace(/"/g, "'");
+  return `=?UTF-8?B?${Buffer.from(value).toString("base64")}?=`;
+}
+
+function wrapBase64(value: string): string {
+  return value.replace(/.{1,76}/g, "$&\r\n").trimEnd();
+}
+
 function buildRawGmailMessage(account: EmailAccount, options: GmailSendOptions): string {
+  const attachments = options.attachments ?? [];
   const headers = [
     `From: ${account.emailAddress}`,
     options.to.length ? `To: ${options.to.join(", ")}` : null,
     options.cc?.length ? `Cc: ${options.cc.join(", ")}` : null,
     options.bcc?.length ? `Bcc: ${options.bcc.join(", ")}` : null,
-    `Subject: ${options.subject || ""}`,
+    `Subject: ${encodeMimeHeader(options.subject || "")}`,
     "MIME-Version: 1.0",
-    "Content-Type: text/html; charset=utf-8",
     options.inReplyTo ? `In-Reply-To: ${options.inReplyTo}` : null,
     options.references ? `References: ${options.references}` : null,
   ].filter((line): line is string => Boolean(line)).join("\r\n");
-  return Buffer.from(`${headers}\r\n\r\n${options.bodyHtml}`)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+
+  if (!attachments.length) {
+    return encodeBase64Url(`${headers}\r\nContent-Type: text/html; charset=utf-8\r\n\r\n${options.bodyHtml}`);
+  }
+
+  const boundary = `ub_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const parts = [
+    `${headers}\r\nContent-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/html; charset=utf-8",
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    options.bodyHtml,
+    ...attachments.flatMap((attachment) => {
+      const encodedName = encodeMimeHeader(attachment.filename);
+      return [
+        `--${boundary}`,
+        `Content-Type: ${attachment.mimeType || "application/octet-stream"}; name="${encodedName}"`,
+        "Content-Transfer-Encoding: base64",
+        `Content-Disposition: attachment; filename="${encodedName}"`,
+        "",
+        wrapBase64(attachment.content.toString("base64")),
+      ];
+    }),
+    `--${boundary}--`,
+    "",
+  ];
+
+  return encodeBase64Url(parts.join("\r\n"));
 }
 
 export async function sendGmailMessage(account: EmailAccount, options: GmailSendOptions): Promise<{ gmailMessageId: string; gmailThreadId: string }> {

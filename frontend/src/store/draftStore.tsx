@@ -22,8 +22,18 @@ export interface Draft {
   isMinimized: boolean;
   lastEditedAt: string;
   lastSyncedToGmailAt?: string | null;
+  attachments?: DraftAttachment[];
   linkedOpportunity?: { id: string; title?: string; clientName?: string | null; brand?: string | null } | null;
   linkedProduction?: { id: string; title?: string; jobCode?: string | null; clientName?: string | null; brand?: string | null } | null;
+}
+
+export interface DraftAttachment {
+  id: string;
+  draftId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
 }
 
 export interface ReplyThreadInput {
@@ -51,6 +61,8 @@ interface DraftStore {
   maximizeDraft: (id: string) => void;
   toggleExpand: (id: string) => void;
   closeDraft: (id: string) => void;
+  uploadAttachments: (id: string, files: FileList | File[]) => Promise<void>;
+  deleteAttachment: (draftId: string, attachmentId: string) => Promise<void>;
   sendDraft: (id: string) => Promise<void>;
   isSending: Record<string, boolean>;
   error: string;
@@ -225,6 +237,47 @@ export function DraftProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const uploadAttachments = useCallback(async (id: string, files: FileList | File[]) => {
+    const items = Array.from(files);
+    if (!items.length) return;
+    const formData = new FormData();
+    items.forEach((file) => formData.append("files", file));
+    try {
+      const response = await fetch(`/api/email/drafts/${id}/attachments`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `Upload failed: ${response.status}`);
+      }
+      const saved = await response.json() as Draft;
+      setDrafts((prev) => prev.map((draft) => draft.id === id ? saved : draft));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload attachment");
+      throw err;
+    }
+  }, []);
+
+  const deleteAttachment = useCallback(async (draftId: string, attachmentId: string) => {
+    try {
+      const response = await fetch(`/api/email/drafts/${draftId}/attachments/${attachmentId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `Delete failed: ${response.status}`);
+      }
+      const saved = await response.json() as Draft;
+      setDrafts((prev) => prev.map((draft) => draft.id === draftId ? saved : draft));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove attachment");
+      throw err;
+    }
+  }, []);
+
   const sendDraft = useCallback(async (id: string) => {
     if (sendingIds.current.has(id)) return;
     sendingIds.current.add(id);
@@ -270,11 +323,13 @@ export function DraftProvider({ children }: { children: ReactNode }) {
     maximizeDraft,
     toggleExpand,
     closeDraft,
+    uploadAttachments,
+    deleteAttachment,
     sendDraft,
     isSending,
     error,
     clearError: () => setError(""),
-  }), [drafts, expandedDraftId, quotedHtmlByDraftId, refreshDrafts, openDraft, openReply, updateDraft, minimizeDraft, maximizeDraft, toggleExpand, closeDraft, sendDraft, isSending, error]);
+  }), [drafts, expandedDraftId, quotedHtmlByDraftId, refreshDrafts, openDraft, openReply, updateDraft, minimizeDraft, maximizeDraft, toggleExpand, closeDraft, uploadAttachments, deleteAttachment, sendDraft, isSending, error]);
 
   return (
     <DraftContext.Provider value={value}>

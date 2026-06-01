@@ -1,5 +1,8 @@
 import { Router, Request, Response } from "express";
 import { ContactSource, ContactType, EmailAutoCategory, EmailCategoryRuleMatchType, EmailProvider, PmsJobType, Prisma } from "@prisma/client";
+import fs from "fs/promises";
+import path from "path";
+import multer from "multer";
 import prisma from "../prisma";
 import { encrypt } from "../services/encryptionService";
 import {
@@ -21,6 +24,11 @@ import { fullGmailSync, syncGmailDraftsForAccount } from "../services/gmailSyncS
 import { archiveThread as gmailArchiveThread, markThreadRead, markThreadUnread, oneClickUnsubscribe, starThread, unarchiveThread as gmailUnarchiveThread, unstarThread } from "../services/gmailService";
 
 const router = Router();
+const draftAttachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024, files: 10 },
+});
+const draftAttachmentRoot = path.resolve(process.cwd(), "storage", "email-drafts");
 
 type LinkTargets = {
   opportunityId?: string;
@@ -96,6 +104,7 @@ const emailDraftInclude = {
   linkedOpportunity: { select: { id: true, title: true, clientName: true, brand: true } },
   linkedProduction: { select: { id: true, title: true, jobCode: true, clientName: true, brand: true } },
   linkedContact: { select: { id: true, firstName: true, lastName: true, email: true } },
+  attachments: { orderBy: { createdAt: "asc" } },
 } satisfies Prisma.EmailDraftInclude;
 
 const sendingDraftIds = new Set<string>();
@@ -198,6 +207,23 @@ function draftHasContent(draft: Pick<EmailDraftWithAccount, "to" | "cc" | "bcc" 
   );
 }
 
+function safeAttachmentFilename(filename: string): string {
+  const cleaned = filename.replace(/[^\w.\- ()]/g, "_").replace(/\s+/g, " ").trim();
+  return cleaned || "attachment";
+}
+
+async function draftAttachmentsForGmail(draftId: string) {
+  const attachments = await prisma.emailDraftAttachment.findMany({
+    where: { draftId },
+    orderBy: { createdAt: "asc" },
+  });
+  return Promise.all(attachments.map(async (attachment) => ({
+    filename: attachment.filename,
+    mimeType: attachment.mimeType,
+    content: await fs.readFile(attachment.storedPath),
+  })));
+}
+
 function bodyTouchesDraftContent(body: DraftBody): boolean {
   return body.to !== undefined ||
     body.cc !== undefined ||
@@ -210,7 +236,9 @@ function bodyTouchesDraftContent(body: DraftBody): boolean {
 }
 
 async function syncLocalDraftToGmail(draft: EmailDraftWithAccount): Promise<void> {
-  if (draft.account.provider !== EmailProvider.GOOGLE || !draftHasContent(draft)) return;
+  if (draft.account.provider !== EmailProvider.GOOGLE) return;
+  const attachments = await draftAttachmentsForGmail(draft.id);
+  if (!draftHasContent(draft) && !attachments.length) return;
   const { upsertGmailDraft } = await import("../services/gmailService");
   const result = await upsertGmailDraft(draft.account, {
     to: draft.to,
@@ -221,6 +249,7 @@ async function syncLocalDraftToGmail(draft: EmailDraftWithAccount): Promise<void
     inReplyTo: draft.inReplyToMsgId ?? undefined,
     references: draft.references ?? undefined,
     gmailThreadId: draft.gmailThreadId ?? undefined,
+    attachments,
   }, draft.gmailDraftId);
   await prisma.emailDraft.update({
     where: { id: draft.id },
@@ -640,13 +669,118 @@ router.patch("/drafts/:draftId", async (req: Request, res: Response): Promise<vo
   }
 });
 
+router.post("/drafts/:draftId/attachments", async (req: Request, res: Response): Promise<void> => {
+  draftAttachmentUpload.array("files", 10)(req, res, async (err: unknown) => {
+    try {
+      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+        res.status(400).json({ error: "Attachments must be 25MB or smaller" });
+        return;
+      }
+      if (err) {
+        res.status(400).json({ error: err instanceof Error ? err.message : "Attachment upload failed" });
+        return;
+      }
+
+      const draft = await prisma.emailDraft.findUnique({
+        where: { id: req.params.draftId },
+        include: { account: true },
+      });
+      if (!draft) {
+        res.status(404).json({ error: "Draft not found" });
+        return;
+      }
+
+      const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+      if (!files.length) {
+        res.status(400).json({ error: "No files uploaded" });
+        return;
+      }
+
+      const draftDir = path.join(draftAttachmentRoot, draft.id);
+      await fs.mkdir(draftDir, { recursive: true });
+      const created = [];
+
+      for (const file of files) {
+        const filename = safeAttachmentFilename(file.originalname);
+        const storedPath = path.join(draftDir, `${Date.now()}-${Math.random().toString(36).slice(2)}-${filename}`);
+        await fs.writeFile(storedPath, file.buffer);
+        const attachment = await prisma.emailDraftAttachment.create({
+          data: {
+            draftId: draft.id,
+            filename,
+            mimeType: file.mimetype || "application/octet-stream",
+            sizeBytes: file.size,
+            storedPath,
+          },
+        });
+        created.push(attachment);
+      }
+
+      await prisma.emailDraft.update({
+        where: { id: draft.id },
+        data: { lastEditedAt: new Date() },
+      });
+
+      await syncLocalDraftToGmail(draft).catch((syncErr: unknown) => {
+        console.error("[EMAIL DRAFT] Gmail attachment draft sync failed:", syncErr instanceof Error ? syncErr.message : syncErr);
+      });
+
+      const hydrated = await prisma.emailDraft.findUnique({ where: { id: draft.id }, include: emailDraftInclude });
+      console.log(`[EMAIL DRAFT] Added ${created.length} attachment(s) to draft ${draft.id}`);
+      res.status(201).json(hydrated);
+    } catch (uploadErr) {
+      res.status(500).json({ error: uploadErr instanceof Error ? uploadErr.message : "Attachment upload failed" });
+    }
+  });
+});
+
+router.delete("/drafts/:draftId/attachments/:attachmentId", async (req: Request, res: Response): Promise<void> => {
+  const attachment = await prisma.emailDraftAttachment.findFirst({
+    where: { id: req.params.attachmentId, draftId: req.params.draftId },
+    include: { draft: { include: { account: true } } },
+  });
+  if (!attachment) {
+    res.status(404).json({ error: "Attachment not found" });
+    return;
+  }
+
+  await prisma.emailDraftAttachment.delete({ where: { id: attachment.id } });
+  await fs.unlink(attachment.storedPath).catch(() => undefined);
+  await prisma.emailDraft.update({
+    where: { id: attachment.draftId },
+    data: { lastEditedAt: new Date() },
+  });
+  await syncLocalDraftToGmail(attachment.draft).catch((syncErr: unknown) => {
+    console.error("[EMAIL DRAFT] Gmail attachment delete sync failed:", syncErr instanceof Error ? syncErr.message : syncErr);
+  });
+
+  const hydrated = await prisma.emailDraft.findUnique({ where: { id: attachment.draftId }, include: emailDraftInclude });
+  res.json(hydrated);
+});
+
+router.get("/drafts/:draftId/attachments/:attachmentId/download", async (req: Request, res: Response): Promise<void> => {
+  const attachment = await prisma.emailDraftAttachment.findFirst({
+    where: { id: req.params.attachmentId, draftId: req.params.draftId },
+  });
+  if (!attachment) {
+    res.status(404).json({ error: "Attachment not found" });
+    return;
+  }
+  res.setHeader("Content-Type", attachment.mimeType || "application/octet-stream");
+  res.setHeader("Content-Disposition", `attachment; filename="${contentDispositionFilename(attachment.filename)}"`);
+  res.sendFile(attachment.storedPath);
+});
+
 router.delete("/drafts/:draftId", async (req: Request, res: Response): Promise<void> => {
-  const draft = await prisma.emailDraft.findUnique({ where: { id: req.params.draftId }, include: { account: true } });
+  const draft = await prisma.emailDraft.findUnique({ where: { id: req.params.draftId }, include: { account: true, attachments: true } });
   if (draft?.account.provider === EmailProvider.GOOGLE && draft.gmailDraftId) {
     const { deleteGmailDraft } = await import("../services/gmailService");
     await deleteGmailDraft(draft.account, draft.gmailDraftId).catch((err: unknown) => {
       console.error("[EMAIL DRAFT] Gmail draft delete failed:", err instanceof Error ? err.message : err);
     });
+  }
+  if (draft?.attachments.length) {
+    await Promise.all(draft.attachments.map((attachment) => fs.unlink(attachment.storedPath).catch(() => undefined)));
   }
   await prisma.emailDraft.delete({ where: { id: req.params.draftId } });
   console.log(`[EMAIL DRAFT] Deleted draft ${req.params.draftId}`);
@@ -702,7 +836,9 @@ router.post("/drafts/:draftId/send", async (req: Request, res: Response): Promis
           },
         }).catch((err: unknown) => console.error("[EMAIL DRAFT] Sent thread link failed:", err instanceof Error ? err.message : err));
       }
+      const sentAttachments = await prisma.emailDraftAttachment.findMany({ where: { draftId: draft.id } });
       await prisma.emailDraft.delete({ where: { id: draft.id } });
+      await Promise.all(sentAttachments.map((attachment) => fs.unlink(attachment.storedPath).catch(() => undefined)));
       console.log(`[EMAIL DRAFT] Sent draft ${draft.id} as message ${sent.gmailMessageId}`);
       res.json({ sent: true, gmailMessageId: sent.gmailMessageId, gmailThreadId: sent.gmailThreadId });
       return;
@@ -720,7 +856,9 @@ router.post("/drafts/:draftId/send", async (req: Request, res: Response): Promis
       linkedOpportunityId: draft.linkedOpportunityId ?? undefined,
       linkedProductionId: draft.linkedProductionId ?? undefined,
     });
+    const sentAttachments = await prisma.emailDraftAttachment.findMany({ where: { draftId: draft.id } });
     await prisma.emailDraft.delete({ where: { id: draft.id } });
+    await Promise.all(sentAttachments.map((attachment) => fs.unlink(attachment.storedPath).catch(() => undefined)));
     console.log(`[EMAIL DRAFT] Sent draft ${draft.id} as message ${sentMessage.id}`);
     res.json({ sent: true, messageId: sentMessage.id, threadId: sentMessage.threadId });
   } catch (err) {

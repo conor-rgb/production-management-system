@@ -1,3 +1,64 @@
+# HANDOVER - 2026-06-01 - Composer Attachments And Blackbook Direction
+
+## Built This Session
+- Added persistent composer draft attachments:
+  - new `EmailDraftAttachment` model mapped to `pms_email_draft_attachments`,
+  - uploads are stored under `backend/storage/email-drafts/[draftId]/`,
+  - attachments are included in `GET /api/email/drafts`,
+  - deleting/sending/discarding a draft cleans up local attachment files.
+- Added draft attachment API routes:
+  - `POST /api/email/drafts/:draftId/attachments`
+  - `DELETE /api/email/drafts/:draftId/attachments/:attachmentId`
+  - `GET /api/email/drafts/:draftId/attachments/:attachmentId/download`
+- Upgraded Gmail draft creation/update to generate multipart MIME:
+  - HTML body remains the main part,
+  - all local draft attachments are attached to Gmail Drafts,
+  - sending the Gmail draft sends the same attachments.
+- Re-enabled the composer paperclip:
+  - selecting files uploads them to the local draft,
+  - the composer displays attachment chips with size and remove action,
+  - attachment chips can be downloaded before sending.
+- Added Prisma `Session` mapping for `pms_sessions` and restored the session table after Prisma diff attempted to remove unmanaged tables.
+
+## Files Changed
+- `backend/prisma/schema.prisma`
+- `backend/prisma/migrations/20260601114500_email_draft_attachments/migration.sql`
+- `backend/prisma/migrations/20260601115000_restore_sessions_table/migration.sql`
+- `backend/src/routes/email.ts`
+- `backend/src/services/gmailService.ts`
+- `frontend/src/store/draftStore.tsx`
+- `frontend/src/components/email/ComposerTray.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Prisma migrations applied with non-interactive `migrate deploy`.
+- Prisma client regenerated.
+- Backend build passed:
+  - `cd backend && npm run build`
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+- Backend health check passed:
+  - `GET /api/health` returned OK on port `3000`.
+- Confirmed database tables exist:
+  - `pms_sessions`
+  - `pms_email_draft_attachments`
+
+## Current State
+- Composer attachments now sync to Gmail Drafts and send via Gmail draft send.
+- Attachments created inside Gmail Drafts externally are not imported back into local draft attachments yet. Existing Gmail draft import still imports body/recipients/thread metadata only.
+- Non-Gmail SMTP draft send still ignores local draft attachments; Gmail is the primary supported path.
+- CRM direction: new email CRM work should use Blackbook as the source of truth. Avoid adding new Contact/Company-only flows unless they immediately map into `BlackbookEntry`.
+
+## Next Steps
+1. Import external Gmail draft attachments into local `EmailDraftAttachment` records.
+2. Extend message-level linking to Blackbook entries, option candidates, and timeline events.
+3. Replace email People panel create/link actions with Blackbook-first create/link actions.
+4. Add smarter email suggestions: follow-up task, supplier PO chase, link to project/option, and detected date actions.
+
+---
+
 # HANDOVER - 2026-06-01 - Spark-Style Email Reading And Message Tasks
 
 ## Built This Session
