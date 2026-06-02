@@ -1,3 +1,51 @@
+# HANDOVER - 2026-06-02 - Crew List Sync UI And Source-Aware Rows
+
+## Built This Session
+- Added the visible Crew List sync action inside a production:
+  - Crew List now has `Sync confirmed`,
+  - it calls `POST /api/options/production/:productionId/sync-crew-list`,
+  - the result reports how many confirmed option assignments were added/updated.
+- Reworked the Crew List tab from large cards into a compact operational sheet:
+  - rows show name, role/requirement, contact details, source links, dietary/detail state, status, and rate/days,
+  - source pills distinguish rows linked to option candidates, requirements, Blackbook, or manual rows,
+  - empty state now guides the user to sync confirmed Crew & Suppliers candidates first.
+- Exposed the new source links in production crew API responses:
+  - `blackbookEntry`,
+  - `optionCandidate`,
+  - `roleRequirement`.
+- Extended frontend crew types to include source links, dietary fields, and detail request/received timestamps.
+
+## Files Changed
+- `backend/src/routes/productions.ts`
+- `frontend/src/lib/types.ts`
+- `frontend/src/pages/Productions.tsx`
+- `HANDOVER.md`
+
+## Deployment / Verification
+- Backend build passed:
+  - `cd backend && npm run build`
+- Frontend build passed:
+  - `cd frontend && npm run build`
+- Frontend copied to `/var/www/agent`.
+- `pm2 reload 0` completed.
+
+## Current State
+- Confirmed candidates from Crew & Suppliers can now be pushed into the production Crew List from the UI.
+- Crew List rows now preserve and display the route back to the source option candidate, requirement, and Blackbook entry.
+- This is the first visible bridge between the options matrix and operational call-sheet crew data.
+
+## Next Steps
+1. Add row-level actions in Crew List:
+   - open Blackbook record,
+   - open source option sheet,
+   - request details/dietaries,
+   - create chase task from row.
+2. Add timeline attendee planning from workstream/requirement source links.
+3. Add email message quick actions for “link to crew row / requirement / candidate”.
+4. Add a compact standalone Actions page for email-only tasks.
+
+---
+
 # HANDOVER - 2026-06-01 - Universal Actions And Crew Source Links
 
 ## Built This Session

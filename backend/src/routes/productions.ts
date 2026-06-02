@@ -31,6 +31,9 @@ const productionInclude = {
     include: {
       role: true,
       contact: { include: { company: { select: { id: true, name: true } } } },
+      blackbookEntry: { select: { id: true, displayName: true, entryType: true, category: true, email: true, phone: true, companyName: true } },
+      optionCandidate: { select: { id: true, name: true, groupId: true, activeState: true } },
+      roleRequirement: { select: { id: true, name: true, displayLabel: true, type: true, groupId: true } },
     },
   },
   budgets: { include: { currentRevision: { include: { sections: { include: { lineItems: { include: { subCosts: true } } } } } } } },
@@ -354,6 +357,9 @@ router.get("/:id/crew", async (req: Request, res: Response): Promise<void> => {
     include: {
       role: true,
       contact: { include: { company: { select: { id: true, name: true } } } },
+      blackbookEntry: { select: { id: true, displayName: true, entryType: true, category: true, email: true, phone: true, companyName: true } },
+      optionCandidate: { select: { id: true, name: true, groupId: true, activeState: true } },
+      roleRequirement: { select: { id: true, name: true, displayLabel: true, type: true, groupId: true } },
     },
   });
   res.json(crew);
@@ -371,7 +377,13 @@ router.post("/:id/crew", async (req: Request, res: Response): Promise<void> => {
 
   const crew = await prisma.crewMember.create({
     data: { ...crewDataFromBody(req.body), name: name!, productionId: req.params.id, contactId },
-    include: { role: true, contact: true },
+    include: {
+      role: true,
+      contact: true,
+      blackbookEntry: { select: { id: true, displayName: true, entryType: true, category: true, email: true, phone: true, companyName: true } },
+      optionCandidate: { select: { id: true, name: true, groupId: true, activeState: true } },
+      roleRequirement: { select: { id: true, name: true, displayLabel: true, type: true, groupId: true } },
+    },
   });
   res.status(201).json(crew);
 });
@@ -380,7 +392,13 @@ router.patch("/:id/crew/:crewId", async (req: Request, res: Response): Promise<v
   const crew = await prisma.crewMember.update({
     where: { id: req.params.crewId, productionId: req.params.id },
     data: crewDataFromBody(req.body),
-    include: { role: true, contact: true },
+    include: {
+      role: true,
+      contact: true,
+      blackbookEntry: { select: { id: true, displayName: true, entryType: true, category: true, email: true, phone: true, companyName: true } },
+      optionCandidate: { select: { id: true, name: true, groupId: true, activeState: true } },
+      roleRequirement: { select: { id: true, name: true, displayLabel: true, type: true, groupId: true } },
+    },
   });
   res.json(crew);
 });

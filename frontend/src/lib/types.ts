@@ -209,6 +209,31 @@ export interface CrewMember {
   productionId: string;
   contactId?: string;
   contact?: Contact;
+  blackbookEntryId?: string | null;
+  blackbookEntry?: {
+    id: string;
+    displayName: string;
+    entryType: string;
+    category: string;
+    email?: string | null;
+    phone?: string | null;
+    companyName?: string | null;
+  } | null;
+  optionCandidateId?: string | null;
+  optionCandidate?: {
+    id: string;
+    name: string;
+    groupId: string;
+    activeState: string;
+  } | null;
+  roleRequirementId?: string | null;
+  roleRequirement?: {
+    id: string;
+    name: string;
+    displayLabel: string;
+    type: string;
+    groupId: string;
+  } | null;
   roleId?: string;
   role?: CrewRole;
   name: string;
@@ -217,6 +242,12 @@ export interface CrewMember {
   status: CrewStatus;
   dayRate?: string;
   numberOfDays: string;
+  dietaryNotes?: string | null;
+  dietaryFlags?: string[];
+  detailsRequestedAt?: string | null;
+  detailsReceivedAt?: string | null;
+  callTime?: string | null;
+  wrapTime?: string | null;
   notes?: string;
   createdAt: string;
   updatedAt: string;

@@ -42,6 +42,7 @@ import {
   Film,
   Mail,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   X,
@@ -1319,6 +1320,8 @@ function DateForm({ productionId, date, onClose, onSaved }: { productionId: stri
 function CrewTab({ production, onReload }: { production: Production; onReload: () => void }) {
   const [roles, setRoles] = useState<CrewRole[]>([]);
   const [adding, setAdding] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   useEffect(() => { api.get<CrewRole[]>("/api/settings/crew-roles").then(setRoles).catch(console.error); }, []);
 
@@ -1333,29 +1336,137 @@ function CrewTab({ production, onReload }: { production: Production; onReload: (
     onReload();
   }
 
+  async function syncFromOptions() {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const result = await api.post<{ created: number; updated: number; totalAssignments: number }>(
+        `/api/options/production/${production.id}/sync-crew-list`,
+        {}
+      );
+      setSyncResult(`${result.created} added · ${result.updated} updated · ${result.totalAssignments} confirmed assignments`);
+      onReload();
+    } catch (err) {
+      console.error(err);
+      setSyncResult("Could not sync confirmed options.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  const sourcedCount = production.crewMembers.filter((crew) => crew.optionCandidateId || crew.blackbookEntryId || crew.roleRequirementId).length;
+
   return (
-    <div className="space-y-3">
-      <button onClick={() => setAdding(true)} className="min-h-11 w-full rounded-lg bg-gray-900 px-4 text-sm font-medium text-white">Add crew</button>
-      {production.crewMembers.length === 0 ? <Empty text="No crew yet." /> : production.crewMembers.map((crew) => (
-        <div key={crew.id} className="rounded-lg border border-gray-200 p-3">
-          <div className="mb-3 flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-gray-900">{crew.name}</p>
-              <p className="text-sm text-gray-500">{crew.role?.name ?? "No role"}</p>
-            </div>
-            <button onClick={() => remove(crew.id)} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-red-500"><Trash2 size={16} /></button>
-          </div>
-          <div className="grid grid-cols-1 gap-2">
-            <Select label="Status" value={crew.status} options={CREW_STATUSES.map((s) => ({ value: s, label: CREW_STATUS_LABELS[s] }))} onChange={(status) => updateCrew(crew, { status: status as CrewStatus })} />
-            <div className="grid grid-cols-2 gap-2">
-              <Input label="Day rate" type="number" value={crew.dayRate ?? ""} onChange={(dayRate) => updateCrew(crew, { dayRate })} />
-              <Input label="Days" type="number" value={crew.numberOfDays ?? "1"} onChange={(numberOfDays) => updateCrew(crew, { numberOfDays })} />
-            </div>
-          </div>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold text-gray-950">Crew List</p>
+          <p className="text-xs text-gray-500">
+            {production.crewMembers.length} rows · {sourcedCount} linked to Crew & Suppliers / Blackbook
+          </p>
+          {syncResult && <p className="mt-1 text-xs text-gray-500">{syncResult}</p>}
         </div>
-      ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={syncFromOptions}
+            disabled={syncing}
+            className="inline-flex min-h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
+            {syncing ? "Syncing" : "Sync confirmed"}
+          </button>
+          <button onClick={() => setAdding(true)} className="min-h-9 rounded-md bg-gray-950 px-3 text-xs font-semibold text-white shadow-sm">Add crew</button>
+        </div>
+      </div>
+
+      {production.crewMembers.length === 0 ? (
+        <div className="mx-4 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-8 text-center">
+          <p className="text-sm font-medium text-gray-900">No crew yet.</p>
+          <p className="mt-1 text-xs text-gray-500">Sync confirmed candidates from Crew & Suppliers, or add a row manually.</p>
+          <button onClick={syncFromOptions} disabled={syncing} className="mt-4 rounded-md bg-gray-950 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+            {syncing ? "Syncing..." : "Sync confirmed candidates"}
+          </button>
+        </div>
+      ) : (
+        <div className="mx-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
+          <div className="grid min-w-[1040px] grid-cols-[1.15fr_130px_190px_150px_150px_110px_120px_48px] border-b border-gray-200 bg-gray-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">
+            <div>Name</div>
+            <div>Role</div>
+            <div>Contact</div>
+            <div>Source</div>
+            <div>Details</div>
+            <div>Status</div>
+            <div className="text-right">Rate / days</div>
+            <div />
+          </div>
+          {production.crewMembers.map((crew) => (
+            <div key={crew.id} className="grid min-w-[1040px] grid-cols-[1.15fr_130px_190px_150px_150px_110px_120px_48px] items-center border-b border-gray-100 px-3 py-2 text-sm last:border-b-0 hover:bg-gray-50">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-gray-950">{crew.name}</p>
+                <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-gray-400">
+                  {crew.blackbookEntry ? (
+                    <span className="truncate">Blackbook · {crew.blackbookEntry.displayName}</span>
+                  ) : crew.contact ? (
+                    <span className="truncate">Legacy contact</span>
+                  ) : (
+                    <span>Unlinked</span>
+                  )}
+                </div>
+              </div>
+              <div className="min-w-0 text-xs text-gray-600">
+                <p className="truncate font-medium text-gray-800">{crew.roleRequirement?.displayLabel ?? crew.role?.name ?? "No role"}</p>
+                <p className="truncate text-[11px] uppercase tracking-[0.12em] text-gray-400">{crew.roleRequirement?.type ?? crew.role?.name ?? ""}</p>
+              </div>
+              <div className="min-w-0 text-xs text-gray-500">
+                <p className="truncate">{crew.email || crew.blackbookEntry?.email || "No email"}</p>
+                <p className="truncate">{crew.phone || crew.blackbookEntry?.phone || "No phone"}</p>
+              </div>
+              <div className="min-w-0 space-y-1">
+                <SourcePill label={crew.optionCandidate ? "Option" : "No option"} strong={Boolean(crew.optionCandidate)} />
+                <SourcePill label={crew.roleRequirement ? "Requirement" : "Manual"} strong={Boolean(crew.roleRequirement)} />
+              </div>
+              <div className="min-w-0 text-xs">
+                {crew.dietaryFlags?.length ? (
+                  <p className="truncate text-amber-700">{crew.dietaryFlags.join(", ")}</p>
+                ) : (
+                  <p className="text-gray-300">No dietaries</p>
+                )}
+                <p className={crew.detailsReceivedAt ? "text-emerald-600" : crew.detailsRequestedAt ? "text-amber-600" : "text-gray-300"}>
+                  {crew.detailsReceivedAt ? "Details received" : crew.detailsRequestedAt ? "Details requested" : "Details not requested"}
+                </p>
+              </div>
+              <div>
+                <select
+                  value={crew.status}
+                  onChange={(event) => updateCrew(crew, { status: event.target.value as CrewStatus })}
+                  className="h-8 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 outline-none"
+                >
+                  {CREW_STATUSES.map((status) => <option key={status} value={status}>{CREW_STATUS_LABELS[status]}</option>)}
+                </select>
+              </div>
+              <div className="text-right text-xs text-gray-600">
+                <p className="font-medium text-gray-900">{crew.dayRate ? formatCurrency(Number(crew.dayRate)) : "No rate"}</p>
+                <p>{crew.numberOfDays ?? "1"} days</p>
+              </div>
+              <button onClick={() => remove(crew.id)} className="grid min-h-8 min-w-8 place-items-center rounded-md text-gray-300 hover:bg-red-50 hover:text-red-500">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       {adding && <CrewForm productionId={production.id} roles={roles} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); onReload(); }} />}
     </div>
+  );
+}
+
+function SourcePill({ label, strong }: { label: string; strong: boolean }) {
+  return (
+    <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+      strong ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100" : "bg-gray-50 text-gray-400 ring-1 ring-gray-100"
+    }`}>
+      {label}
+    </span>
   );
 }
 
