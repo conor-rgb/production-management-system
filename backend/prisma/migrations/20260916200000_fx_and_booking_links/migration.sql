@@ -1,0 +1,13 @@
+BEGIN;
+ALTER TABLE pms_budget_line_items ADD COLUMN fx JSONB;
+ALTER TABLE pms_project_finance_costs ADD COLUMN fx JSONB, ADD COLUMN "quoteUrl" TEXT, ADD COLUMN "crewMemberId" TEXT;
+ALTER TABLE pms_project_supplier_invoices ADD COLUMN fx JSONB;
+ALTER TABLE pms_project_invoice_payments ADD COLUMN "sourceAmountMinor" INTEGER, ADD COLUMN "bankAmountMinor" INTEGER, ADD COLUMN "bankFeeMinor" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE pms_project_invoice_payments ADD CONSTRAINT payment_bank_nonnegative CHECK (("sourceAmountMinor" IS NULL OR ("sourceAmountMinor" IS NOT NULL AND "sourceAmountMinor">0)) AND ("bankAmountMinor" IS NULL OR "bankAmountMinor">=0) AND "bankFeeMinor">=0);
+ALTER TABLE pms_crew_members ADD COLUMN "bookingVersion" INTEGER NOT NULL DEFAULT 1, ADD COLUMN "bookedDates" JSONB;
+CREATE UNIQUE INDEX pms_project_finance_costs_crew_member_key ON pms_project_finance_costs ("crewMemberId");
+ALTER TABLE pms_project_finance_costs ADD CONSTRAINT finance_cost_crew_fk FOREIGN KEY ("crewMemberId") REFERENCES pms_crew_members(id) ON DELETE RESTRICT;
+ALTER TABLE pms_project_purchase_order_lines ADD COLUMN "sourceNetMinor" INTEGER;
+ALTER TABLE pms_project_invoice_payments DROP CONSTRAINT payment_positive;
+ALTER TABLE pms_project_invoice_payments ADD CONSTRAINT payment_positive CHECK ("amountMinor">=0 AND ("amountMinor">0 OR ("sourceAmountMinor" IS NOT NULL AND "sourceAmountMinor">0)));
+COMMIT;

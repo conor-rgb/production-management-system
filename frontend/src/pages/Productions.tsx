@@ -1,3 +1,4 @@
+import ProductionBookings from "../components/productions/ProductionBookings";
 import type { ProjectSummary } from "../lib/workspace";
 import type { DragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -511,9 +512,9 @@ function ProductionWorkspace({ productionId, initialTab, onClose, onSaved, onInv
               {tab === "Actions" && <Actions productionId={production.id} />}
               {tab === "Overview" && <><ProjectOverview key={production.id} production={production} onActions={() => selectModule("Actions")} onCrew={() => selectModule("Crew")} /><details className="max-w-5xl mx-auto mt-8 border-t border-stone-200 pt-4"><summary className="text-sm text-stone-500 cursor-pointer">Project settings, notes & financial summary</summary><div className="mt-4"><OverviewTab production={production} onSave={saveOverview} onStatusSaved={(p) => { setProduction(p); onSaved(); }} onInvoicePrompt={onInvoicePrompt} onOpenBudget={() => selectModule("Budget")} /></div></details></>}
               {tab === "Status Doc" && <StatusDocTab production={production} onReloadProduction={reload} onOpenTimeline={() => selectModule("Timeline")} onOpenCrew={() => selectModule("Crew")} onOpenFiles={() => selectModule("Files")} onOpenComms={() => selectModule("Comms")} />}
-              {tab === "Timeline" && <ProductionTimelineView productionId={production.id} />}
+              {tab === "Timeline" && <><ProductionBookings productionId={production.id} schedule/><ProductionTimelineView productionId={production.id} /></>}
               {tab === "Dates" && <DatesTab production={production} onReload={reload} />}
-              {tab === "Crew" && <CrewTab production={production} onReload={reload} />}
+              {tab === "Crew" && <><ProductionBookings productionId={production.id} onChanged={reload}/><CrewTab production={production} onReload={reload} /></>}
               {tab === "Comms" && <CommsTab production={production} onReload={reload} />}
               {tab === "SKU Sheet" && <SkuSheetBuilder productionId={production.id} />}
               {tab === "Selects" && <SelectsPortal productionId={production.id} />}
@@ -584,8 +585,8 @@ function ProductionDetail({ productionId, onClose, onSaved, onInvoicePrompt, ini
               {tab === "Overview" && <OverviewTab production={production} onSave={saveOverview} onStatusSaved={(p) => { setProduction(p); onSaved(); }} onInvoicePrompt={onInvoicePrompt} onOpenBudget={onOpenBudget} />}
         {tab === "Status Doc" && <StatusDocTab production={production} onReloadProduction={reload} onOpenTimeline={() => setTab("Timeline")} onOpenCrew={() => setTab("Crew")} onOpenFiles={() => setTab("Files")} onOpenComms={() => setTab("Comms")} />}
         {tab === "Dates" && <DatesTab production={production} onReload={reload} />}
-        {tab === "Timeline" && <ProductionTimelineView productionId={production.id} />}
-        {tab === "Crew" && <CrewTab production={production} onReload={reload} />}
+        {tab === "Timeline" && <><ProductionBookings productionId={production.id} schedule/><ProductionTimelineView productionId={production.id} /></>}
+        {tab === "Crew" && <><ProductionBookings productionId={production.id} onChanged={reload}/><CrewTab production={production} onReload={reload} /></>}
         {tab === "Comms" && <CommsTab production={production} onReload={reload} />}
         {tab === "SKU Sheet" && <SkuSheetBuilder productionId={production.id} />}
         {tab === "Selects" && <SelectsPortal productionId={production.id} />}

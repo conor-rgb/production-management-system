@@ -57,3 +57,7 @@ The subsequent [supplier PO workflow](PURCHASE-ORDER-WORKFLOW.md) connects draft
 ## Supplier reconciliation extension — 16 September 2026
 
 [Supplier credits and reconciliation](SUPPLIER-RECONCILIATION.md) supersedes earlier outstanding-supplier-credit references. Supplier credit/refund records, source-aware final-review checks and a combined financial overview are implemented. FX, automatic bank/accounting sync, formal PO amendments and formal financial-close sign-off remain outstanding. Check its release record for deployment evidence.
+
+## Supplier currencies and bookings extension — 16 September 2026
+
+[Supplier currencies and linked bookings](FX-AND-BOOKINGS.md) supersedes earlier outstanding-FX references for reviewed original supplier amounts, conversion and actual settlement differences. Crew bookings now connect project dates to one supplier cost. Automatic market-rate retrieval, bank feeds, formal PO amendments and formal financial close remain outstanding. See the latest release evidence for deployment state.

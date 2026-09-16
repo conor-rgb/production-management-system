@@ -1,0 +1,52 @@
+{
+  "startedAt": "2026-09-16T16:14:08.383Z",
+  "api": [
+    {
+      "route": "/api/health",
+      "status": 200
+    },
+    {
+      "route": "/api/project-finance",
+      "status": 200
+    },
+    {
+      "route": "/api/project-finance/cmtvd9fsm000m111brx230zdb",
+      "status": 200
+    },
+    {
+      "route": "/api/project-workspace/cmtvd9fsm000m111brx230zdb",
+      "status": 200
+    },
+    {
+      "route": "/api/project-finance/cmtvd9fsm000m111brx230zdb/bookings",
+      "status": 200
+    },
+    {
+      "route": "/api/project-finance/cmtvd9fsm000m111brx230zdb/reconciliation",
+      "status": 200
+    },
+    {
+      "route": "/api/drive/status",
+      "status": 200
+    }
+  ],
+  "browser": {
+    "estimateAndFxEditors": "passed, no saves",
+    "crewAndSchedule": "passed, no saves, legacy auto-sync intercepted",
+    "mobile": "passed",
+    "runtimeErrors": 0
+  },
+  "drive": {
+    "connected": true
+  },
+  "unchangedCounts": {
+    "costs": 0,
+    "invoices": 0,
+    "payments": 0,
+    "clientInvoices": 0,
+    "approvals": 0,
+    "bookings": 0
+  },
+  "completedAt": "2026-09-16T16:14:14.711Z",
+  "passed": true
+}

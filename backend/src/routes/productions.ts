@@ -581,6 +581,7 @@ router.post("/:id/crew", async (req: Request, res: Response): Promise<void> => {
 });
 
 router.patch("/:id/crew/:crewId", async (req: Request, res: Response): Promise<void> => {
+  if(["name","status","dayRate","numberOfDays"].some(k=>k in req.body)&&await prisma.projectFinanceCost.count({where:{productionId:req.params.id,crewMemberId:req.params.crewId}})){res.status(409).json({error:"Use Crew bookings to update linked dates, status and costs together."});return;}
   const crew = await prisma.crewMember.update({
     where: { id: req.params.crewId, productionId: req.params.id },
     data: crewDataFromBody(req.body),

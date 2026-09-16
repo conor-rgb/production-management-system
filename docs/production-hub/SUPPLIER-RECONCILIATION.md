@@ -39,3 +39,7 @@ A clear result means **ready for final review**, not bank reconciliation, approv
 The isolated integration test applies the actual additive migration over an existing supplier invoice and payment. It then creates a fresh project and runs estimate → recorded approval → PO → Drive invoice → cost allocation → payment → supplier credit → refund → client invoice/payment → reconciliation. It verifies forecast/profit, no reopened allowances, credit caps/allocations and concurrent tax credits, duplicate URL handling, review flags, pagination, source deletion/access failure, unchanged approvals and old-row defaults.
 
 Browser tests exercise a paginated Drive credit review, original-invoice selection, suggested allocation, approval, refund and final-review checklist on desktop/mobile. Google responses and financial records are fixtures in an isolated schema. No real project, payment, credit, refund or Drive document is created for testing. A real first-project acceptance run remains outstanding.
+
+## Supplier currencies and bookings extension — 16 September 2026
+
+[Supplier currencies and linked bookings](FX-AND-BOOKINGS.md) supersedes earlier outstanding-FX references for reviewed original supplier amounts, conversion and actual settlement differences. Crew bookings now connect project dates to one supplier cost. Automatic market-rate retrieval, bank feeds, formal PO amendments and formal financial close remain outstanding. See the latest release evidence for deployment state.

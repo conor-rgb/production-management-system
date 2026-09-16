@@ -1,3 +1,5 @@
+import { readFx } from "./financeFx";
+import { readBookings } from "./productionBookings";
 import { readFinance } from "./projectFinance";
 import { invoiceInbox, verifyInvoiceFile } from "./driveInvoiceInbox";
 import { documentIdentity } from "./supplierFinance";
@@ -13,8 +15,8 @@ export function financialCloseItems(data:Awaited<ReturnType<typeof readFinance>>
   for(const i of data.invoices) {
     if(i.status==="VOID")continue;
     if(i.status==="DRAFT")add(`invoice-${i.id}`,`${i.supplier} · ${i.number}`,`Draft ${i.kind==="CREDIT"?"credit note":"invoice"}: review, allocate and approve.${!i.documentUrl?" Source document missing.":""}`,"invoices");
-    if(i.status==="APPROVED"&&i.balanceMinor>0)add(`pay-${i.id}`,i.number,`${i.dueDate&&i.dueDate.toISOString().slice(0,10)<new Date().toISOString().slice(0,10)?"Overdue":"Outstanding"} · ${money(i.balanceMinor)} incl. tax`,"invoices");
-    if(i.status==="APPROVED"&&i.refundDueMinor>0)add(`refund-${i.id}`,i.number,"A supplier refund is still due.","invoices");
+    if(i.status==="APPROVED"&&i.sourceBalanceMinor>0)add(`pay-${i.id}`,i.number,`${i.dueDate&&i.dueDate.toISOString().slice(0,10)<new Date().toISOString().slice(0,10)?"Overdue":"Outstanding"} · ${money(i.balanceMinor)} incl. tax${readFx(i.fx)?` · ${new Intl.NumberFormat("en-GB",{style:"currency",currency:readFx(i.fx)!.currency}).format(i.sourceBalanceMinor/100)} original`:""}`,"invoices");
+    if(i.status==="APPROVED"&&i.sourceBalanceMinor<0)add(`refund-${i.id}`,i.number,"A supplier refund is still due.","invoices");
     if(i.possibleDuplicates.length&&!i.reviewNote)add(`duplicate-${i.id}`,i.number,`Possible duplicate of ${i.possibleDuplicates.map(d=>d.number).join(", ")}: same supplier, date and amounts. Review the source documents and record a reason if both are valid.`,"invoices");
     if(i.overPo.length&&!i.reviewNote)add(`over-po-${i.id}`,i.number,`Invoiced cost exceeds ${[...new Set(i.overPo.map(p=>p.poNumber))].join(", ")}. Review and record the agreement.`,"invoices");
   }
@@ -32,6 +34,7 @@ export function financialCloseItems(data:Awaited<ReturnType<typeof readFinance>>
 export async function readReconciliation(productionId:string) {
   const data=await readFinance(productionId);
   const items=financialCloseItems(data);
+  const bookings=await readBookings(productionId);for(const crew of bookings.crew)for(const issue of crew.issues)items.push({key:`booking-${crew.id}-${issue}`,label:crew.name,detail:issue+". Review Crew bookings.",view:"live"});
   let scannedFiles=0,driveComplete=false;
   try {
     let token:string|undefined;let hasNested=false;

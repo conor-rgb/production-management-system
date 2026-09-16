@@ -1,5 +1,5 @@
 {
-  "reviewedAt": "2026-09-16T15:45:37.756Z",
+  "reviewedAt": "2026-09-16T16:16:02.805Z",
   "direction": "Current VPS stack; new-project budget workflow; independent supplier ledger; mapped Drive documents/exports",
   "documents": [
     {
@@ -10,22 +10,22 @@
     {
       "path": "BRIEF.md",
       "classification": "current documentation",
-      "sha256": "b97db31d8ad5ff6b90c51978b3e5adcd62fcc22769657431340688644f51a005"
+      "sha256": "6fd054d4f07d76a1211d8ecf7c7ab3ee157e7c319c3b3c0805c8b4a6ca5d0d2d"
     },
     {
       "path": "CHANGELOG.md",
       "classification": "current documentation",
-      "sha256": "156b56aeeb4a1674f2527d0cb108a1ca2de33b9275dc071bfe415386bfb17d32"
+      "sha256": "fb8319d52767f5acd6dbb82dc1c2712f652d7e167fc62a0fd5b265b12efec46c"
     },
     {
       "path": "CLAUDE.md",
       "classification": "current documentation",
-      "sha256": "4a515a02603f1b9d199d6449e520e4465b5c018be6bd7e111e4f3f7755670645"
+      "sha256": "85626481a780e0e2464a66a2345171a63a02ef12993e7622deb5b2f21ef0a636"
     },
     {
       "path": "HANDOVER.md",
       "classification": "current documentation",
-      "sha256": "d5c667292d6f85fdcd6439cb83c7ba9defa749146a800d47426a766a6a289b5a"
+      "sha256": "38f551ec425018ae673597f1b1ff970ab8b96943d53d45eacf027618b86c91a2"
     },
     {
       "path": "README.md",
@@ -40,7 +40,7 @@
     {
       "path": "docs/README.md",
       "classification": "current documentation",
-      "sha256": "c25129b926a8e649d14906602ae81cca469e62818f3de1a474f9d746dbef6882"
+      "sha256": "27b2297f790dbb72539ee2ffcdbe206c29e70035434e23fe0e87473ae88e3fa7"
     },
     {
       "path": "docs/archive/2026-09-16-before-direction-reset/BRIEF.md",
@@ -240,12 +240,12 @@
     {
       "path": "docs/production-hub/NEW-PROJECT-WORKFLOW.md",
       "classification": "current documentation",
-      "sha256": "330630ab60d9073aaf7ac5b01294f9365f14c7b1dda3e772426f87fe20270904"
+      "sha256": "ff088fa303762dcadd6bbfd8ea918e7e9fd77029dfe582f88a106224af70d577"
     },
     {
       "path": "docs/production-hub/PLAN.md",
       "classification": "current documentation",
-      "sha256": "621ec142944658a1b006c34bcb37b7268a1c68fc54afb707ff049042e476a8af"
+      "sha256": "c965a8fc5ce400dd2c6825e2e0e0c1c539fb5af9924ce774ed82ab0ed3aa76a6"
     },
     {
       "path": "docs/production-hub/PURCHASE-ORDER-WORKFLOW.md",
@@ -330,7 +330,7 @@
     {
       "path": "docs/releases/README.md",
       "classification": "current documentation",
-      "sha256": "c9f576f3d3e7f71b3c28e800fbb04e26f687fb6104fa59bda37a666c11607df7"
+      "sha256": "1c0676722c420fc6fa527583d477981481d96bb07ca6e929860b0b9f2b546774"
     },
     {
       "path": "docs/status-doc-workflow.md",
@@ -380,12 +380,22 @@
     {
       "path": "docs/production-hub/SUPPLIER-RECONCILIATION.md",
       "classification": "current documentation",
-      "sha256": "1759c559d54f20d2a3f88bd3c592054ae1d1da52591f033528faf6c25f90fd11"
+      "sha256": "dc05766e6a502e1d964f1d0c0b1431c632ec617365473a50a5ed4030c3fc1bfa"
     },
     {
       "path": "docs/releases/2026-09-16-supplier-reconciliation.md",
       "classification": "current documentation",
       "sha256": "93658b2a1e93ad17ffd6315b573e8d39a428a876338d933be462bb9eadd254ea"
+    },
+    {
+      "path": "docs/production-hub/FX-AND-BOOKINGS.md",
+      "classification": "current documentation",
+      "sha256": "9ea8a023b71853c4dc119863ee7316eb665f51605df85b1fefc0902d4a0f3334"
+    },
+    {
+      "path": "docs/releases/2026-09-16-fx-bookings.md",
+      "classification": "current documentation",
+      "sha256": "2cf110bf8ff1ed60a6de988fffca410c71a9b2b75554a89e0586d8039815e057"
     }
   ]
 }

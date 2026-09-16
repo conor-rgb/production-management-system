@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+import { fxInput, readFx, convertMinor } from "./financeFx";
 import { createHash } from "node:crypto";
 import prisma from "../prisma";
 import { FinanceError, text } from "./projectFinance";
@@ -81,7 +83,7 @@ export async function changeEstimate(id:string,actorId:string,action:string,body
     if(action==="version") {
       if(!r.isLocked)throw new FinanceError("Finish the current draft before starting another version.");
       const {id:oldId,budgetId,createdAt,updatedAt,sections,...copy}=r;
-      const next=await tx.budgetRevision.create({data:{...copy,budgetId,revisionNumber:r.revisionNumber+1,majorVersion:r.majorVersion+1,minorVersion:0,label:`Revision ${r.revisionNumber+1}`,sourceRevisionId:oldId,status:"DRAFT",isLocked:false,lockedAt:null,editVersion:1,sections:{create:sections.map(s=>({code:s.code,name:s.name,order:s.order,lineItems:{create:s.lineItems.map(l=>({lineCode:l.lineCode,description:l.description,qty:l.qty,days:l.days,rate:l.rate,estimatedTotal:l.estimatedTotal,plannedUnitCost:l.plannedUnitCost,plannedSupplier:l.plannedSupplier,stableCostKey:l.stableCostKey,order:l.order,clientNotes:l.clientNotes,internalNotes:l.internalNotes}))}}))}}});
+      const next=await tx.budgetRevision.create({data:{...copy,budgetId,revisionNumber:r.revisionNumber+1,majorVersion:r.majorVersion+1,minorVersion:0,label:`Revision ${r.revisionNumber+1}`,sourceRevisionId:oldId,status:"DRAFT",isLocked:false,lockedAt:null,editVersion:1,sections:{create:sections.map(s=>({code:s.code,name:s.name,order:s.order,lineItems:{create:s.lineItems.map(l=>({lineCode:l.lineCode,description:l.description,qty:l.qty,days:l.days,rate:l.rate,estimatedTotal:l.estimatedTotal,plannedUnitCost:l.plannedUnitCost,plannedSupplier:l.plannedSupplier,stableCostKey:l.stableCostKey,order:l.order,clientNotes:l.clientNotes,internalNotes:l.internalNotes,fx:l.fx===null?undefined:l.fx}))}}))}}});
       await tx.budget.update({where:{id:budget.id},data:{currentRevisionId:next.id}});return {id:next.id};
     }
     if(action==="approve"&&await tx.projectEstimateApproval.findUnique({where:{revisionId:r.id}}))return {id:r.id};
@@ -98,10 +100,11 @@ export async function changeEstimate(id:string,actorId:string,action:string,body
           if(++count>500)throw new FinanceError("Use up to 500 estimate lines.");
           const old=original.lineItems.find(o=>o.id===l.id); if(l.id&&!old)throw new FinanceError("Estimate row does not belong to this section.");
           const qty=number(l.qty,"Quantity",10000),days=number(l.days,"Days",10000),rate=number(l.rate,"Client rate");
-          const plannedUnitCost=l.plannedUnitCost===null||l.plannedUnitCost===""?null:number(l.plannedUnitCost,"Planned rate");
+          const planned=l.plannedUnitCost===null||l.plannedUnitCost===""?null:fxInput(l.fx,budget.currencyBase,String(l.plannedUnitCost));
+          const plannedUnitCost=planned?planned.netMinor/100:null;
           const estimatedTotal=Math.round(qty*days*rate*100)/100;
           if(estimatedTotal>10_000_000||qty*days*(plannedUnitCost||0)>10_000_000)throw new FinanceError("Line total exceeds the supported range.");
-          const data={description:text(l.description,"Line description",500),qty,days,rate,plannedUnitCost,plannedSupplier:optional(l.plannedSupplier,200),estimatedTotal,order:i,lineCode:`${original.code}${i+1}`};
+          const data={fx:planned?.fx??(l.fx?fxInput(l.fx,budget.currencyBase,"0").fx:Prisma.DbNull),description:text(l.description,"Line description",500),qty,days,rate,plannedUnitCost,plannedSupplier:optional(l.plannedSupplier,200),estimatedTotal,order:i,lineCode:`${original.code}${i+1}`};
           if(old) {if(ids.includes(old.id))throw new FinanceError("Duplicate estimate row.");await tx.budgetLineItem.update({where:{id:old.id},data});ids.push(old.id);}
           else ids.push((await tx.budgetLineItem.create({data:{...data,sectionId:s.id}})).id);
         }
@@ -114,12 +117,13 @@ export async function changeEstimate(id:string,actorId:string,action:string,body
     const subtotal=lines.reduce((sum,l)=>sum+Math.round(l.estimatedTotal*100),0);
     const fee=r.productionFeeEnabled?Math.round(subtotal*r.productionFeePercent/100):0;
     const insurance=r.insuranceEnabled?Math.round((subtotal+fee)*r.insurancePercent/100):0;
-    const clientTotalMinor=subtotal+fee+insurance; const plannedCostMinor=lines.reduce((sum,l)=>sum+Math.round(l.qty*l.days*(l.plannedUnitCost||0)*100),0);
+    const clientTotalMinor=subtotal+fee+insurance; const plannedCostMinor=lines.reduce((sum,l)=>sum+(readFx(l.fx)?convertMinor(Math.round(readFx(l.fx)!.netMinor*l.qty*l.days),readFx(l.fx)!.rate):Math.round(l.qty*l.days*(l.plannedUnitCost||0)*100)),0);
     if(clientTotalMinor<=0||clientTotalMinor>1_000_000_000||plannedCostMinor>1_000_000_000)throw new FinanceError("Estimate total must be positive and totals cannot exceed 10 million.");
     const ledger=await tx.projectFinanceLedger.upsert({where:{productionId:id},create:{productionId:id,currency:budget.currencyBase},update:{}}); if(ledger.currency!==budget.currencyBase)throw new FinanceError("Estimate and live cost currencies differ.");
     for(const line of lines) {
       const supplier=line.plannedSupplier||"Unassigned";
-      await tx.projectFinanceCost.upsert({where:{productionId_estimateLineKey:{productionId:id,estimateLineKey:line.stableCostKey}},create:{productionId:id,estimateLineKey:line.stableCostKey,description:line.description,supplier,supplierKey:supplier.normalize("NFKC").toLocaleLowerCase("en-GB").replace(/\s+/g," ").trim(),commitmentStatus:"PLANNED",committedMinor:Math.round(line.qty*line.days*(line.plannedUnitCost||0)*100)},update:{}});
+      const source=readFx(line.fx);const fx=source?{...source,netMinor:Math.round(source.netMinor*line.qty*line.days)}:Prisma.DbNull;
+      await tx.projectFinanceCost.upsert({where:{productionId_estimateLineKey:{productionId:id,estimateLineKey:line.stableCostKey}},create:{productionId:id,estimateLineKey:line.stableCostKey,description:line.description,supplier,supplierKey:supplier.normalize("NFKC").toLocaleLowerCase("en-GB").replace(/\s+/g," ").trim(),commitmentStatus:"PLANNED",fx,committedMinor:source?convertMinor(Math.round(source.netMinor*line.qty*line.days),source.rate):Math.round(line.qty*line.days*(line.plannedUnitCost||0)*100)},update:{}});
     }
     await tx.projectEstimateApproval.create({data:{productionId:id,revisionId:r.id,revisionNumber:r.revisionNumber,currency:budget.currencyBase,clientTotalMinor,plannedCostMinor,snapshot:JSON.parse(JSON.stringify(r)),approvedBy:actorId}});
     await tx.production.update({where:{id},data:{value:clientTotalMinor/100}});

@@ -1,3 +1,4 @@
+import { readFx, convertMinor } from "./financeFx";
 import { Prisma } from "@prisma/client";
 import { reservePurchaseOrderNumber } from "../utils/purchaseOrderNumber";
 import prisma from "../prisma";
@@ -26,8 +27,8 @@ function rows(body: Record<string, unknown>) {
   if (lines.reduce((sum,l) => sum+l.netMinor,0) > 1_000_000_000) throw new FinanceError("PO total cannot exceed 10 million.");
   return lines;
 }
-function snapshot(po: { poNumber: string; currency: string; supplierName: string; supplierEmail: string|null; notes: string|null; supplierTerms: string|null; financeLines: {description:string;netMinor:number}[] }, project: { title: string; jobCode: string|null }, issuedAt: Date, draft: boolean): FinancePoDocument {
-  return { poNumber: po.poNumber, currency: po.currency, supplierName: po.supplierName, supplierEmail: po.supplierEmail, projectTitle: project.title, jobCode: project.jobCode, issuedAt: issuedAt.toISOString(), draft, scope: po.notes, terms: po.supplierTerms, lines: po.financeLines.map(l=>({description:l.description,netMinor:l.netMinor})) };
+function snapshot(po: { poNumber: string; currency: string; supplierName: string; supplierEmail: string|null; notes: string|null; supplierTerms: string|null; financeLines: {description:string;netMinor:number;sourceNetMinor?:number|null}[] }, project: { title: string; jobCode: string|null }, issuedAt: Date, draft: boolean): FinancePoDocument {
+  return { poNumber: po.poNumber, currency: po.currency, supplierName: po.supplierName, supplierEmail: po.supplierEmail, projectTitle: project.title, jobCode: project.jobCode, issuedAt: issuedAt.toISOString(), draft, scope: po.notes, terms: po.supplierTerms, lines: po.financeLines.map(l=>({description:l.description,netMinor:l.sourceNetMinor??l.netMinor})) };
 }
 
 // Called inside the finance transaction and per-project lock. No estimate writes or messages.
@@ -41,8 +42,11 @@ export async function writePurchaseOrder(tx: Prisma.TransactionClient, productio
     const supplier = costs[0].supplier;
     if (normalize(supplier) === "unassigned" || costs.some(c=>c.supplierKey !== costs[0].supplierKey)) throw new FinanceError("Assign all selected costs to the same supplier before making a PO.");
     if (costs.some(c=>c.activePurchaseOrderId)) throw new FinanceError("A selected cost already belongs to an active PO. Open that PO instead.",409);
+    const currencies=new Set(costs.map(c=>readFx(c.fx)?.currency??currency));if(currencies.size!==1)throw new FinanceError("A PO must use one supplier currency. Create separate POs for different currencies.");
+    const supplierCurrency=[...currencies][0];
+    const valued=lines.map(l=>{const fx=readFx(costs.find(c=>c.id===l.costId)!.fx);return {...l,sourceNetMinor:fx?l.netMinor:null,netMinor:fx?convertMinor(l.netMinor,fx.rate):l.netMinor};});
     const number = await reservePurchaseOrderNumber(tx, productionId);
-    const po = await tx.purchaseOrderGroup.create({data:{productionId,financeManaged:true,currency,poNumber:number,supplierName:supplier,...supplierFields(body),financeLines:{create:lines.map(l=>({...l,description:costs.find(c=>c.id===l.costId)!.description}))}}});
+    const po = await tx.purchaseOrderGroup.create({data:{productionId,financeManaged:true,currency:supplierCurrency,poNumber:number,supplierName:supplier,...supplierFields(body),financeLines:{create:valued.map(l=>({...l,description:costs.find(c=>c.id===l.costId)!.description}))}}});
     await tx.projectFinanceCost.updateMany({where:{id:{in:costs.map(c=>c.id)}},data:{activePurchaseOrderId:po.id,version:{increment:1}}});
     return { result:{id:po.id,version:po.version}, before:null };
   }
@@ -54,7 +58,7 @@ export async function writePurchaseOrder(tx: Prisma.TransactionClient, productio
     if (po.status !== "DRAFT") throw new FinanceError("Only draft POs can be edited.");
     const lines=rows(body);
     if(lines.length!==po.financeLines.length || lines.some(l=>!po.financeLines.some(old=>old.costId===l.costId))) throw new FinanceError("Cancel this draft and create another to change its selected costs.");
-    for(const line of lines) await tx.projectPurchaseOrderLine.update({where:{purchaseOrderId_costId:{purchaseOrderId:po.id,costId:line.costId}},data:{netMinor:line.netMinor,order:line.order}});
+    for(const line of lines){const cost=await tx.projectFinanceCost.findUniqueOrThrow({where:{id:line.costId}});const fx=readFx(cost.fx);await tx.projectPurchaseOrderLine.update({where:{purchaseOrderId_costId:{purchaseOrderId:po.id,costId:line.costId}},data:{netMinor:fx?convertMinor(line.netMinor,fx.rate):line.netMinor,sourceNetMinor:fx?line.netMinor:null,order:line.order}});}
     await tx.purchaseOrderGroup.update({where:{id:po.id},data:supplierFields(body)});
   } else if (action === "po.issue") {
     if(po.status!=="DRAFT") throw new FinanceError("Only a draft PO can be issued.");
@@ -64,7 +68,7 @@ export async function writePurchaseOrder(tx: Prisma.TransactionClient, productio
       const cost=costs.find(c=>c.id===line.costId);
       if(!cost)throw new FinanceError("A PO cost is unavailable.");
       if(cost.allocations.reduce((sum,a)=>sum+(a.invoice.kind==="CREDIT"?-a.netMinor:a.netMinor),0)>line.netMinor) throw new FinanceError("An agreed PO amount is below invoices already approved against that cost.");
-      await tx.projectFinanceCost.update({where:{id:cost.id},data:{committedMinor:line.netMinor,commitmentStatus:"COMMITTED",version:{increment:1}}});
+      await tx.projectFinanceCost.update({where:{id:cost.id},data:{fx:readFx(cost.fx)?{...readFx(cost.fx)!,netMinor:line.sourceNetMinor!}:Prisma.DbNull,committedMinor:line.netMinor,commitmentStatus:"COMMITTED",version:{increment:1}}});
     }
     const issuedAt=new Date();
     await tx.purchaseOrderGroup.update({where:{id:po.id},data:{status:"ISSUED",issuedAt,issuedBy:actorId,documentSnapshot:JSON.parse(JSON.stringify(snapshot(po,project,issuedAt,false))),documentStatus:"PENDING",documentError:null}});

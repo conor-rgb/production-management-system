@@ -2049,8 +2049,8 @@ router.post("/production/:productionId/sync-crew-list", async (req: Request, res
           dietaryFlags: blackbook?.dietaryFlags ?? [],
         };
         if (existing) {
-          await prisma.crewMember.update({ where: { id: existing.id }, data });
-          updated += 1;
+          const changed=await prisma.crewMember.updateMany({ where: { id: existing.id,financeCost:{is:null} }, data });
+          updated += changed.count;
         } else {
           await prisma.crewMember.create({
             data: {

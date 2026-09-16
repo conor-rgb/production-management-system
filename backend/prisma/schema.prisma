@@ -1417,6 +1417,9 @@ model CrewRole {
 }
 
 model CrewMember {
+  financeCost ProjectFinanceCost?
+  bookingVersion Int @default(1)
+  bookedDates Json?
   id                 String             @id @default(cuid())
   productionId       String
   production         Production         @relation(fields: [productionId], references: [id], onDelete: Cascade)
@@ -1642,6 +1645,7 @@ model BudgetSection {
 }
 
 model BudgetLineItem {
+  fx Json?
   plannedUnitCost Float?
   plannedSupplier String?
   stableCostKey String @default(dbgenerated("gen_random_uuid()::text"))
@@ -2389,6 +2393,10 @@ model ProjectFinanceLedger {
 }
 
 model ProjectFinanceCost {
+  quoteUrl String?
+  crewMemberId String? @unique
+  crewMember CrewMember? @relation(fields: [crewMemberId], references: [id], onDelete: Restrict)
+  fx Json?
   activePurchaseOrderId String?
   activePurchaseOrder PurchaseOrderGroup? @relation("ActiveFinancePo", fields: [activePurchaseOrderId], references: [id], onDelete: Restrict)
   purchaseOrderLines ProjectPurchaseOrderLine[]
@@ -2413,6 +2421,7 @@ model ProjectFinanceCost {
 }
 
 model ProjectSupplierInvoice {
+  fx Json?
   kind String @default("INVOICE")
   originalInvoiceId String?
   originalInvoice ProjectSupplierInvoice? @relation("SupplierCredits", fields: [originalInvoiceId], references: [id], onDelete: Restrict)
@@ -2456,6 +2465,9 @@ model ProjectInvoiceAllocation {
 }
 
 model ProjectInvoicePayment {
+  sourceAmountMinor Int?
+  bankAmountMinor Int?
+  bankFeeMinor Int @default(0)
   direction String @default("PAYMENT")
   id String @id @default(uuid())
   invoiceId String
@@ -2514,6 +2526,7 @@ model ProjectEstimateApproval {
 }
 
 model ProjectPurchaseOrderLine {
+  sourceNetMinor Int?
   id String @id @default(uuid())
   purchaseOrderId String
   purchaseOrder PurchaseOrderGroup @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)

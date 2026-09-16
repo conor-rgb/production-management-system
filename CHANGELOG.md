@@ -2,6 +2,10 @@
 
 Changes are recorded by behaviour and release, not by assuming Git HEAD matches the deployed working tree. Full older session history is preserved in the [historical handover](docs/archive/2026-09-16-before-direction-reset/HANDOVER.md); the previously deleted [original changelog](docs/archive/2026-09-16-before-direction-reset/previously-deleted/CHANGELOG.md) is also preserved.
 
+## 2026-09-16 — supplier currencies, bank settlement and crew bookings
+
+Implemented reviewed supplier-currency conversion from estimate through quotes, POs, invoices, credits and actual bank settlement, plus linked crew bookings and per-date schedule display. [Workflow](docs/production-hub/FX-AND-BOOKINGS.md). Deployed and live-verified at 2026-09-16T16:14:07.843Z; all 79 migrations applied. [Release evidence](docs/releases/2026-09-16-fx-bookings.md). No Hair Lab prices, approvals, payments or bookings were filled in automatically. Existing source amounts and frozen estimates are preserved.
+
 ## 2026-09-16 — Yves Rocher Hair Lab fresh workspace
 
 User-authorised refresh of existing project 2655, preserving its ID and exact linked Drive folder. Replaced the active unpriced legacy estimate with a fresh GBP motion draft (20 unpriced lines across five sections); previous draft retained in version history and a verified private database/project backup. Scope: one influencer exploring hair science in a Paris lab. No shoot duration, supplier price, exchange rate, fee, approval or payment has been assumed.

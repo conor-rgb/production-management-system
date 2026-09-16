@@ -15,3 +15,5 @@ The checkout may contain uncommitted work; a Git commit alone does not identify 
 - [16 September — client credit notes and corrections](2026-09-16-client-credits.md): invoice adjustments, replacement drafts and refunds.
 
 - [16 September — supplier reconciliation](2026-09-16-supplier-reconciliation.md): supplier credits/refunds, Drive review and project close checklist.
+
+- [Supplier currencies and linked bookings](2026-09-16-fx-bookings.md): original EUR amounts, GBP settlement, Drive evidence and date-linked crew costs.

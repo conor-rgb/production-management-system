@@ -2,6 +2,10 @@
 
 Updated 16 September 2026. The complete previous 4,398-line handover is preserved [here](docs/archive/2026-09-16-before-direction-reset/HANDOVER.md). Old “next steps” are historical, not the current backlog.
 
+## Supplier currencies and bookings — latest work
+
+Implemented reviewed supplier-currency conversion from estimate through quotes, POs, invoices, credits and actual bank settlement, plus linked crew bookings and per-date schedule display. [Workflow](docs/production-hub/FX-AND-BOOKINGS.md). Deployed and live-verified at 2026-09-16T16:14:07.843Z; all 79 migrations applied. [Release evidence](docs/releases/2026-09-16-fx-bookings.md). No Hair Lab prices, approvals, payments or bookings were filled in automatically. Existing source amounts and frozen estimates are preserved.
+
 ## Latest live setup — Yves Rocher Hair Lab fresh workspace
 
 User-authorised refresh of existing project 2655, preserving its ID and exact linked Drive folder. Replaced the active unpriced legacy estimate with a fresh GBP motion draft (20 unpriced lines across five sections); previous draft retained in version history and a verified private database/project backup. Scope: one influencer exploring hair science in a Paris lab. No shoot duration, supplier price, exchange rate, fee, approval or payment has been assumed.
@@ -68,7 +72,7 @@ The user clarified that working from Drive means adjusting a Google Slides prese
 
 ## Next action
 
-Continue with the refreshed Yves Rocher Hair Lab project (2655), now workspace version 2 with a GBP motion estimate and verified live Drive export. Next engineering requirement: EUR supplier originals, reviewed FX rate/date/source, GBP budget valuation and actual settlement differences; do not treat EUR figures as GBP. Then price the draft using real quotes and confirmed deliverables. Financial approvals, supplier invoicing and full live reconciliation remain unverified. The user has authorised refreshing this project; no further reset permission is needed.
+Continue with the refreshed Yves Rocher Hair Lab project (2655), now workspace version 2 with a GBP motion estimate and verified live Drive export. The supplier-currency and booking extension implements original amounts, reviewed rates and settlement differences; check its release state above. Price the draft only using real quotes and confirmed deliverables. Financial approvals, supplier invoicing and full live reconciliation remain unverified. The user has authorised refreshing this project; no further reset permission is needed.
 
 Use [docs/deploy.md](docs/deploy.md) for future releases. Preserve the current working tree: it contains pre-existing uncommitted features as well as this session's changes. Source manifests distinguish the deployed snapshot from Git HEAD.
 

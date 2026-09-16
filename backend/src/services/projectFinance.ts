@@ -1,3 +1,5 @@
+import { writeBooking } from "./productionBookings";
+import { readFx, fxInput, convertMinor } from "./financeFx";
 import { supplierInvoiceInclude, supplierBalance, costAmounts, documentIdentity, checkSupplierCredit } from "./supplierFinance";
 import { clientInvoiceInclude, clientInvoiceBalance, clientBillingTotals, writeClientBilling } from "./clientBilling";
 import { financePoInclude, writePurchaseOrder } from "./financePurchaseOrders";
@@ -57,7 +59,7 @@ export async function readFinance(productionId: string) {
       return {...cost,...costAmounts(cost.committedMinor,cost.remainingMinor,allocations)};
     });
     const invoiceRows = invoices.map(invoice => {
-      const duplicates=invoice.status!=="VOID"?invoices.filter(other=>other.id!==invoice.id&&other.status!=="VOID"&&other.kind===invoice.kind&&other.supplierKey===invoice.supplierKey&&other.invoiceDate.getTime()===invoice.invoiceDate.getTime()&&other.netMinor===invoice.netMinor&&other.taxMinor===invoice.taxMinor).map(i=>({id:i.id,number:i.number})):[];
+      const duplicates=invoice.status!=="VOID"?invoices.filter(other=>other.id!==invoice.id&&other.status!=="VOID"&&other.kind===invoice.kind&&other.supplierKey===invoice.supplierKey&&other.invoiceDate.getTime()===invoice.invoiceDate.getTime()&&(readFx(other.fx)?.currency??ledger?.currency??project.budgets[0]?.currencyBase)===(readFx(invoice.fx)?.currency??ledger?.currency??project.budgets[0]?.currencyBase)&&(readFx(other.fx)?.netMinor??other.netMinor)===(readFx(invoice.fx)?.netMinor??invoice.netMinor)&&(readFx(other.fx)?.taxMinor??other.taxMinor)===(readFx(invoice.fx)?.taxMinor??invoice.taxMinor)).map(i=>({id:i.id,number:i.number})):[];
       const overPo=invoice.kind!=="CREDIT"?invoice.allocations.flatMap(a=>{
         const cost=costRows.find(c=>c.id===a.costId);if(!cost?.activePurchaseOrderId)return [];
         const po=purchaseOrders.find(p=>p.id===cost.activePurchaseOrderId&&p.status==="ISSUED");
@@ -74,8 +76,9 @@ export async function readFinance(productionId: string) {
       return { ...po, documentSnapshot: undefined, totalMinor, invoicedMinor, remainingMinor: Math.max(0,totalMinor-costRows.filter(c=>costIds.has(c.id)).reduce((sum,c)=>sum+c.billedBeforeCreditsMinor,0)) };
     });
     const approved = invoiceRows.filter(i => i.status === "APPROVED" && i.kind!=="CREDIT");
+    const settlementAdjustmentMinor=approved.reduce((s,i)=>s+i.settlementAdjustmentMinor,0);
     return { project: { id: project.id, title: project.title, jobCode: project.jobCode, workspaceVersion: project.workspaceVersion }, approval: project.estimateApprovals[0] ?? null, currency: ledger?.currency ?? project.budgets[0]?.currencyBase ?? "GBP", legacyCostCount, estimateDraft:project.budgets[0]?.currentRevision?.isLocked===false, clientInvoices: clientInvoices.map(i=>({...i,documentSnapshot:undefined,...clientInvoiceBalance(i)})), clientBilling:clientBillingTotals(clientInvoices,project.estimateApprovals[0]?.clientTotalMinor??null), costs: costRows, invoices: invoiceRows, purchaseOrders: poRows, operations,
-      totals: { plannedMinor: costRows.filter(c=>c.commitmentStatus==="PLANNED").reduce((s,c)=>s+c.committedMinor,0), committedMinor: costRows.filter(c=>c.commitmentStatus==="COMMITTED").reduce((s,c) => s+c.committedMinor,0), forecastMinor: costRows.reduce((s,c) => s+c.forecastMinor,0), invoicedNetMinor: approved.reduce((s,i)=>s+i.netMinor-i.creditedNetMinor,0), paidGrossMinor: approved.reduce((s,i)=>s+i.paidMinor-i.refundedMinor,0), refundDueGrossMinor:approved.reduce((s,i)=>s+i.refundDueMinor,0), outstandingGrossMinor: approved.reduce((s,i)=>s+Math.max(0,i.balanceMinor),0) } };
+      totals: { settlementAdjustmentMinor,bankPaidMinor:approved.reduce((s,i)=>s+i.bankPaidMinor,0),fxDifferenceMinor:approved.reduce((s,i)=>s+i.fxDifferenceMinor,0),bankFeesMinor:approved.reduce((s,i)=>s+i.bankFeesMinor,0),remainingMinor:costRows.reduce((s,c)=>s+c.remainingToInvoiceMinor,0),plannedMinor: costRows.filter(c=>c.commitmentStatus==="PLANNED").reduce((s,c)=>s+c.committedMinor,0), committedMinor: costRows.filter(c=>c.commitmentStatus==="COMMITTED").reduce((s,c) => s+c.committedMinor,0), forecastMinor: costRows.reduce((s,c) => s+c.forecastMinor,0)+settlementAdjustmentMinor, invoicedNetMinor: approved.reduce((s,i)=>s+i.netMinor-i.creditedNetMinor,0), paidGrossMinor: approved.reduce((s,i)=>s+i.paidMinor-i.refundedMinor,0), refundDueGrossMinor:approved.reduce((s,i)=>s+i.refundDueMinor,0), outstandingGrossMinor: approved.reduce((s,i)=>s+Math.max(0,i.balanceMinor),0) } };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }
 
@@ -100,7 +103,7 @@ export async function writeFinance(productionId: string, actorId: string, action
     if (body.currency !== ledger.currency) throw new FinanceError(`Enter amounts in ${ledger.currency}. Foreign-currency invoices need a reviewed conversion workflow.`);
     let result: { id: string; version?: number };
     let before: unknown = null;
-    if (action.startsWith("client.")) {
+    if(action==="booking.save"){const booking=await writeBooking(tx,productionId,body,ledger.currency);result=booking.result;before=booking.before;} else if (action.startsWith("client.")) {
       const billing = await writeClientBilling(tx,productionId,actorId,action,body,ledger.currency); result=billing.result; before=billing.before;
     } else if (action.startsWith("po.")) {
       const po = await writePurchaseOrder(tx, productionId, actorId, action, body, ledger.currency);
@@ -108,14 +111,16 @@ export async function writeFinance(productionId: string, actorId: string, action
     } else if (action === "cost.create" || action === "cost.update") {
       const commitmentStatus = body.commitmentStatus ?? "COMMITTED";
       if (commitmentStatus !== "PLANNED" && commitmentStatus !== "COMMITTED") throw new FinanceError("Choose planned or committed cost.");
-      const data = { commitmentStatus, description: text(body.description, "Description", 500), supplier: text(body.supplier, "Supplier"), supplierKey: key(text(body.supplier, "Supplier")), committedMinor: amount(body.committed, "Committed net"), remainingMinor: body.remaining === "" || body.remaining === null || body.remaining === undefined ? null : amount(body.remaining, "Remaining net") };
+      const converted=fxInput(body.fx,ledger.currency,body.committed);
+      const data = { fx:converted.fx,quoteUrl:documentUrl(body.quoteUrl),commitmentStatus, description: text(body.description, "Description", 500), supplier: text(body.supplier, "Supplier"), supplierKey: key(text(body.supplier, "Supplier")), committedMinor: converted.netMinor, remainingMinor: body.remaining === "" || body.remaining === null || body.remaining === undefined ? null : amount(body.remaining, "Remaining net") };
       if (action === "cost.create") result = await tx.projectFinanceCost.create({ data: { productionId, ...data } });
       else {
         const cost = await tx.projectFinanceCost.findFirst({ where: { id: text(body.id, "Cost"), productionId }, include: { allocations: true } });
         if (!cost) throw new FinanceError("Cost not found.", 404);
         checkVersion(cost, body.version); before = cost;
         if (body.commitmentStatus === undefined) data.commitmentStatus = cost.commitmentStatus === "PLANNED" ? "PLANNED" : "COMMITTED";
-        if (cost.activePurchaseOrderId && (data.supplierKey !== cost.supplierKey || data.committedMinor !== cost.committedMinor || data.commitmentStatus !== cost.commitmentStatus)) throw new FinanceError("This cost belongs to an active PO. Edit its draft or cancel the PO before changing the supplier or commitment. Remaining-work forecasts can still be updated.");
+        if(cost.crewMemberId&&(data.supplierKey!==cost.supplierKey||data.committedMinor!==cost.committedMinor||data.commitmentStatus!==cost.commitmentStatus||JSON.stringify(readFx(data.fx))!==JSON.stringify(readFx(cost.fx))))throw new FinanceError("Edit this linked cost in Crew bookings to keep dates and costs together.");
+        if (cost.activePurchaseOrderId && (JSON.stringify(readFx(data.fx))!==JSON.stringify(readFx(cost.fx)) || data.supplierKey !== cost.supplierKey || data.committedMinor !== cost.committedMinor || data.commitmentStatus !== cost.commitmentStatus)) throw new FinanceError("This cost belongs to an active PO. Edit its draft or cancel the PO before changing the supplier or commitment. Remaining-work forecasts can still be updated.");
         if (cost.allocations.length && data.supplierKey !== cost.supplierKey) throw new FinanceError("A cost with invoice allocations cannot change supplier.");
         result = await tx.projectFinanceCost.update({ where: { id: cost.id }, data: { ...data, version: { increment: 1 } } });
       }
@@ -130,13 +135,18 @@ export async function writeFinance(productionId: string, actorId: string, action
       const number = text(body.number, "Invoice number");
       const invoiceDate = date(body.invoiceDate, "Invoice date"); const dueDate = kind==="CREDIT"?null:body.dueDate ? date(body.dueDate, "Due date") : null;
       if(dueDate&&dueDate<invoiceDate)throw new FinanceError("Due date cannot precede the invoice date.");
-      const netMinor=amount(body.net,"Document net",kind==="CREDIT"),taxMinor=amount(body.tax,"Document tax");
+      const sourceOriginal=originalInvoiceId?await tx.projectSupplierInvoice.findFirst({where:{id:originalInvoiceId,productionId,status:"APPROVED",kind:"INVOICE"},include:invoiceInclude}):null;
+      const converted=fxInput(body.fx,ledger.currency,body.net,body.tax,readFx(sourceOriginal?.fx));
+      let {netMinor,taxMinor}=converted;
+      const sourceFx=readFx(sourceOriginal?.fx),creditFx=readFx(converted.fx);
+      if(sourceOriginal&&sourceFx&&creditFx){const bal=supplierBalance(sourceOriginal);if(creditFx.netMinor>sourceFx.netMinor-bal.sourceCreditedNetMinor||creditFx.taxMinor>sourceFx.taxMinor-bal.sourceCreditedTaxMinor)throw new FinanceError("Credit exceeds original source amounts.");netMinor=sourceOriginal.netMinor-bal.creditedNetMinor-convertMinor(sourceFx.netMinor-bal.sourceCreditedNetMinor-creditFx.netMinor,sourceFx.rate);taxMinor=sourceOriginal.taxMinor-bal.creditedTaxMinor-convertMinor(sourceFx.taxMinor-bal.sourceCreditedTaxMinor-creditFx.taxMinor,sourceFx.rate);}
+      if(kind!=="CREDIT"&&netMinor===0)throw new FinanceError("Invoice net must be positive.");
       if(netMinor+taxMinor===0||netMinor+taxMinor>1_000_000_000)throw new FinanceError("Document total is outside the supported range.");
-      const original=kind==="CREDIT"?await checkSupplierCredit(tx,productionId,{originalInvoiceId,netMinor,taxMinor,invoiceDate,allocations:existing?.allocations}):null;
+      const original=kind==="CREDIT"?await checkSupplierCredit(tx,productionId,{fx:converted.fx,originalInvoiceId,netMinor,taxMinor,invoiceDate,allocations:existing?.allocations}):null;
       const supplier=original?.supplier??text(body.supplier,"Supplier");
       const url=verifiedUrl??documentUrl(body.documentUrl);
       if(url){const other=await tx.projectSupplierInvoice.findMany({where:{productionId,id:{not:existing?.id||""},documentUrl:{not:null}},select:{documentUrl:true}});if(other.some(i=>documentIdentity(i.documentUrl)===documentIdentity(url)))throw new FinanceError("This Drive document is already in the register. Open its existing record.",409);}
-      const data={kind,originalInvoiceId,supplier,supplierKey:key(supplier),number,numberKey:key(number),invoiceDate,dueDate,netMinor,taxMinor,documentUrl:url,driveFileId:verifiedUrl?String(body.driveFileId):null,reviewNote:null};
+      const data={fx:converted.fx,kind,originalInvoiceId,supplier,supplierKey:key(supplier),number,numberKey:key(number),invoiceDate,dueDate,netMinor,taxMinor,documentUrl:url,driveFileId:verifiedUrl?String(body.driveFileId):null,reviewNote:null};
       if(!existing)result=await tx.projectSupplierInvoice.create({data:{productionId,...data}});
       else {
         if(existing.allocations.length&&existing.supplierKey!==data.supplierKey)throw new FinanceError("Clear allocations before changing the supplier.");
@@ -187,19 +197,29 @@ export async function writeFinance(productionId: string, actorId: string, action
       } else if (action === "payment.record" || action === "payment.refund") {
         if (invoice.status !== "APPROVED"||invoice.kind==="CREDIT") throw new FinanceError("Record payments and refunds against the approved original invoice.");
         const direction=action==="payment.refund"?"REFUND":"PAYMENT";
-        const amountMinor = amount(body.amount, "Payment", false);
-        const balance=supplierBalance(invoice);
+        const sourceAmountMinor=amount(body.amount,"Payment",false);
+        const fx=readFx(invoice.fx);
         const paidAt = date(body.paidAt, "Payment date");
+        if(paidAt<invoice.invoiceDate)throw new FinanceError("Payment date cannot precede invoice date.");
         if (paidAt > new Date()) throw new FinanceError("A recorded payment cannot have a future date.");
         const reference = text(body.reference, "Payment reference", 500);
-        if (invoice.payments.some(payment => !payment.reversedAt && payment.direction===direction && payment.amountMinor === amountMinor && payment.paidAt.getTime() === paidAt.getTime() && key(payment.reference) === key(reference))) throw new FinanceError("A payment with this date, amount and reference is already recorded. Review payment history before adding another.", 409);
+        if(invoice.payments.some(p=>!p.reversedAt&&p.direction===direction&&(p.sourceAmountMinor??p.amountMinor)===sourceAmountMinor&&p.paidAt.getTime()===paidAt.getTime()&&key(p.reference)===key(reference)))throw new FinanceError("A payment with this date, amount and reference is already recorded. Review payment history before adding another.",409);
+        const balance=supplierBalance(invoice);
+        const sourceLimit=direction==="REFUND"?Math.max(0,-balance.sourceBalanceMinor):Math.max(0,balance.sourceBalanceMinor);
+        if(sourceAmountMinor>sourceLimit)throw new FinanceError("Payment or refund exceeds the original currency balance.");
+        const baseLimit=direction==="REFUND"?balance.refundDueMinor:Math.max(0,balance.balanceMinor);
+        const amountMinor=fx?(sourceAmountMinor===sourceLimit?baseLimit:Math.min(baseLimit,convertMinor(sourceAmountMinor,fx.rate))):sourceAmountMinor;
+
+        const bankAmountMinor=body.bankAmount===undefined?(fx?amount(body.bankAmount,"Actual bank amount"):amountMinor):amount(body.bankAmount,"Actual bank amount");
+        const bankFeeMinor=body.bankFee===undefined?0:amount(body.bankFee,"Bank fee");
+        if(!fx&&bankAmountMinor!==amountMinor)throw new FinanceError("For a same-currency payment, enter the settled amount excluding bank fees.");
         if(direction==="PAYMENT"&&amountMinor>Math.max(0,balance.balanceMinor))throw new FinanceError("Payment exceeds the invoice's outstanding balance.");
         if(direction==="REFUND"&&amountMinor>balance.refundDueMinor)throw new FinanceError("Refund exceeds the amount due back from this supplier.");
-        await tx.projectInvoicePayment.create({ data: { invoiceId: invoice.id, amountMinor, paidAt, reference, direction } });
+        await tx.projectInvoicePayment.create({ data: { invoiceId: invoice.id, amountMinor, sourceAmountMinor, bankAmountMinor, bankFeeMinor, paidAt, reference, direction } });
       } else if (action === "payment.reverse") {
         const payment = invoice.payments.find(p=>p.id===body.paymentId);
         if (!payment || payment.reversedAt) throw new FinanceError("Active payment not found.");
-        const balance=supplierBalance(invoice);if(payment.direction==="PAYMENT"&&balance.paidMinor-payment.amountMinor<balance.refundedMinor)throw new FinanceError("Correct the recorded refunds before reversing this payment.");
+        const balance=supplierBalance(invoice);if(payment.direction==="PAYMENT"&&(balance.paidMinor-payment.amountMinor<balance.refundedMinor||balance.sourcePaidMinor-(payment.sourceAmountMinor??payment.amountMinor)<balance.sourceRefundedMinor))throw new FinanceError("Correct the recorded refunds before reversing this payment.");
         await tx.projectInvoicePayment.update({ where: { id: payment.id }, data: { reversedAt: new Date(), reversalReason: text(body.reason, "Correction reason", 500) } });
       } else throw new FinanceError("Unknown finance action.");
       result = await tx.projectSupplierInvoice.update({ where: { id: invoice.id }, data: { version: { increment: 1 } } });
@@ -215,13 +235,13 @@ export async function financeSummaries() {
     productionId: true, currency: true,
     clientInvoices: { where:{status:"ISSUED"}, select:{kind:true,status:true,netMinor:true,taxMinor:true,dueDate:true,adjustments:{where:{kind:"CREDIT",status:"ISSUED"},select:{netMinor:true,taxMinor:true}},receipts:{select:{amountMinor:true,reversedAt:true,direction:true}}} },
     costs: { select: { committedMinor: true, remainingMinor: true, allocations: { where: { invoice: { status: "APPROVED" } }, select: { netMinor: true,invoice:{select:{kind:true}} } } } },
-    invoices: { where: { status: "APPROVED",kind:"INVOICE" }, select: { kind:true,netMinor:true,taxMinor:true,credits:{where:{status:"APPROVED",kind:"CREDIT"},select:{netMinor:true,taxMinor:true}},payments:{select:{amountMinor:true,direction:true,reversedAt:true}} } },
+    invoices: { where: { status: "APPROVED",kind:"INVOICE" }, select: { fx:true,kind:true,netMinor:true,taxMinor:true,credits:{where:{status:"APPROVED",kind:"CREDIT"},select:{fx:true,netMinor:true,taxMinor:true}},payments:{select:{sourceAmountMinor:true,bankAmountMinor:true,bankFeeMinor:true,amountMinor:true,direction:true,reversedAt:true}} } },
   } }), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   return ledgers.map(ledger => {
     const invoiceRows=ledger.invoices.map(i=>({...i,...supplierBalance(i)}));
     const invoicedNetMinor=invoiceRows.reduce((s,i)=>s+i.netMinor-i.creditedNetMinor,0);
     const paidGrossMinor=invoiceRows.reduce((s,i)=>s+i.paidMinor-i.refundedMinor,0);
-    const forecastMinor=ledger.costs.reduce((sum,c)=>sum+costAmounts(c.committedMinor,c.remainingMinor,c.allocations.map(a=>({netMinor:a.netMinor,kind:a.invoice.kind}))).forecastMinor,0);
+    const forecastMinor=invoiceRows.reduce((s,i)=>s+i.settlementAdjustmentMinor,0)+ledger.costs.reduce((sum,c)=>sum+costAmounts(c.committedMinor,c.remainingMinor,c.allocations.map(a=>({netMinor:a.netMinor,kind:a.invoice.kind}))).forecastMinor,0);
     return {clientBilling:clientBillingTotals(ledger.clientInvoices,null),productionId:ledger.productionId,currency:ledger.currency,forecastMinor,invoicedNetMinor,paidGrossMinor,outstandingGrossMinor:invoiceRows.reduce((s,i)=>s+Math.max(0,i.balanceMinor),0),refundDueGrossMinor:invoiceRows.reduce((s,i)=>s+i.refundDueMinor,0)};
   });
 }

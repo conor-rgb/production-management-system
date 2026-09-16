@@ -1,3 +1,4 @@
+import { readBookings } from "../services/productionBookings";
 import { readReconciliation } from "../services/projectReconciliation";
 import { previewClientInvoice } from "../services/clientBilling";
 import { Router, Request, Response, NextFunction } from "express";
@@ -14,6 +15,7 @@ router.get("/:productionId/purchase-orders/:id/preview", route(async (req,res) =
 }));
 router.get("/:productionId/client-invoices/:id/preview", route(async(req,res)=>{const pdf=await previewClientInvoice(req.params.productionId,req.params.id);res.type("application/pdf").setHeader("Content-Disposition","inline; filename=Draft-invoice.pdf");res.send(pdf);}));
 router.get("/:productionId/reconciliation",route(async(req,res)=>res.json(await readReconciliation(req.params.productionId))));
+router.get("/:productionId/bookings",route(async(req,res)=>res.json(await readBookings(req.params.productionId))));
 router.get("/:productionId", route(async (req,res) => res.json(await readFinance(req.params.productionId))));
 router.post("/:productionId/actions/:action", route(async (req,res) => {
   if (!req.body || Array.isArray(req.body) || typeof req.body !== "object") throw new FinanceError("Invalid finance request.");
