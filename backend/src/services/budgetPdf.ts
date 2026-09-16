@@ -2,12 +2,12 @@ import PDFDocument from "pdfkit";
 import prisma from "../prisma";
 import { autoFileDocument } from "./fileStorage";
 import { calculateRevisionTotalsFromRevision, FullRevision, getRevision, revisionVersionLabel } from "./budgetService";
+import { drawBrandLogo } from "./pdfBrand";
 
 const PAGE = { left: 52, right: 543, top: 58, bottom: 780 };
 const TEXT = "#111111";
 const MUTED = "#5f5f5f";
 const LINE = "#111111";
-const PALE = "#f5f5f1";
 
 function money(value: number): string {
   if (!value) return "£0.00";
@@ -38,14 +38,13 @@ function drawRule(doc: PDFKit.PDFDocument, y: number) {
 
 function footer(doc: PDFKit.PDFDocument, page: number, pageCount: number, jobCode: string) {
   drawRule(doc, 742);
-  doc.font("Helvetica-Bold").fontSize(7).fillColor(TEXT).text("BOND UN LIMITED", PAGE.left, 758);
   doc.font("Helvetica").fontSize(7).fillColor(TEXT).text(
-    "128 City Road | London EC1V 2NX, England, United Kingdom | www.unlimited.bond | Tel: +44 (0) 7711 825 340 | VAT Number: GB 493336372 | Company Number: 16215041",
+    "BOND UN LIMITED | 128 City Road | London EC1V 2NX, England, United Kingdom | Tel: +44 (0) 7711 825 340 | VAT Number: GB 493336372 | Company Number: 16215041",
     PAGE.left,
-    770,
+    758,
     { width: PAGE.right - PAGE.left }
   );
-  doc.fontSize(7).fillColor(MUTED).text(`unlimited.bond · ${jobCode} · Page ${page} of ${pageCount}`, PAGE.left, 806, { width: PAGE.right - PAGE.left, align: "center" });
+  doc.fontSize(7).fillColor(MUTED).text(`${jobCode} · Page ${page} of ${pageCount}`, PAGE.left, 806, { width: PAGE.right - PAGE.left, align: "center" });
 }
 
 function ensureSpace(doc: PDFKit.PDFDocument, y: number, needed: number, mode: "client" | "internal") {
@@ -89,11 +88,11 @@ async function renderPdf(revision: FullRevision, mode: "client" | "internal") {
   const description = revision.estimateDescription || budget.comments || "";
   const included = cleanLines(revision.includedNotes || budget.comments);
   const notIncluded = cleanLines(revision.notIncludedNotes || budget.caveats);
-  const assumptions = cleanLines(revision.assumptions || revision.notes);
+  const assumptions = cleanLines(revision.assumptions || (mode === "internal" ? revision.notes : ""));
   const paymentTerms = revision.paymentTerms || "50% deposit required before shoot.";
 
-  doc.font("Helvetica-Bold").fontSize(29).fillColor(TEXT).text("unlimited.bond", PAGE.left, 84);
-  doc.font("Helvetica-Bold").fontSize(18).text("ESTIMATE", 420, 92, { width: 120, align: "right" });
+  drawBrandLogo(doc, PAGE.left, 76, 285);
+  doc.font("Helvetica-Bold").fontSize(9).fillColor(TEXT).text(revision.status === "APPROVED" ? "APPROVED ESTIMATE" : "DRAFT ESTIMATE", 380, 90, { width: 160, align: "right", characterSpacing: 1.2 });
 
   let y = 154;
   const colA = PAGE.left;
@@ -139,10 +138,12 @@ async function renderPdf(revision: FullRevision, mode: "client" | "internal") {
   doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT).text("SUBTOTAL", 330, y, { width: 100, align: "right" });
   doc.text(money(totals.subtotal), 430, y, { width: 110, align: "right" });
   y += 13;
-  doc.text(`PRODUCTION FEE ${percent(revision.productionFeePercent)}`, 330, y, { width: 100, align: "right" });
-  doc.text(money(totals.productionFee), 430, y, { width: 110, align: "right" });
-  y += 13;
-  if (revision.insurancePercent > 0) {
+  if (revision.productionFeeEnabled) {
+    doc.text(`PRODUCTION FEE ${percent(revision.productionFeePercent)}`, 330, y, { width: 100, align: "right" });
+    doc.text(money(totals.productionFee), 430, y, { width: 110, align: "right" });
+    y += 13;
+  }
+  if (revision.insuranceEnabled && revision.insurancePercent > 0) {
     doc.text(`INSURANCE ${percent(revision.insurancePercent)}`, 330, y, { width: 100, align: "right" });
     doc.text(money(totals.insurance), 430, y, { width: 110, align: "right" });
     y += 13;
@@ -230,7 +231,7 @@ export async function exportRevisionPdf(revisionId: string, mode: "client" | "in
   await prisma.budget.update({ where: { id: budget.id }, data: { version: nextVersion } });
   const pdfBuffer = await renderPdf(revision, mode);
   const jobCode = budget.production?.jobCode ?? "BID";
-  const filename = `${jobCode}_Estimate_${revisionVersionLabel(revision)}_${mode}_${new Date().toISOString().slice(0, 10)}.pdf`;
+  const filename = `${jobCode}_Estimate_${revisionVersionLabel(revision)}_${revision.status.toLowerCase()}_${mode}_${new Date().toISOString().slice(0, 10)}.pdf`;
 
   if (!budget.productionId) {
     return {
@@ -243,5 +244,5 @@ export async function exportRevisionPdf(revisionId: string, mode: "client" | "in
     };
   }
 
-  return autoFileDocument(budget.productionId, "Estimates", pdfBuffer, filename, "application/pdf");
+  return autoFileDocument(budget.productionId, mode === "internal" ? "Budgets" : "Estimates", pdfBuffer, filename, "application/pdf");
 }

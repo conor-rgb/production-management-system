@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { api } from "../../lib/api";
 import type { EmailThread, EmailThreadsResponse, Opportunity, OpportunityNote, OpportunityTask } from "../../lib/types";
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, daysOverdue } from "../../lib/types";
@@ -39,11 +39,11 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
   const [emailResults, setEmailResults] = useState<EmailThread[]>([]);
   const addRef = useRef<HTMLTextAreaElement>(null);
 
-  function reload() {
+  const reload = useCallback(() => {
     api.get<Opportunity>(`/api/opportunities/${opportunityId}`).then(setOpp).catch(console.error);
-  }
+  }, [opportunityId]);
 
-  useEffect(() => { reload(); setTab(initialTab); }, [opportunityId, initialTab]);
+  useEffect(() => { reload(); setTab(initialTab); }, [reload, initialTab]);
   useEffect(() => {
     if (addMode && addRef.current) addRef.current.focus();
   }, [addMode]);
@@ -327,7 +327,8 @@ export default function OpportunityDetail({ opportunityId, onEdit, onClose, onSt
                 className="w-full text-sm bg-transparent resize-none focus:outline-none text-gray-900 placeholder-gray-400"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    addMode === "note" ? handleAddNote() : handleAddTask();
+                    if (addMode === "note") handleAddNote();
+                    else handleAddTask();
                   }
                 }}
               />

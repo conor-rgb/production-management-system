@@ -176,6 +176,19 @@ async function inferActionProductionId(body: ActionBody, fallbackProductionId?: 
   return null;
 }
 
+// A single read for the cross-project action workspace; no calendar side effects.
+router.get("/", async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const actions = await prisma.projectAction.findMany({
+      orderBy: [{ startAt: "asc" }, { createdAt: "desc" }],
+      include: { production: { select: { id: true, title: true, jobCode: true, clientName: true } } },
+    });
+    res.json(actions);
+  } catch {
+    res.status(500).json({ error: "Could not load actions" });
+  }
+});
+
 router.get("/production/:productionId", async (req: Request, res: Response): Promise<void> => {
   const production = await prisma.production.findUnique({
     where: { id: req.params.productionId },

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { CalendarMiniWidget } from "../components/calendar/CalendarView";
@@ -159,7 +159,7 @@ export default function Dashboard() {
     localStorage.setItem("offlineReceipts", JSON.stringify(offlineReceipts));
   }, [offlineReceipts]);
 
-  async function uploadReceipt(file: File, capturedOffline = false) {
+  const uploadReceipt = useCallback(async (file: File, capturedOffline = false) => {
     const form = new FormData();
     form.append("file", file);
     if (capturedOffline) form.append("capturedOffline", "true");
@@ -177,7 +177,7 @@ export default function Dashboard() {
     setReviewReceipt(capture);
     setReceiptPanelOpen(true);
     return capture;
-  }
+  }, []);
 
   async function handleReceiptFile(file?: File) {
     if (!file) return;
@@ -200,7 +200,7 @@ export default function Dashboard() {
     }
   }
 
-  async function syncOfflineReceipts() {
+  const syncOfflineReceipts = useCallback(async () => {
     const remaining: OfflineReceipt[] = [];
     for (const item of offlineReceipts) {
       try {
@@ -210,14 +210,14 @@ export default function Dashboard() {
       }
     }
     setOfflineReceipts(remaining);
-  }
+  }, [offlineReceipts, uploadReceipt]);
 
   useEffect(() => {
     function online() { syncOfflineReceipts().catch(console.error); }
     window.addEventListener("online", online);
     if (navigator.onLine && offlineReceipts.length) online();
     return () => window.removeEventListener("online", online);
-  }, [offlineReceipts.length]);
+  }, [offlineReceipts.length, syncOfflineReceipts]);
 
   const statCards = [
     { label: "Active opportunities", value: data?.opportunityCount, icon: <TrendingUp size={18} />, onClick: () => navigate("/opportunities") },
@@ -501,7 +501,7 @@ function ReceiptReviewPanel({ capture, pendingReceipts, onClose, onChange, onAss
     setSection(capture.parsedAicpSection ?? "");
     setSelectedProductionId(capture.productionId ?? "");
     setLineItemId(capture.lineItemId ?? "");
-  }, [capture.id]);
+  }, [capture]);
 
   useEffect(() => {
     api.get<Production[]>("/api/productions?includeWrapped=true").then(setProductions).catch(console.error);

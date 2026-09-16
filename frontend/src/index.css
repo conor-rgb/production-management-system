@@ -65,3 +65,30 @@ body {
   min-height: 28px;
   padding: 4px 6px;
 }
+
+.workspace-page { max-width: 1240px; margin: 0 auto; padding: 48px 48px 80px; color: #292923; }
+.eyebrow { font-size: 10px; text-transform: uppercase; letter-spacing: .16em; color: #78786e; font-weight: 600; }
+.section-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 18px; }
+.section-heading h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .09em; }
+.section-heading a { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #78786e; }
+.attention-row { display: flex; align-items: center; gap: 18px; padding: 16px 4px; border-bottom: 1px solid #e7e5df; font-size: 14px; }
+.attention-row:hover { background: #f4f4f0; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.workspace-table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+.workspace-table th { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #78786e; font-weight: 500; background: #f3f3ee; padding: 12px; white-space: nowrap; }
+.workspace-table td { padding: 13px 12px; border-bottom: 1px solid #e7e5df; }
+.workspace-table tbody tr:hover { background: #f4f4f0; }
+.workspace-select { border: 1px solid #deded6; border-radius: 4px; padding: 7px 10px; background: transparent; font-size: 12px; }
+.cell-input { width: 100%; min-width: 110px; padding: 5px; margin: -5px; border: 1px solid transparent; border-radius: 3px; background: transparent; }
+.cell-input:focus { outline: 1px solid #367267; background: white; }
+.empty-state { padding: 28px 0; font-size: 13px; color: #78786e; }
+.command-trigger { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px; border: 1px solid #ddddd5; border-radius: 5px; color: #77776e; font-size: 12px; text-align: left; }
+.command-dialog { margin: 15vh auto auto; width: min(560px, 94vw); border: 1px solid #ddd; border-radius: 8px; padding: 0; background: #fafaf8; color: #292923; box-shadow: 0 20px 80px #0002; }
+.action-drawer { margin: 0 0 0 auto; height: 100dvh; max-height: 100dvh; width: min(460px, 95vw); max-width: 95vw; padding: 28px; border: 0; border-left: 1px solid #ddd; background: #fafaf8; color: #292923; }
+dialog::backdrop { background: #20201d44; }
+button, a, input, select, textarea { touch-action: manipulation; }
+button:not(:disabled), select { cursor: pointer; }
+:focus-visible { outline: 2px solid #367267; outline-offset: 3px; }
+@media (max-width: 767px) { .workspace-page { padding: 28px 20px 48px; } .workspace-table { min-width: 650px; } }
+.resizable-column { resize: horizontal; overflow: auto; min-width: 256px; }
+.frozen-action { position: sticky; left: 0; background: #fafaf8; z-index: 1; }

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright";
 import { CandidateDateHoldStatus, Prisma } from "@prisma/client";
+import { brandLogoDataUrl } from "./pdfBrand";
 
 export type OptionsDeckGroup = Prisma.OptionGroupGetPayload<{
   include: {
@@ -344,7 +345,9 @@ function renderMapBlock(candidate: DeckCandidate, block: DeckTemplateBlock): str
 }
 
 function renderFooterBlock(group: OptionsDeckGroup, block: DeckTemplateBlock, pageNumber: number): string {
-  return `<div class="block footer-block" style="${blockStyle(block)}"><span>unlimited.bond</span><span>${escapeHtml(projectTitle(group))}</span><span>${pageNumber}</span></div>`;
+  const logo = brandLogoDataUrl();
+  const brand = logo ? `<img class="brand-logo" src="${logo}" alt="unlimited.bond">` : `<span>unlimited.bond</span>`;
+  return `<div class="block footer-block" style="${blockStyle(block)}"><span>${brand}</span><span>${escapeHtml(projectTitle(group))}</span><span>${pageNumber}</span></div>`;
 }
 
 function renderBlock(group: OptionsDeckGroup, candidate: DeckCandidate, block: DeckTemplateBlock, pageNumber: number): string {
@@ -400,6 +403,7 @@ export function renderOptionsDeckHtml(group: OptionsDeckGroup, templateBlocks?: 
     .map-placeholder { height: 100%; padding: 18px; color: #6b6b66; font-size: 14px; line-height: 1.45; }
     .map-placeholder strong { display: block; margin-bottom: 12px; font-size: 18px; }
     .footer-block { display: grid; grid-template-columns: repeat(3, 1fr); align-items: start; color: ${TEXT}; }
+    .footer-block .brand-logo { display: block; width: 128px; height: auto; }
     .footer-block span:nth-child(2) { color: ${MUTED}; text-align: center; }
     .footer-block span:nth-child(3) { text-align: right; }
     .empty-block { height: 100%; display: grid; place-items: center; color: #9a9a94; border: 1px solid ${LIGHT_BORDER}; }

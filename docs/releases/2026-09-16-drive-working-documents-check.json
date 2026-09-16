@@ -1,0 +1,58 @@
+{
+  "startedAt": "2026-09-16T12:35:22.836Z",
+  "api": [
+    {
+      "route": "/api/health",
+      "status": 200,
+      "bytes": 49,
+      "elapsedMs": 95
+    },
+    {
+      "route": "/api/auth/me",
+      "status": 200,
+      "bytes": 39,
+      "elapsedMs": 28
+    },
+    {
+      "route": "/api/productions/summary?includeWrapped=true",
+      "status": 200,
+      "bytes": 4421,
+      "elapsedMs": 36,
+      "rows": 9
+    },
+    {
+      "route": "/api/project-actions",
+      "status": 200,
+      "bytes": 3422,
+      "elapsedMs": 41
+    },
+    {
+      "route": "/api/drive/status",
+      "status": 200,
+      "bytes": 128,
+      "elapsedMs": 25
+    },
+    {
+      "route": "/api/files/all?page=1",
+      "status": 200,
+      "bytes": 39609,
+      "elapsedMs": 73
+    }
+  ],
+  "browser": {
+    "home": "passed",
+    "finance": "passed",
+    "files": "passed",
+    "mobile": "passed",
+    "runtimeErrors": 0
+  },
+  "drive": {
+    "configured": true,
+    "connected": true,
+    "rootFolderId": "1-0gwnfN5lGiLa4WGbC_q2nQ50l3e-iSR"
+  },
+  "unauthenticatedDriveStatus": 401,
+  "projectDriveStatus": 200,
+  "completedAt": "2026-09-16T12:35:25.949Z",
+  "passed": true
+}

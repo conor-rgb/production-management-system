@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import PDFDocument from "pdfkit";
 import { OptionStatus, Prisma } from "@prisma/client";
+import { drawBrandLogo } from "./pdfBrand";
 
 export type OptionsPdfBoard = Prisma.OptionsBoardGetPayload<{
   include: {
@@ -135,7 +136,7 @@ export async function renderOptionsPdf(board: OptionsPdfBoard): Promise<Buffer> 
     .filter((category) => category.options.length > 0);
   const optionCount = visibleCategories.reduce((sum, category) => sum + category.options.length, 0);
 
-  doc.font("Helvetica-Bold").fontSize(12).fillColor("#1a1a1f").text("unlimited.bond", 50, 52);
+  drawBrandLogo(doc, 50, 50, 140);
   doc.font("Helvetica").fontSize(9).fillColor("#777").text(pageDate(), 50, 52, { align: "right" });
   doc.moveDown(6);
   doc.font("Helvetica-Bold").fontSize(28).fillColor("#1a1a1f").text(`${board.title} — ${[production.clientName, production.brand].filter(Boolean).join(" ") || production.title}`);

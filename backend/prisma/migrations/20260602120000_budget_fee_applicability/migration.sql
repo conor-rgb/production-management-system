@@ -1,0 +1,7 @@
+ALTER TABLE "pms_budgets"
+ADD COLUMN IF NOT EXISTS "productionFeeEnabled" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS "insuranceEnabled" BOOLEAN NOT NULL DEFAULT true;
+
+ALTER TABLE "pms_budget_revisions"
+ADD COLUMN IF NOT EXISTS "productionFeeEnabled" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS "insuranceEnabled" BOOLEAN NOT NULL DEFAULT true;

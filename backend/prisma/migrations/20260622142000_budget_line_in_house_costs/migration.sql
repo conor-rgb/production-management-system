@@ -1,0 +1,2 @@
+ALTER TABLE "pms_budget_line_items"
+ADD COLUMN "inHouseCost" DOUBLE PRECISION NOT NULL DEFAULT 0;

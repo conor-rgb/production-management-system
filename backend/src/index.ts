@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import { startDriveWorker } from "./services/driveStorage";
 import { createServer } from "./server";
 import prisma from "./prisma";
 import bcrypt from "bcryptjs";
@@ -13,14 +14,34 @@ import { fullGmailSync, incrementalGmailSync } from "./services/gmailSyncService
 import { syncFromGoogleCalendar, syncOpportunityFollowUpsToCalendar, syncProductionDatesToCalendar } from "./services/calendarSyncService";
 import { getPrimaryAccount } from "./services/googleCalendarService";
 
+function requireProductionConfig() {
+  if (process.env.NODE_ENV !== "production") return;
+  const missing = ["DATABASE_URL", "SESSION_SECRET", "FRONTEND_URL"].filter((name) => !process.env[name]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required production environment variables: ${missing.join(", ")}`);
+  }
+  if (process.env.SESSION_SECRET === "dev-secret-change-me") {
+    throw new Error("SESSION_SECRET must be changed before running in production");
+  }
+  if (process.env.SEED_DEFAULT_ADMIN === "true") {
+    throw new Error("SEED_DEFAULT_ADMIN must not be enabled in production");
+  }
+}
+
 async function seedAdmin() {
+  if (process.env.SEED_DEFAULT_ADMIN !== "true") return;
+  if (process.env.NODE_ENV === "production") return;
+
   const count = await prisma.settings.count();
   if (count === 0) {
-    const password = await bcrypt.hash("admin", 12);
+    const email = process.env.DEFAULT_ADMIN_EMAIL ?? "admin@example.com";
+    const plainPassword = process.env.DEFAULT_ADMIN_PASSWORD;
+    if (!plainPassword) throw new Error("DEFAULT_ADMIN_PASSWORD is required when SEED_DEFAULT_ADMIN=true");
+    const password = await bcrypt.hash(plainPassword, 12);
     await prisma.settings.create({
-      data: { email: "admin@example.com", password },
+      data: { email, password },
     });
-    console.log("Seeded default admin: admin@example.com / admin");
+    console.log(`Seeded default admin: ${email}`);
   }
 }
 
@@ -85,6 +106,7 @@ async function seedEmailTemplates() {
 }
 
 async function runGmailResyncCleanup() {
+  if (process.env.GMAIL_RESYNC_CLEANUP !== "true") return;
   if (process.env.GMAIL_RESYNC_DONE) return;
   console.log("[GMAIL] Wiping IMAP-synced email data for fresh Gmail API sync...");
   await prisma.emailMessage.deleteMany({});
@@ -149,6 +171,7 @@ async function initCalendarSync() {
 }
 
 async function main() {
+  requireProductionConfig();
   await seedAdmin();
   await seedCrewRoles();
   await seedSectionTemplates();
@@ -156,6 +179,7 @@ async function main() {
   await runGmailResyncCleanup();
 
   const app = createServer();
+  startDriveWorker();
   const port = parseInt(process.env.PORT ?? "3000", 10);
 
   app.listen(port, () => {

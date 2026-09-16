@@ -1,0 +1,7 @@
+{
+  "budgets": 11,
+  "currentRevisionCount": 11,
+  "mismatchedQuoteTotals": 0,
+  "mismatchedActualTotals": 0,
+  "note": "Read-only comparison of project-list and finance-screen formulas; finance-screen formula is not asserted to be the accounting truth."
+}

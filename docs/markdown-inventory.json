@@ -1,0 +1,391 @@
+{
+  "reviewedAt": "2026-09-16T15:45:37.756Z",
+  "direction": "Current VPS stack; new-project budget workflow; independent supplier ledger; mapped Drive documents/exports",
+  "documents": [
+    {
+      "path": "AGENTS.md",
+      "classification": "current documentation",
+      "sha256": "c85a458338dc8c6bb5b45fccdb2221116cd5998ba8535c7f86bebfc5569d248b"
+    },
+    {
+      "path": "BRIEF.md",
+      "classification": "current documentation",
+      "sha256": "b97db31d8ad5ff6b90c51978b3e5adcd62fcc22769657431340688644f51a005"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "classification": "current documentation",
+      "sha256": "156b56aeeb4a1674f2527d0cb108a1ca2de33b9275dc071bfe415386bfb17d32"
+    },
+    {
+      "path": "CLAUDE.md",
+      "classification": "current documentation",
+      "sha256": "4a515a02603f1b9d199d6449e520e4465b5c018be6bd7e111e4f3f7755670645"
+    },
+    {
+      "path": "HANDOVER.md",
+      "classification": "current documentation",
+      "sha256": "d5c667292d6f85fdcd6439cb83c7ba9defa749146a800d47426a766a6a289b5a"
+    },
+    {
+      "path": "README.md",
+      "classification": "current documentation",
+      "sha256": "bbbbe377dbbb7d24142cc86e2982634be82eec53579d40cab4df79e62b9af836"
+    },
+    {
+      "path": "SECURITY.md",
+      "classification": "current documentation",
+      "sha256": "7c345d40d7c86cf2ebd1fb26e87dae6d423d29f9319dfc7559a753d919a48090"
+    },
+    {
+      "path": "docs/README.md",
+      "classification": "current documentation",
+      "sha256": "c25129b926a8e649d14906602ae81cca469e62818f3de1a474f9d746dbef6882"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/BRIEF.md",
+      "classification": "historical archive",
+      "sha256": "37a4bd1448f52cbe929d93dfe9c443d16617f1b61f96bbf100afdbb3efc1fcc6"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/CLAUDE.previous.md",
+      "classification": "historical archive",
+      "sha256": "cbd1de0e2262b1d89b3f40e74c1131edb99395e5870aac2cb04c16c41bd7a580"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/HANDOVER.md",
+      "classification": "historical archive",
+      "sha256": "18f66c973c8e1a43d03e2f99f48d2a37013582a2f4dc42734a5c3371c0261445"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/README.md",
+      "classification": "historical archive",
+      "sha256": "ce4a0e15000db2e66810137c74b751f3ed4c062e92f506f4bec10cf4d4a33817"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/README.original.md",
+      "classification": "historical archive",
+      "sha256": "b5140ea1bc17a80fb1ab1785b7f51c34c2c3372e396adc46120cf3081b4d7925"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/SECURITY.md",
+      "classification": "historical archive",
+      "sha256": "883c526a64f00de5b3cd3bad5715de432aa709eef2a38c0d06ea553180bc5374"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/production-hub/AUDIT.md",
+      "classification": "historical archive",
+      "sha256": "ad8ee9ff6b32e0f06657d92d82235451d118b503601c02f8c122cc5e0723e892"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/production-hub/DRIVE-IMPLEMENTATION.md",
+      "classification": "historical archive",
+      "sha256": "329fcb782d96051b84c4e011cfa21d1601bd374ade160109ea12f1e86a8a6aab"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/production-hub/PLAN.md",
+      "classification": "historical archive",
+      "sha256": "c1556b26f26542f594fb0e6cfe64fc579bb14152f34fd0248384d0c225fd6352"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/API_ROUTES.md",
+      "classification": "historical archive",
+      "sha256": "3d2c631e000cc84304429d06a15caa6bd5d595de1af44d7dd3546d1c9bf0d4f8"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/ARCHITECTURE.md",
+      "classification": "historical archive",
+      "sha256": "8e4cdd045b503156fc2599ddc096bf0e9e73d5e13b7f3d3e1daec59cb5c0b0a3"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/DATA_MODEL.md",
+      "classification": "historical archive",
+      "sha256": "528c04b25b1df4c85fe2f4a3b866635a3939ba5b6048574ade066fa027b6cda1"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/DATA_QUALITY_ISSUES.md",
+      "classification": "historical archive",
+      "sha256": "d476d31fb92705598b24938cde1295683705f48503e49aa27a122d85c7af238e"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/DEPLOYMENT.md",
+      "classification": "historical archive",
+      "sha256": "0ee44f5eb1a45a74df7d5075fc7d84228e8d8f60e538df20b9d2326164c3b878"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/ENTITY_INVENTORY.md",
+      "classification": "historical archive",
+      "sha256": "68fdf869b3e59d74d011a1f2cc719feb09b544a69da515252ff4a11713ca6d91"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/ENV_VARIABLES.md",
+      "classification": "historical archive",
+      "sha256": "15e925322623bb76800c6958668f3c9b2e0077f31208bf81449938c2b29e46d6"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/EXPORT_PLAN.md",
+      "classification": "historical archive",
+      "sha256": "c831c6d29e6dcc890f49c353368c52e68b23ba8383c7f5262646d5595f0534f9"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/INTEGRATIONS.md",
+      "classification": "historical archive",
+      "sha256": "2e9acd144a59384870bf12a47b6bd17703f7d94cf13e8610c03f5af5e5b716cb"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/MIGRATION_RISKS.md",
+      "classification": "historical archive",
+      "sha256": "8cbe6eaa6cfe449cbbd0e2ec76c4237d138c2694914fe232c68300830f70086c"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/STORAGE_AND_ASSETS.md",
+      "classification": "historical archive",
+      "sha256": "fe4135d5bb2bcf06ac4fddad4d17f3f952444755e54f18cac313d72635180cbb"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/status-doc-workflow.md",
+      "classification": "historical archive",
+      "sha256": "be853840a1fb2c84bdd6bee5b68818752f906aaff3b00b9870fd80f0d56ac9a8"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/docs/v1-cleanup.md",
+      "classification": "historical archive",
+      "sha256": "a608f99054925ac2c4afa0f49b979f0725dc8890838fe9d1cef42f4cb7846066"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/exports/VALIDATION_REPORT.md",
+      "classification": "historical archive",
+      "sha256": "5cfbcf7d77f0e2de59892803241c1bcbc2ac45a9565dad2449d4a2d1aa768d59"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/frontend/README.md",
+      "classification": "historical archive",
+      "sha256": "8dc9e0ee2281acb3324624fbe6eb7e1377cc626f616ea4dc90e3a90ae094374d"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/.github/ISSUE_TEMPLATE/bug_report.md",
+      "classification": "historical archive",
+      "sha256": "9088589d05e968e2c3782af6ebebd219dbc2df67c90be5878f3a6c5636c3b276"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/.github/ISSUE_TEMPLATE/feature_request.md",
+      "classification": "historical archive",
+      "sha256": "81ed35a6a74516480898f35e238685f632073fd416f84145929b870364de94e2"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/.github/PULL_REQUEST_TEMPLATE.md",
+      "classification": "historical archive",
+      "sha256": "695dcd65532a48eb834f8d6dd8768c1ad16b9a31b88cf3f0dc48b92b82ff2e00"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/AGENTS.previous.md",
+      "classification": "historical archive",
+      "sha256": "55de1c19b8e44096b8b7df73c30f544a28356d5b5451a5e08e252561432c1daa"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/CHANGELOG.md",
+      "classification": "historical archive",
+      "sha256": "5591003f8c1578a87b863b501825682f04ca4027325ecdd84e1e05540c4d19fb"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/CODE_OF_CONDUCT.md",
+      "classification": "historical archive",
+      "sha256": "8dc835fb3e8068539b3b640c30ad6024b48abc148d70de44018381b27524501e"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/CONTRIBUTING.md",
+      "classification": "historical archive",
+      "sha256": "89b98a4a921457ba0b8851f09c2287b2e1f731991a6a7c874c836a88a95c9e17"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/TODO.md",
+      "classification": "historical archive",
+      "sha256": "c71fae33a661c0bdfd0128d48e8bb7e84e8e568aba38eb6b0c1fb0f661c22ff7"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/docs/deploy.md",
+      "classification": "historical archive",
+      "sha256": "9d76f2f1237310d40036f3b619aed5ddfd264294dde92b79142b05360cc06963"
+    },
+    {
+      "path": "docs/archive/2026-09-16-before-direction-reset/scripts/legacy-export/README.md",
+      "classification": "historical archive",
+      "sha256": "0cb5c2eb50f4da5c9ad9ecbd5e65c3e4f2a549b2f3b402bc9754123099c079bf"
+    },
+    {
+      "path": "docs/deploy.md",
+      "classification": "current documentation",
+      "sha256": "1135b65480fffb15dce08c48dc92cdd7261808f9e00c875e0f790b71a80f95ec"
+    },
+    {
+      "path": "docs/production-hub/AUDIT.md",
+      "classification": "dated baseline evidence",
+      "sha256": "699905ca711d63fd1653d732fb9f9f040885eebede54746c4c55cb93ef9103c7"
+    },
+    {
+      "path": "docs/production-hub/DRIVE-IMPLEMENTATION.md",
+      "classification": "current documentation",
+      "sha256": "cbc4cdc0806f7cc8c2b7e3da72f6b089a6f1075a751565e70f13b67d1f27aa59"
+    },
+    {
+      "path": "docs/production-hub/DRIVE-WORKFLOW.md",
+      "classification": "current documentation",
+      "sha256": "c1a6bf2effa7cf6632cf477b23a3f913d4a5ddf87b267bc6499f7f129e2659df"
+    },
+    {
+      "path": "docs/production-hub/FINANCE-IMPLEMENTATION.md",
+      "classification": "current documentation",
+      "sha256": "25a9a55ec589a9fb6536dd5e1ae5c08760af15695bd2924be5921f7c3ab2ba8e"
+    },
+    {
+      "path": "docs/production-hub/NEW-PROJECT-WORKFLOW.md",
+      "classification": "current documentation",
+      "sha256": "330630ab60d9073aaf7ac5b01294f9365f14c7b1dda3e772426f87fe20270904"
+    },
+    {
+      "path": "docs/production-hub/PLAN.md",
+      "classification": "current documentation",
+      "sha256": "621ec142944658a1b006c34bcb37b7268a1c68fc54afb707ff049042e476a8af"
+    },
+    {
+      "path": "docs/production-hub/PURCHASE-ORDER-WORKFLOW.md",
+      "classification": "current documentation",
+      "sha256": "dd7ace2ddb7e84771ed7aee45102e1a0539a076f2be67169a53cd39feba57e16"
+    },
+    {
+      "path": "docs/rebuild-audit/API_ROUTES.md",
+      "classification": "current documentation",
+      "sha256": "1efb0d0b94b0bc743c295a9f337ed1be88256b1a4066a522a3fcd51f2cdc251e"
+    },
+    {
+      "path": "docs/rebuild-audit/ARCHITECTURE.md",
+      "classification": "current documentation",
+      "sha256": "2827bbb76a3386d3cb9639b46bcea275fa9a1b843b82ebf63ec2db3027c9a90b"
+    },
+    {
+      "path": "docs/rebuild-audit/DATA_MODEL.md",
+      "classification": "current documentation",
+      "sha256": "a8a28d7f9a6e9c2cc291d6f4fc8daddf5f04ea7bddf4ce53d5827400dd81874b"
+    },
+    {
+      "path": "docs/rebuild-audit/DATA_QUALITY_ISSUES.md",
+      "classification": "current documentation",
+      "sha256": "2ac15449cf444480127684d2467747eb907cb0bd16463ee7efb7febb23e391ee"
+    },
+    {
+      "path": "docs/rebuild-audit/DEPLOYMENT.md",
+      "classification": "current documentation",
+      "sha256": "bfbcc306045e37870bfbf4953fa257f945bcbf1c20fb305c185b09ac499bdd92"
+    },
+    {
+      "path": "docs/rebuild-audit/ENTITY_INVENTORY.md",
+      "classification": "current documentation",
+      "sha256": "2fefbbc3fed5e79f1b900c076e6f1e4395357e24cd4f577c7d39c708943e9184"
+    },
+    {
+      "path": "docs/rebuild-audit/ENV_VARIABLES.md",
+      "classification": "current documentation",
+      "sha256": "54ea679d8ccb3ac90b40597bac19b512c548dda6c0d6c7ac7789bfdfb0926f2a"
+    },
+    {
+      "path": "docs/rebuild-audit/EXPORT_PLAN.md",
+      "classification": "current documentation",
+      "sha256": "702d4a37b806b8bc6cc53d0351811f015c973e76ff2b01404c493b4ae1cd09ac"
+    },
+    {
+      "path": "docs/rebuild-audit/INTEGRATIONS.md",
+      "classification": "current documentation",
+      "sha256": "aab8e1457bb1ae424d82a49bb74faffefb95233e0396234982e35b5eebd5feb9"
+    },
+    {
+      "path": "docs/rebuild-audit/MIGRATION_RISKS.md",
+      "classification": "current documentation",
+      "sha256": "b2ed2c47f3e05c829a8aa2faa1ea90ddb0612a8929cd3ce46571dbd40fc808a5"
+    },
+    {
+      "path": "docs/rebuild-audit/STORAGE_AND_ASSETS.md",
+      "classification": "current documentation",
+      "sha256": "0a1e7b0e1aed3a191ca2f1b3c7486fd3035053deaf8b540270f3d1ce03aaf0ae"
+    },
+    {
+      "path": "docs/releases/2026-09-16-finance-purchase-orders.md",
+      "classification": "current documentation",
+      "sha256": "2c3e687c915ae1c7e42dedb80932fc3bb7053f2dba32e4e9fd0662f8fa9a5656"
+    },
+    {
+      "path": "docs/releases/2026-09-16-finance-register.md",
+      "classification": "current documentation",
+      "sha256": "af97ef47dc1193a5dbd2646daf6c2019b58c70decb9e8c9e726d421b4da078a5"
+    },
+    {
+      "path": "docs/releases/2026-09-16-new-project-workflow.md",
+      "classification": "current documentation",
+      "sha256": "f737ad49154d6a6bf0921b90015af03bfb7fa80a125c9baf5c793ea13a2b94e7"
+    },
+    {
+      "path": "docs/releases/2026-09-16-production-hub.md",
+      "classification": "current documentation",
+      "sha256": "996a3b1103102bef789df875293ce0e350908b1373a63724c439fdfe361961ac"
+    },
+    {
+      "path": "docs/releases/README.md",
+      "classification": "current documentation",
+      "sha256": "c9f576f3d3e7f71b3c28e800fbb04e26f687fb6104fa59bda37a666c11607df7"
+    },
+    {
+      "path": "docs/status-doc-workflow.md",
+      "classification": "current documentation",
+      "sha256": "8efff06ef41b3b6c481f33732182e8f2edc7d3846326f1ad2b9b9a2f6215de9f"
+    },
+    {
+      "path": "docs/v1-cleanup.md",
+      "classification": "current documentation",
+      "sha256": "dd95c3ba40625c5cbad3df38a088c291e0266daa711629300dbeac6728b56e8f"
+    },
+    {
+      "path": "exports/VALIDATION_REPORT.md",
+      "classification": "historical generated report",
+      "sha256": "90c37fe6e3c396440fdfb8673ee2f8a4a113395a1f5ab399b62a2886a00c6975"
+    },
+    {
+      "path": "frontend/README.md",
+      "classification": "current documentation",
+      "sha256": "b93f161c28eeb28464a2c77f9265a3c5b65175b8082b721fd86fb2e5524a734c"
+    },
+    {
+      "path": "scripts/legacy-export/README.md",
+      "classification": "current documentation",
+      "sha256": "9bc75c5342cdcfce01a4875c49d9214eae4d1dbf580291977e9b107b69a82313"
+    },
+    {
+      "path": "docs/production-hub/CLIENT-BILLING-WORKFLOW.md",
+      "classification": "current documentation",
+      "sha256": "f277ea63cd4d624d61cc9fc99e11e831bd7379eed4366c89dd85f5cda557f74e"
+    },
+    {
+      "path": "docs/releases/2026-09-16-client-billing.md",
+      "classification": "current documentation",
+      "sha256": "e3368cb20eb41ef7a69b956651ddd43947194f0f8b0aae36d1de948b25b3ae33"
+    },
+    {
+      "path": "docs/production-hub/CLIENT-CREDIT-WORKFLOW.md",
+      "classification": "current documentation",
+      "sha256": "644e39ebae2ad8982ba5f228a245f1f27d1437b34369d2fef841835ae9e4c97e"
+    },
+    {
+      "path": "docs/releases/2026-09-16-client-credits.md",
+      "classification": "current documentation",
+      "sha256": "6a72b48a9f20069cfc9e7f40cd2e42116eb4f89746b8d61737dab3f6f6dada22"
+    },
+    {
+      "path": "docs/production-hub/SUPPLIER-RECONCILIATION.md",
+      "classification": "current documentation",
+      "sha256": "1759c559d54f20d2a3f88bd3c592054ae1d1da52591f033528faf6c25f90fd11"
+    },
+    {
+      "path": "docs/releases/2026-09-16-supplier-reconciliation.md",
+      "classification": "current documentation",
+      "sha256": "93658b2a1e93ad17ffd6315b573e8d39a428a876338d933be462bb9eadd254ea"
+    }
+  ]
+}

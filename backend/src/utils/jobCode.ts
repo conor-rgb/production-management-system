@@ -4,6 +4,7 @@ import prisma from "../prisma";
 // e.g. 2601, 2647
 export async function generateJobCode(): Promise<string> {
   return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('project-job-code'))`;
     const settings = await tx.settings.findFirst({ orderBy: { createdAt: "asc" } });
     if (!settings) throw new Error("Settings row required before generating job codes");
 

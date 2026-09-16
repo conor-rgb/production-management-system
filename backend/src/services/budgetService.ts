@@ -62,6 +62,7 @@ export interface SectionTotals {
   name: string;
   estimatedTotal: number;
   actualTotal: number;
+  inHouseCost: number;
   variance: number;
   remainingBudget: number;
   agreedCount: number;
@@ -76,6 +77,7 @@ export interface RevisionTotals {
   insurance: number;
   grandTotal: number;
   totalActuals: number;
+  totalInHouseCosts: number;
   totalVariance: number;
   totalRemaining: number;
   currencyConverted: number | null;
@@ -119,6 +121,11 @@ export function calculateSectionTotals(section: FullSection): SectionTotals {
   const lineItems = section.lineItems.filter((line) => !line.isSubItem);
   const estimatedTotal = roundMoney(lineItems.reduce((sum, line) => sum + Number(line.estimatedTotal ?? 0), 0));
   const actualTotal = roundMoney(lineItems.reduce((sum, line) => sum + Number(line.actualTotal ?? 0), 0));
+  const inHouseCost = roundMoney(lineItems.reduce((sum, line) => (
+    sum + line.subCosts
+      .filter((subCost) => subCost.lineType === "IN_HOUSE")
+      .reduce((lineSum, subCost) => lineSum + Number(subCost.amount ?? 0), 0)
+  ), 0));
   const variance = roundMoney(estimatedTotal - actualTotal);
   return {
     sectionId: section.id,
@@ -126,6 +133,7 @@ export function calculateSectionTotals(section: FullSection): SectionTotals {
     name: section.name,
     estimatedTotal,
     actualTotal,
+    inHouseCost,
     variance,
     remainingBudget: variance,
     agreedCount: lineItems.filter((line) => line.subCosts.some((subCost) => subCost.isAgreed)).length,
@@ -145,10 +153,11 @@ export function calculateRevisionTotalsFromRevision(revision: FullRevision): Rev
   const visibleSections = revision.sections.filter((section) => section.isVisible);
   const sectionTotals = visibleSections.map(calculateSectionTotals);
   const subtotal = roundMoney(sectionTotals.reduce((sum, section) => sum + section.estimatedTotal, 0));
-  const productionFee = roundMoney(subtotal * (revision.productionFeePercent / 100));
-  const insurance = roundMoney((subtotal + productionFee) * (revision.insurancePercent / 100));
+  const productionFee = revision.productionFeeEnabled ? roundMoney(subtotal * (revision.productionFeePercent / 100)) : 0;
+  const insurance = revision.insuranceEnabled ? roundMoney((subtotal + productionFee) * (revision.insurancePercent / 100)) : 0;
   const grandTotal = roundMoney(subtotal + productionFee + insurance);
   const totalActuals = roundMoney(sectionTotals.reduce((sum, section) => sum + section.actualTotal, 0));
+  const totalInHouseCosts = roundMoney(sectionTotals.reduce((sum, section) => sum + section.inHouseCost, 0));
   const totalVariance = roundMoney(grandTotal - totalActuals);
   const rate = revision.budget.currencyRate ?? null;
   const advances = revision.budget.advanceInvoices.map((advance) => ({
@@ -162,6 +171,7 @@ export function calculateRevisionTotalsFromRevision(revision: FullRevision): Rev
     insurance,
     grandTotal,
     totalActuals,
+    totalInHouseCosts,
     totalVariance,
     totalRemaining: totalVariance,
     currencyConverted: rate ? roundMoney(grandTotal * rate) : null,
@@ -239,6 +249,8 @@ export async function getOrCreateBudget({ productionId, opportunityId }: { produ
         label: "Original",
         productionFeePercent: createdBudget.productionFeePercent,
         insurancePercent: createdBudget.insurancePercent,
+        productionFeeEnabled: createdBudget.productionFeeEnabled,
+        insuranceEnabled: createdBudget.insuranceEnabled,
       },
     });
     await tx.budget.update({ where: { id: createdBudget.id }, data: { currentRevisionId: revision.id } });
@@ -267,6 +279,8 @@ export async function createRevision(budgetId: string) {
         label: `V${nextMajor}`,
         productionFeePercent: source?.productionFeePercent ?? budget.productionFeePercent,
         insurancePercent: source?.insurancePercent ?? budget.insurancePercent,
+        productionFeeEnabled: source?.productionFeeEnabled ?? budget.productionFeeEnabled,
+        insuranceEnabled: source?.insuranceEnabled ?? budget.insuranceEnabled,
         notes: source?.notes,
         estimateDescription: source?.estimateDescription,
         includedNotes: source?.includedNotes,
@@ -378,6 +392,8 @@ export async function cloneRevisionForEdit(revisionId: string, changeSummary = "
         status: RevisionStatus.DRAFT,
         productionFeePercent: source.productionFeePercent,
         insurancePercent: source.insurancePercent,
+        productionFeeEnabled: source.productionFeeEnabled,
+        insuranceEnabled: source.insuranceEnabled,
         notes: source.notes,
         estimateDescription: source.estimateDescription,
         includedNotes: source.includedNotes,
@@ -454,6 +470,9 @@ export async function cloneRevisionForEdit(revisionId: string, changeSummary = "
 function copyLineData(line: FullLineItem, sectionId: string, order: number, parentId: string | null): Prisma.BudgetLineItemUncheckedCreateInput {
   return {
     sectionId,
+    plannedUnitCost: line.plannedUnitCost,
+    plannedSupplier: line.plannedSupplier,
+    stableCostKey: line.stableCostKey,
     lineCode: line.lineCode,
     description: line.description,
     clientNotes: line.clientNotes,
@@ -573,6 +592,7 @@ export async function duplicateLineItem(lineItemId: string) {
   const max = await prisma.budgetLineItem.aggregate({ where: { sectionId: line.sectionId }, _max: { order: true } });
   return createLineItem(line.sectionId, {
     ...copyLineData(line as FullLineItem, line.sectionId, (max._max.order ?? 0) + 1, line.parentId),
+    stableCostKey: undefined,
     lineCode: await nextLineCode(line.sectionId, line.parentId),
     description: `${line.description} copy`,
   });
@@ -664,6 +684,8 @@ export async function cloneBudgetToProduction(opportunityId: string, productionI
         usages: opportunityBudget.usages,
         productionFeePercent: opportunityBudget.productionFeePercent,
         insurancePercent: opportunityBudget.insurancePercent,
+        productionFeeEnabled: opportunityBudget.productionFeeEnabled,
+        insuranceEnabled: opportunityBudget.insuranceEnabled,
         currencyBase: opportunityBudget.currencyBase,
         currencySecondary: opportunityBudget.currencySecondary,
         currencyRate: opportunityBudget.currencyRate,
@@ -678,6 +700,8 @@ export async function cloneBudgetToProduction(opportunityId: string, productionI
         status: "APPROVED",
         productionFeePercent: source.productionFeePercent,
         insurancePercent: source.insurancePercent,
+        productionFeeEnabled: source.productionFeeEnabled,
+        insuranceEnabled: source.insuranceEnabled,
         notes: source.notes,
       },
     });

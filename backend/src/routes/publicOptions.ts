@@ -1,12 +1,14 @@
 import fs from "node:fs";
 import { Router, Request, Response } from "express";
 import prisma from "../prisma";
+import { publicTokenParamsValidator, validateParams, validatedParams, type PublicTokenParams } from "../utils/validation";
 
 const router = Router();
 
-router.get("/candidate-pdfs/:token", async (req: Request, res: Response): Promise<void> => {
+router.get("/candidate-pdfs/:token", validateParams(publicTokenParamsValidator), async (req: Request, res: Response): Promise<void> => {
+  const { token } = validatedParams<PublicTokenParams>(req);
   const candidate = await prisma.optionCandidate.findUnique({
-    where: { pdfPublicToken: req.params.token },
+    where: { pdfPublicToken: token },
     select: { pdfStoredPath: true, pdfFilename: true },
   });
   if (!candidate?.pdfStoredPath || !fs.existsSync(candidate.pdfStoredPath)) {

@@ -1,3 +1,15 @@
+export class ApiError extends Error {
+  status: number;
+  body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     credentials: "include",
@@ -5,13 +17,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   });
 
-  if (res.status === 401) {
-    throw new Error("Unauthorised");
-  }
-
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
+    throw new ApiError(body.error ?? (res.status === 401 ? "Unauthorised" : `Request failed: ${res.status}`), res.status, body);
   }
 
   if (res.status === 204) return undefined as T;

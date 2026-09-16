@@ -10,6 +10,9 @@ export const GLOBAL_MAIL_ATTACHMENTS_ROOT = path.resolve(__dirname, "../../stora
 export const JOB_FOLDERS = [
   "Briefs",
   "Estimates",
+  "Invoices",
+  "Client Invoices",
+  "Reconciliation",
   "Budgets",
   "Contracts",
   "Crew Deals",
@@ -115,6 +118,7 @@ export async function autoFileDocument(
   filename: string,
   mimeType: string,
   options?: {
+    sourceKey?: string;
     notes?: string;
     linkedBudgetLineId?: string;
     isReceipt?: boolean;
@@ -127,17 +131,21 @@ export async function autoFileDocument(
     sourceEmailFilename?: string;
   }
 ) {
+  if (options?.sourceKey) { const existing = await prisma.jobFile.findUnique({ where: { sourceKey: options.sourceKey } }); if (existing) return existing; }
   const basePath = await ensureProductionFolders(productionId);
+  const project = await prisma.production.findUniqueOrThrow({ where: { id: productionId }, select: { driveFolderId: true, driveSetupStatus: true } });
   const storedFilename = `${randomUUID()}${fileExtension(filename, mimeType)}`;
   const destination = path.join(basePath, folder, storedFilename);
 
   await fs.writeFile(destination, buffer);
 
   try {
-    return await prisma.jobFile.create({
+    const record = await prisma.jobFile.create({
       data: {
         productionId,
+        sourceKey: options?.sourceKey,
         folder,
+        driveSyncStatus: (project.driveFolderId || project.driveSetupStatus === "PENDING" || project.driveSetupStatus === "ERROR") ? "PENDING" : "LOCAL",
         originalFilename: filename,
         storedFilename,
         mimeType,
@@ -154,8 +162,10 @@ export async function autoFileDocument(
         sourceEmailFilename: options?.sourceEmailFilename,
       },
     });
+    return record;
   } catch (err) {
     await fs.unlink(destination).catch(() => undefined);
+    if (options?.sourceKey && (err as { code?: string }).code === "P2002") { const existing = await prisma.jobFile.findUnique({ where: { sourceKey: options.sourceKey } }); if (existing) return existing; }
     throw err;
   }
 }

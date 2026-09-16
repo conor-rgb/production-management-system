@@ -940,6 +940,11 @@ export async function sendEmail(options: SendEmailOptions) {
       bodyHtml: options.bodyHtml,
       inReplyTo: options.inReplyTo,
       gmailThreadId: existingThread?.gmailThreadId ?? null,
+      attachments: options.attachments?.map((attachment) => ({
+        filename: attachment.filename,
+        mimeType: attachment.contentType,
+        content: attachment.content,
+      })),
     });
     const { syncThread } = await import("./gmailSyncService");
     await syncThread(account, sent.gmailThreadId);

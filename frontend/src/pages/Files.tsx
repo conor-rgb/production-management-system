@@ -1,7 +1,9 @@
+import DriveWorkspace from "../components/files/DriveWorkspace";
+import type { ProjectSummary } from "../lib/workspace";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, File, FileImage, FileText, FileVideo, FolderOpen, Search } from "lucide-react";
 import { api } from "../lib/api";
-import type { FileListResponse, JobFile, JobFolder, Production } from "../lib/types";
+import type { FileListResponse, JobFile, JobFolder } from "../lib/types";
 import { formatBytes, JOB_FOLDERS } from "../lib/types";
 import { PreviewPanel } from "../components/files/FileBrowser";
 
@@ -14,7 +16,7 @@ function iconFor(file: JobFile) {
 
 export default function Files() {
   const [files, setFiles] = useState<JobFile[]>([]);
-  const [productions, setProductions] = useState<Production[]>([]);
+  const [productions, setProductions] = useState<ProjectSummary[]>([]);
   const [selectedFile, setSelectedFile] = useState<JobFile | null>(null);
   const [search, setSearch] = useState("");
   const [folder, setFolder] = useState<JobFolder | "All">("All");
@@ -43,7 +45,7 @@ export default function Files() {
     }
   }, [page, query]);
 
-  useEffect(() => { api.get<Production[]>("/api/productions?includeWrapped=true").then(setProductions).catch(console.error); }, []);
+  useEffect(() => { api.get<ProjectSummary[]>("/api/productions/summary?includeWrapped=true").then(setProductions).catch(console.error); }, []);
   useEffect(() => { load().catch(console.error); }, [load]);
   useEffect(() => { setPage(1); }, [folder, productionId, search]);
 
@@ -58,7 +60,8 @@ export default function Files() {
     <div className="flex h-full bg-gray-50">
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="border-b border-gray-200 bg-white p-4">
-          <h1 className="mb-3 text-xl font-semibold text-gray-900">Files</h1>
+          <h1 className="mb-3 text-xl font-semibold text-gray-900">Files & exports</h1>
+          <div className="mb-4"><DriveWorkspace key={productionId || "all"} productionId={productionId || undefined}/></div>
           <label className="relative block">
             <Search size={16} className="absolute left-3 top-3.5 text-gray-400" />
             <input

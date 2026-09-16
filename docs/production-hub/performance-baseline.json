@@ -1,0 +1,67 @@
+{
+  "capturedAt": "2026-09-16T11:01:54.841Z",
+  "counts": {
+    "production": 9,
+    "emailMessage": 4013,
+    "crewMember": 5,
+    "optionCandidate": 38,
+    "projectAction": 5
+  },
+  "runs": [
+    {
+      "pass": 0,
+      "kind": "current_list",
+      "rows": 9,
+      "queries": 20,
+      "queryMs": 1259.35,
+      "serializeMs": 287.52,
+      "bytes": 49498645
+    },
+    {
+      "pass": 0,
+      "kind": "summary_projection",
+      "rows": 9,
+      "queries": 2,
+      "queryMs": 5.23,
+      "serializeMs": 0.06,
+      "bytes": 1981
+    },
+    {
+      "pass": 1,
+      "kind": "current_list",
+      "rows": 9,
+      "queries": 20,
+      "queryMs": 1235.64,
+      "serializeMs": 208.56,
+      "bytes": 49498645
+    },
+    {
+      "pass": 1,
+      "kind": "summary_projection",
+      "rows": 9,
+      "queries": 2,
+      "queryMs": 6.62,
+      "serializeMs": 0.05,
+      "bytes": 1981
+    },
+    {
+      "pass": 2,
+      "kind": "current_list",
+      "rows": 9,
+      "queries": 20,
+      "queryMs": 1106.39,
+      "serializeMs": 311.08,
+      "bytes": 49498645
+    },
+    {
+      "pass": 2,
+      "kind": "summary_projection",
+      "rows": 9,
+      "queries": 2,
+      "queryMs": 8.95,
+      "serializeMs": 0.06,
+      "bytes": 1981
+    }
+  ],
+  "note": "Read-only local DB query/serialization comparison, not HTTP/browser latency. Summary projection omits financial aggregation and is a proposed shape, not a shipped endpoint."
+}

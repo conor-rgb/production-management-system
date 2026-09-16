@@ -9,11 +9,13 @@ export type FreeAgentInvoiceStatus = "NOT_RAISED" | "DRAFT" | "SENT" | "VIEWED" 
 export type ProductionDateType = "PPM" | "RECCE" | "FITTING" | "MEETING" | "SHOOT_DAY" | "POST_DELIVERY" | "OTHER";
 export type ProductionDateStatus = "PROPOSED" | "OPTIONED" | "CONFIRMED" | "RELEASED" | "CANCELLED";
 export type CrewStatus = "REQUESTED" | "FIRST_OPTION" | "SECOND_OPTION" | "CONFIRMED" | "RELEASED";
-export type JobFolder = "Briefs" | "Estimates" | "Budgets" | "Contracts" | "Crew Deals" | "Receipts" | "References" | "Selects" | "Delivery" | "Mail Attachments";
+export type CrewItineraryStatus = "DRAFT" | "READY" | "SENT";
+export type CrewItineraryItemType = "CAR" | "TRAIN" | "FLIGHT" | "HOTEL" | "EVENT";
+export type JobFolder = "Invoices" | "Client Invoices" | "Reconciliation" | "Briefs" | "Estimates" | "Budgets" | "Contracts" | "Crew Deals" | "Receipts" | "References" | "Selects" | "Delivery" | "Mail Attachments";
 export type BudgetStatus = "DRAFT" | "SENT" | "CONFIRMED" | "IN_PRODUCTION" | "WRAPPED";
 export type BudgetRevisionStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED" | "SUPERSEDED";
 export type SubCostStatus = "PENDING" | "AGREED" | "INVOICED" | "PAID";
-export type SubCostLineType = "PO" | "BILL" | "PENDING_RECEIPT" | "RECEIPT";
+export type SubCostLineType = "PO" | "BILL" | "PENDING_RECEIPT" | "RECEIPT" | "IN_HOUSE";
 export type PurchaseOrderStatus = "DRAFT" | "SENT" | "ACCEPTED" | "PART_BILLED" | "BILLED" | "PAID" | "CANCELLED";
 export type AdvanceCalcType = "PERCENT_OF_TOTAL" | "PERCENT_OF_PRODUCTION" | "FIXED_AMOUNT";
 export type ReceiptCaptureStatus = "PENDING" | "PARSING" | "PARSED" | "ASSIGNED" | "FAILED";
@@ -24,6 +26,44 @@ export type CalendarEventType = "SHOOT_DAY" | "PPM" | "RECCE" | "FITTING" | "MEE
 export type ProjectActionType = "TASK" | "DEADLINE" | "EVENT" | "MEETING" | "TRAVEL" | "SHOOT" | "REMINDER";
 export type ProjectActionStatus = "TODO" | "IN_PROGRESS" | "WAITING" | "DONE" | "BLOCKED" | "CANCELLED";
 export type ProjectActionVisibility = "INTERNAL" | "CLIENT";
+export type ProductionWorkbookSheetType =
+  | "DASHBOARD"
+  | "SCOPE_DATES"
+  | "ROLE_PLAN"
+  | "OPTIONS_HOLDS"
+  | "CONFIRMED_TEAM"
+  | "LOCATIONS"
+  | "ARTISTS_TALENT"
+  | "CATERING"
+  | "TODO"
+  | "TIMELINE"
+  | "RUN_OF_SHOW"
+  | "CREW"
+  | "HOLDS"
+  | "TRAVEL"
+  | "HOTELS"
+  | "CARS"
+  | "EQUIPMENT"
+  | "DELIVERIES"
+  | "TASKS_CHASES"
+  | "FILES_COMMS";
+export type ProductionWorkbookRowStatus =
+  | "TODO"
+  | "IN_PROGRESS"
+  | "WAITING"
+  | "BLOCKED"
+  | "DONE"
+  | "CANCELLED"
+  | "REQUESTED"
+  | "FIRST_OPTION"
+  | "SECOND_OPTION"
+  | "CONFIRMED"
+  | "RELEASED"
+  | "PARKED"
+  | "NEEDS_CHASE"
+  | "SENT"
+  | "READY"
+  | "INTERNAL";
 
 export interface Company {
   id: string;
@@ -204,6 +244,65 @@ export interface CalendarEvent {
   updatedAt: string;
 }
 
+export interface ProductionSheetRow {
+  id: string;
+  workbookId: string;
+  sheetId: string;
+  sheetType: ProductionWorkbookSheetType;
+  order: number;
+  status?: ProductionWorkbookRowStatus | null;
+  title?: string | null;
+  date?: string | null;
+  startAt?: string | null;
+  endAt?: string | null;
+  workstream?: string | null;
+  owner?: string | null;
+  location?: string | null;
+  notes?: string | null;
+  data: Record<string, unknown>;
+  sourceEntityType?: string | null;
+  sourceEntityId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProductionSheet {
+  id: string;
+  workbookId: string;
+  type: ProductionWorkbookSheetType;
+  title: string;
+  order: number;
+  config: Record<string, unknown>;
+  rows: ProductionSheetRow[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProductionWorkbook {
+  id: string;
+  productionId: string;
+  title: string;
+  metadata: Record<string, unknown>;
+  production?: Pick<Production, "id" | "title" | "status" | "jobCode" | "clientName" | "brand">;
+  sheets: ProductionSheet[];
+  context?: {
+    dates?: Array<Record<string, unknown>>;
+    roleAssignableDates?: Array<Record<string, unknown>>;
+    workstreams?: Array<Record<string, unknown>>;
+    optionGroups?: Array<Record<string, unknown>>;
+    crewMembers?: Array<Record<string, unknown>>;
+    logisticsCounts?: Array<Record<string, unknown>>;
+    archiveLinks?: Array<{ key: string; label: string; tab: string; url: string }>;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProductionWorkbookResponse {
+  enabled: boolean;
+  workbook: ProductionWorkbook | null;
+}
+
 export interface CrewMember {
   id: string;
   productionId: string;
@@ -225,6 +324,7 @@ export interface CrewMember {
     name: string;
     groupId: string;
     activeState: string;
+    group?: CrewSourceGroup | null;
   } | null;
   roleRequirementId?: string | null;
   roleRequirement?: {
@@ -233,8 +333,9 @@ export interface CrewMember {
     displayLabel: string;
     type: string;
     groupId: string;
+    group?: CrewSourceGroup | null;
   } | null;
-  roleId?: string;
+  roleId?: string | null;
   role?: CrewRole;
   name: string;
   email?: string;
@@ -249,6 +350,103 @@ export interface CrewMember {
   callTime?: string | null;
   wrapTime?: string | null;
   notes?: string;
+  hiddenFromCrewList?: boolean;
+  itinerary?: CrewItinerarySummary | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrewSourceGroup {
+  id: string;
+  name: string;
+  type: string;
+  order: number;
+  hiddenFromCrewList?: boolean;
+}
+
+export interface CrewItinerarySummary {
+  id: string;
+  title: string;
+  status: CrewItineraryStatus;
+  generatedAt?: string | null;
+  exportedAt?: string | null;
+  _count?: { items: number; appendixPages: number };
+}
+
+export interface CrewItineraryItemFile {
+  id: string;
+  fileId: string;
+  exportVisible: boolean;
+  createdAt: string;
+  file: JobFile;
+}
+
+export interface CrewItineraryItem {
+  id: string;
+  itineraryId: string;
+  type: CrewItineraryItemType;
+  order: number;
+  date?: string | null;
+  endDate?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  startTimezone?: string | null;
+  endTimezone?: string | null;
+  origin?: string | null;
+  destination?: string | null;
+  provider?: string | null;
+  bookingReference?: string | null;
+  bookingUrl?: string | null;
+  address?: string | null;
+  terminal?: string | null;
+  platform?: string | null;
+  gate?: string | null;
+  flightNumber?: string | null;
+  trainNumber?: string | null;
+  seat?: string | null;
+  coach?: string | null;
+  baggage?: string | null;
+  passengerName?: string | null;
+  roomType?: string | null;
+  roomNumber?: string | null;
+  checkInDetails?: string | null;
+  checkOutDetails?: string | null;
+  cancellationPolicy?: string | null;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  cost?: string | null;
+  paidBy?: string | null;
+  notes?: string | null;
+  exportVisible: boolean;
+  files: CrewItineraryItemFile[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrewItineraryAppendixPage {
+  id: string;
+  itineraryId: string;
+  title: string;
+  bodyHtml: string;
+  order: number;
+  exportVisible: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrewItinerary {
+  id: string;
+  productionId: string;
+  crewMemberId: string;
+  crewMember: CrewMember;
+  title: string;
+  introNotes?: string | null;
+  status: CrewItineraryStatus;
+  generatedAt?: string | null;
+  exportedAt?: string | null;
+  items: CrewItineraryItem[];
+  appendixPages: CrewItineraryAppendixPage[];
   createdAt: string;
   updatedAt: string;
 }
@@ -404,12 +602,15 @@ export interface EmailThreadsResponse {
 }
 
 export interface Production {
+  workspaceVersion?: number;
   id: string;
   title: string;
   clientName?: string;
   brand?: string;
   jobType?: PmsJobType;
   jobCode?: string;
+  contactId?: string | null;
+  contact?: Contact | null;
   description?: string;
   status: ProductionStatus;
   value?: string;
@@ -424,6 +625,7 @@ export interface Production {
   nextDate?: ProductionDate | null;
   dates: ProductionDate[];
   crewMembers: CrewMember[];
+  jobFiles?: JobFile[];
   emailThreads: EmailThread[];
   activityNotes?: ActivityNote[];
   activityTasks?: ActivityTask[];
@@ -442,6 +644,9 @@ export interface ProjectWorkstream {
   optionGroups?: Array<{
     id: string;
     name: string;
+    type?: string;
+    order?: number;
+    hiddenFromCrewList?: boolean;
     requirements?: Array<{
       id: string;
       name: string;
@@ -494,6 +699,10 @@ export interface ProjectAction {
 
 export interface JobFile {
   id: string;
+  driveFileId?: string | null;
+  driveWebViewLink?: string | null;
+  driveSyncStatus?: "LOCAL" | "PENDING" | "SYNCING" | "SYNCED" | "ERROR";
+  driveSyncError?: string | null;
   productionId?: string | null;
   folder: JobFolder;
   originalFilename: string;
@@ -572,6 +781,173 @@ export interface FileListResponse {
   total: number;
 }
 
+export type StillStatus =
+  | "UPLOADED"
+  | "SHORTLIST"
+  | "CLIENT_SELECT"
+  | "TO_RETOUCH"
+  | "RETOUCHING"
+  | "CHANGES_REQUESTED"
+  | "APPROVED"
+  | "DELIVERED"
+  | "REJECTED";
+
+export type StillAnnotationVisibility = "INTERNAL" | "CLIENT";
+export type StillSourceAssetType = "RAW" | "TIFF" | "EIP" | "PSD" | "DRIVE_FOLDER" | "OTHER";
+export type StillShareRole = "CLIENT" | "RETOUCHER";
+export type StillActivityAction =
+  | "VIEWED"
+  | "STATUS_CHANGED"
+  | "RATING_CHANGED"
+  | "COMMENTED"
+  | "NOTE_RESOLVED"
+  | "REVIEW_SUBMITTED"
+  | "VERSION_UPLOADED";
+
+export interface ProductionSku {
+  id: string;
+  productionId: string;
+  code?: string | null;
+  name?: string | null;
+  description?: string | null;
+  colorway?: string | null;
+  notes?: string | null;
+  materialSupplier?: string | null;
+  materialName?: string | null;
+  composition?: string | null;
+  hardware?: string | null;
+  price?: string | null;
+  sourceSheet?: string | null;
+  thumbnailJobFileId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StillFolder {
+  id: string;
+  productionId: string;
+  parentId?: string | null;
+  name: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StillAnnotation {
+  id: string;
+  imageId: string;
+  x: number;
+  y: number;
+  body: string;
+  markup?: unknown;
+  visibility: StillAnnotationVisibility;
+  resolved: boolean;
+  authorName?: string | null;
+  authorEmail?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StillSourceAsset {
+  id: string;
+  imageId: string;
+  jobFileId?: string | null;
+  jobFile?: JobFile | null;
+  type: StillSourceAssetType;
+  label?: string | null;
+  externalUrl?: string | null;
+  sizeBytes?: number | null;
+  mimeType?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StillImageActivity {
+  id: string;
+  imageId?: string | null;
+  productionId: string;
+  shareLinkId?: string | null;
+  action: StillActivityAction;
+  actorName?: string | null;
+  actorEmail?: string | null;
+  actorRole?: StillShareRole | null;
+  fromValue?: string | null;
+  toValue?: string | null;
+  metadata?: unknown;
+  createdAt: string;
+}
+
+export interface StillRetouchVersion {
+  id: string;
+  imageId: string;
+  jobFileId: string;
+  jobFile: JobFile;
+  version: number;
+  label?: string | null;
+  notes?: string | null;
+  uploadedBy?: string | null;
+  createdAt: string;
+}
+
+export interface StillImage {
+  id: string;
+  productionId: string;
+  jobFileId: string;
+  jobFile: JobFile;
+  thumbnailJobFileId?: string | null;
+  thumbnailJobFile?: JobFile | null;
+  folderId?: string | null;
+  folder?: StillFolder | null;
+  status: StillStatus;
+  rating?: number | null;
+  isHero: boolean;
+  sortOrder: number;
+  retouchSummary?: string | null;
+  skus: ProductionSku[];
+  annotations: StillAnnotation[];
+  activities?: StillImageActivity[];
+  retouchVersions?: StillRetouchVersion[];
+  sourceAssets?: StillSourceAsset[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StillShareLink {
+  id: string;
+  productionId: string;
+  folderId?: string | null;
+  token: string;
+  label?: string | null;
+  role?: StillShareRole;
+  reviewerName?: string | null;
+  reviewerEmail?: string | null;
+  expiresAt?: string | null;
+  allowDownloads: boolean;
+  watermark: boolean;
+  hasPassword?: boolean;
+  createdAt: string;
+  updatedAt: string;
+  url?: string;
+}
+
+export interface SelectsPayload {
+  production: Pick<Production, "id" | "title" | "jobCode" | "clientName" | "brand">;
+  folders: StillFolder[];
+  images: StillImage[];
+  skus: ProductionSku[];
+  shareLinks?: StillShareLink[];
+  shareLink?: StillShareLink;
+  totalImages?: number;
+  folderCounts?: Record<string, number>;
+  statusCounts?: Partial<Record<StillStatus, number>>;
+  pagination?: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
+
 export interface StorageInfo {
   totalBytes: number;
   fileCount: number;
@@ -584,6 +960,7 @@ export interface BudgetTotals {
   insurance: number;
   grandTotal: number;
   totalActuals: number;
+  totalInHouseCosts: number;
   totalVariance: number;
   totalRemaining: number;
   currencyConverted: number | null;
@@ -594,6 +971,7 @@ export interface BudgetTotals {
     name: string;
     estimatedTotal: number;
     actualTotal: number;
+    inHouseCost: number;
     variance: number;
     remainingBudget: number;
     agreedCount: number;
@@ -721,6 +1099,8 @@ export interface BudgetRevision {
   status: BudgetRevisionStatus;
   productionFeePercent: number;
   insurancePercent: number;
+  productionFeeEnabled: boolean;
+  insuranceEnabled: boolean;
   notes?: string;
   estimateDescription?: string | null;
   includedNotes?: string | null;
@@ -768,6 +1148,8 @@ export interface Budget {
   usages?: string | null;
   productionFeePercent: number;
   insurancePercent: number;
+  productionFeeEnabled: boolean;
+  insuranceEnabled: boolean;
   currencyBase: string;
   currencySecondary?: string | null;
   currencyRate?: number | null;
@@ -854,7 +1236,7 @@ export interface BudgetRevisionSummary {
   grandTotal: number;
 }
 
-export const JOB_FOLDERS: JobFolder[] = ["Briefs", "Estimates", "Budgets", "Contracts", "Crew Deals", "Receipts", "References", "Selects", "Delivery", "Mail Attachments"];
+export const JOB_FOLDERS: JobFolder[] = ["Invoices", "Client Invoices", "Reconciliation", "Briefs", "Estimates", "Budgets", "Contracts", "Crew Deals", "Receipts", "References", "Selects", "Delivery", "Mail Attachments"];
 
 export const PRODUCTION_STATUS_LABELS: Record<ProductionStatus, string> = {
   PRE_PRO: "Pre-pro",

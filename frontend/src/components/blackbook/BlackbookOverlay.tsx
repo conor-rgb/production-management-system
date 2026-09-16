@@ -876,7 +876,6 @@ function NotesEditor({ value, onSave, placeholder }: { value: string; onSave: (v
       console.error(error);
       setDraft(value);
       setStatus("error");
-    } finally {
     }
   }
 

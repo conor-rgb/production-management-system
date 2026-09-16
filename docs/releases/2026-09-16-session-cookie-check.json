@@ -1,0 +1,12 @@
+{
+  "startedAt": "2026-09-16T12:27:48.506Z",
+  "api": [],
+  "browser": {},
+  "drive": null,
+  "cookieUpgraded": true,
+  "cookieSecure": true,
+  "crossSiteCallbackStatus": 400,
+  "reachedDriveStateValidation": true,
+  "completedAt": "2026-09-16T12:27:50.480Z",
+  "passed": true
+}

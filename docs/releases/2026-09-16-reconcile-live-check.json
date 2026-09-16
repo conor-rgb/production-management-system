@@ -1,0 +1,91 @@
+{
+  "startedAt": "2026-09-16T15:31:28.787Z",
+  "api": [
+    {
+      "route": "/api/health",
+      "status": 200,
+      "bytes": 49,
+      "elapsedMs": 129
+    },
+    {
+      "route": "/api/project-workspace/templates",
+      "status": 200,
+      "bytes": 154,
+      "elapsedMs": 25
+    },
+    {
+      "route": "/api/project-finance",
+      "status": 200,
+      "bytes": 2,
+      "elapsedMs": 20
+    },
+    {
+      "route": "/api/project-finance/cmtvd9fsm000m111brx230zdb",
+      "status": 200,
+      "bytes": 645,
+      "elapsedMs": 44
+    },
+    {
+      "route": "/api/project-finance/cmtvd9fsm000m111brx230zdb/reconciliation",
+      "status": 200,
+      "bytes": 915,
+      "elapsedMs": 39
+    },
+    {
+      "route": "/api/auth/me",
+      "status": 200,
+      "bytes": 39,
+      "elapsedMs": 13
+    },
+    {
+      "route": "/api/productions/summary?includeWrapped=true",
+      "status": 200,
+      "bytes": 4520,
+      "elapsedMs": 50,
+      "rows": 9
+    },
+    {
+      "route": "/api/project-actions",
+      "status": 200,
+      "bytes": 3422,
+      "elapsedMs": 21
+    },
+    {
+      "route": "/api/drive/status",
+      "status": 200,
+      "bytes": 128,
+      "elapsedMs": 8
+    },
+    {
+      "route": "/api/files/all?page=1",
+      "status": 200,
+      "bytes": 40459,
+      "elapsedMs": 27
+    }
+  ],
+  "browser": {
+    "home": "passed",
+    "finance": "passed",
+    "files": "passed",
+    "mobile": "passed",
+    "runtimeErrors": 0,
+    "draftsRestoreQuietly": "passed",
+    "newProjectWizard": "passed, no project submitted",
+    "purchaseOrders": "passed, no order created or issued",
+    "clientBilling": "passed desktop/mobile, refund balance summary and draft editor; no invoice, credit or cash entry created",
+    "closeChecklist": "passed, real records read only",
+    "financePilot": "passed",
+    "financePilotMobile": "passed"
+  },
+  "drive": {
+    "configured": true,
+    "connected": true,
+    "rootFolderId": "1-0gwnfN5lGiLa4WGbC_q2nQ50l3e-iSR"
+  },
+  "unauthenticatedDriveStatus": 401,
+  "projectDriveStatus": 200,
+  "unauthenticatedWorkspaceStatus": 401,
+  "unauthenticatedFinanceStatus": 401,
+  "completedAt": "2026-09-16T15:31:34.589Z",
+  "passed": true
+}

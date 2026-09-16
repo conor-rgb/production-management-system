@@ -1,0 +1,14 @@
+import { Router, Request, Response, NextFunction } from "express";
+import prisma from "../prisma";
+import { FinanceError } from "../services/projectFinance";
+import { starters, createWorkspace, readWorkspace, changeEstimate, exportWorkspace } from "../services/projectWorkspace";
+const router=Router();
+const route=(fn:(req:Request,res:Response)=>Promise<unknown>)=>(req:Request,res:Response,next:NextFunction)=>{void fn(req,res).catch(next);};
+router.get('/templates',(_req,res)=>res.json(Object.entries(starters).map(([id,t])=>({id,label:t.label}))));
+router.post('/',route(async(req,res)=>res.json(await createWorkspace(req.body))));
+router.get('/:id',route(async(req,res)=>res.json(await readWorkspace(req.params.id))));
+router.post('/:id/estimate/:action',route(async(req,res)=>res.json(await changeEstimate(req.params.id,req.session.userId!,req.params.action,req.body))));
+router.post('/:id/export',route(async(req,res)=>res.json(await exportWorkspace(req.params.id,req.body.revisionId))));
+router.post('/:id/retry-drive',route(async(req,res)=>{await readWorkspace(req.params.id); await prisma.production.updateMany({where:{id:req.params.id,driveSetupStatus:{in:['ERROR','NOT_REQUESTED']}},data:{driveSetupStatus:'PENDING',driveSetupError:null}});res.json({queued:true});}));
+router.use((error:Error & {code?:string},_req:Request,res:Response,_next:NextFunction)=>{if(error instanceof FinanceError){res.status(error.status).json({error:error.message});return;}console.error('[PROJECT WORKSPACE]',error.name,error.code||'');res.status(400).json({error:error.code==='P2002'?'This project or version already exists. Refresh to see it.':error.message||'Could not update project.'});});
+export default router;

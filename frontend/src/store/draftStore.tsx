@@ -1,7 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, createContext, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import type { EmailAccount, EmailMessage } from "../lib/types";
-import { ComposerTray } from "../components/email/ComposerTray";
+
+const ComposerTray = lazy(() => import("../components/email/ComposerTray").then((module) => ({ default: module.ComposerTray })));
 
 export interface Draft {
   id: string;
@@ -120,18 +121,20 @@ export function DraftProvider({ children }: { children: ReactNode }) {
   const refreshDrafts = useCallback(async () => {
     const items = await api.get<Draft[]>("/api/email/drafts");
     setDrafts(items);
-    setExpandedDraftId((current) => current ?? items.find((draft) => !draft.isMinimized)?.id ?? null);
+    // Restore saved drafts quietly; expand only when the user chooses a draft.
+    setExpandedDraftId((current) => current && items.some((draft) => draft.id === current) ? current : null);
   }, []);
 
   useEffect(() => {
     if (window.location.pathname === "/login") return undefined;
+    const timers = saveTimers.current;
     refreshDrafts()
       .catch((err: unknown) => {
         if (err instanceof Error && err.message === "Unauthorised") return;
         setError(err instanceof Error ? err.message : "Failed to load drafts");
       });
     return () => {
-      Object.values(saveTimers.current).forEach(window.clearTimeout);
+      Object.values(timers).forEach(window.clearTimeout);
     };
   }, [refreshDrafts]);
 
@@ -334,7 +337,11 @@ export function DraftProvider({ children }: { children: ReactNode }) {
   return (
     <DraftContext.Provider value={value}>
       {children}
-      <ComposerTray />
+      {drafts.length > 0 && (
+        <Suspense fallback={null}>
+          <ComposerTray />
+        </Suspense>
+      )}
     </DraftContext.Provider>
   );
 }

@@ -13,14 +13,20 @@ import productionsRoutes from "./routes/productions";
 import budgetsRoutes from "./routes/budgets";
 import contactsRoutes from "./routes/contacts";
 import companiesRoutes from "./routes/companies";
+import projectWorkspaceRoutes from "./routes/projectWorkspace";
+import projectFinanceRoutes from "./routes/projectFinance";
+import driveRoutes, { googleCallbackWithDrive } from "./routes/drive";
 import filesRoutes from "./routes/files";
 import emailRoutes, { googleOAuthCallbackHandler } from "./routes/email";
 import receiptsRoutes from "./routes/receipts";
 import calendarRoutes from "./routes/calendar";
 import projectActionsRoutes from "./routes/projectActions";
+import productionWorkbooksRoutes from "./routes/productionWorkbooks";
 import settingsRoutes from "./routes/settings";
 import optionsRoutes from "./routes/options";
 import publicOptionsRoutes from "./routes/publicOptions";
+import publicSupplierOnboardingRoutes from "./routes/publicSupplierOnboarding";
+import publicSelectsRoutes from "./routes/publicSelects";
 import { requireAuth } from "./middleware/auth";
 
 const PgSession = connectPgSimple(session);
@@ -57,7 +63,7 @@ export function createServer() {
         httpOnly: true,
         secure: isProd,
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-        sameSite: isProd ? "strict" : "lax",
+        sameSite: "lax",
       },
     })
   );
@@ -68,18 +74,24 @@ export function createServer() {
 
   app.use("/api/auth", authRoutes);
   app.use("/api/public/options", publicOptionsRoutes);
-  app.get("/api/email/oauth/google/callback", googleOAuthCallbackHandler);
+  app.use("/api/public/supplier-onboarding", publicSupplierOnboardingRoutes);
+  app.use("/api/public/selects", publicSelectsRoutes);
+  app.get("/api/email/oauth/google/callback", googleCallbackWithDrive(googleOAuthCallbackHandler));
   app.use("/api/dashboard", requireAuth, dashboardRoutes);
   app.use("/api/opportunities", requireAuth, opportunitiesRoutes);
   app.use("/api/productions", requireAuth, productionsRoutes);
   app.use("/api/budgets", requireAuth, budgetsRoutes);
+  app.use("/api/project-workspace", requireAuth, projectWorkspaceRoutes);
+  app.use("/api/project-finance", requireAuth, projectFinanceRoutes);
   app.use("/api/contacts", requireAuth, contactsRoutes);
   app.use("/api/companies", requireAuth, companiesRoutes);
+  app.use("/api/drive", requireAuth, driveRoutes);
   app.use("/api/files", requireAuth, filesRoutes);
   app.use("/api/email", requireAuth, emailRoutes);
   app.use("/api/receipts", requireAuth, receiptsRoutes);
   app.use("/api/calendar", requireAuth, calendarRoutes);
   app.use("/api/project-actions", requireAuth, projectActionsRoutes);
+  app.use("/api/production-workbooks", requireAuth, productionWorkbooksRoutes);
   app.use("/api/settings", requireAuth, settingsRoutes);
   app.use("/api/options", requireAuth, optionsRoutes);
 

@@ -1,3 +1,6 @@
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { driveClient } from "../services/driveStorage";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
@@ -27,6 +30,10 @@ const previewableTypes = new Set(["application/pdf"]);
 function fileSelect() {
   return {
     id: true,
+    driveFileId: true,
+    driveWebViewLink: true,
+    driveSyncStatus: true,
+    driveSyncError: true,
     productionId: true,
     folder: true,
     originalFilename: true,
@@ -90,10 +97,9 @@ function handleUpload(req: Request, res: Response, next: (err?: unknown) => void
 
 // GET /api/files/production/:productionId/tree
 router.get("/production/:productionId/tree", async (req: Request, res: Response): Promise<void> => {
-  const production = await prisma.production.findUnique({ where: { id: req.params.productionId }, select: { id: true } });
+  const production = await prisma.production.findUnique({ where: { id: req.params.productionId }, select: { id: true, driveFolderId: true, driveSetupStatus: true } });
   if (!production) { res.status(404).json({ error: "Production not found" }); return; }
 
-  await ensureProductionFolders(req.params.productionId);
   const files = await prisma.jobFile.findMany({
     where: { productionId: req.params.productionId },
     orderBy: { uploadedAt: "desc" },
@@ -126,7 +132,7 @@ router.post(
       return;
     }
 
-    const production = await prisma.production.findUnique({ where: { id: req.params.productionId }, select: { id: true } });
+    const production = await prisma.production.findUnique({ where: { id: req.params.productionId }, select: { id: true, driveFolderId: true, driveSetupStatus: true } });
     if (!production) { res.status(404).json({ error: "Production not found" }); return; }
 
     const basePath = await ensureProductionFolders(req.params.productionId);
@@ -142,6 +148,7 @@ router.post(
         const record = await prisma.jobFile.create({
           data: {
             productionId: req.params.productionId,
+            driveSyncStatus: (production.driveFolderId || ["PENDING", "ERROR"].includes(production.driveSetupStatus)) ? "PENDING" : "LOCAL",
             folder,
             originalFilename: file.originalname,
             storedFilename,
@@ -207,11 +214,28 @@ router.get("/storage-info", async (_req: Request, res: Response): Promise<void> 
   });
 });
 
+async function servePublishedFile(file: { driveFileId: string | null; driveSyncStatus: string; originalFilename: string; mimeType: string }, res: Response, disposition: "inline" | "attachment") {
+  if (!file.driveFileId || file.driveSyncStatus !== "SYNCED") return false;
+  try {
+    const { client } = await driveClient();
+    const remote = await client.download(file.driveFileId);
+    res.setHeader("Content-Type", file.mimeType);
+    res.setHeader("Content-Disposition", `${disposition}; filename*=UTF-8''${encodeURIComponent(file.originalFilename)}`);
+    res.setHeader("Cache-Control", "private, no-cache");
+    await pipeline(Readable.fromWeb(remote.body as Parameters<typeof Readable.fromWeb>[0]), res);
+  } catch {
+    if (!res.headersSent) res.status(503).json({ error: "The published file is unavailable in Google Drive. Check its permissions or reconnect Drive." });
+    else res.destroy();
+  }
+  return true;
+}
+
 // GET /api/files/:fileId/download
 router.get("/:fileId/download", async (req: Request, res: Response): Promise<void> => {
   const file = await fileWithProduction(req.params.fileId);
   if (!file) { res.status(404).json({ error: "File not found" }); return; }
 
+  if (await servePublishedFile(file, res, "attachment")) return;
   const filePath = await resolveJobFilePath(file);
   if (!fsSync.existsSync(filePath)) { res.status(404).json({ error: "File missing on disk" }); return; }
 
@@ -230,11 +254,13 @@ router.get("/:fileId/preview", async (req: Request, res: Response): Promise<void
     return;
   }
 
+  if (await servePublishedFile(file, res, "inline")) return;
   const filePath = await resolveJobFilePath(file);
   if (!fsSync.existsSync(filePath)) { res.status(404).json({ error: "File missing on disk" }); return; }
 
   res.setHeader("Content-Type", file.mimeType);
   res.setHeader("Content-Disposition", `inline; filename="${contentDispositionFilename(file.originalFilename)}"`);
+  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
   fsSync.createReadStream(filePath).pipe(res);
 });
 
@@ -250,10 +276,17 @@ router.patch("/:fileId", async (req: Request, res: Response): Promise<void> => {
   const file = await fileWithProduction(req.params.fileId);
   if (!file) { res.status(404).json({ error: "File not found" }); return; }
 
+  if ((file.sourceKey?.startsWith("finance-po:") || file.sourceKey?.startsWith("finance-client:")) && ((folder !== undefined && folder !== file.folder) || (originalFilename !== undefined && originalFilename !== file.originalFilename))) {
+    res.status(409).json({ error: "Issued financial documents are retained with their original name and category. Manage the record in Costs → Purchase orders or Client billing." }); return;
+  }
   let nextFolder = file.folder;
   if (folder !== undefined) {
     if (!isJobFolder(folder)) { res.status(400).json({ error: "Invalid folder" }); return; }
     nextFolder = folder;
+  }
+
+  if (file.driveSyncStatus !== "LOCAL" && (nextFolder !== file.folder || (originalFilename && originalFilename !== file.originalFilename))) {
+    res.status(409).json({ error: "Queued or published files cannot be renamed or moved here. Publish a new export version." }); return;
   }
 
   if (nextFolder !== file.folder) {
@@ -283,6 +316,8 @@ router.delete("/:fileId", async (req: Request, res: Response): Promise<void> => 
   const file = await fileWithProduction(req.params.fileId);
   if (!file) { res.status(404).json({ error: "File not found" }); return; }
 
+  if ((file.sourceKey?.startsWith("finance-po:") || file.sourceKey?.startsWith("finance-client:"))) { res.status(409).json({ error: "Issued financial documents are retained as financial history." }); return; }
+  if (file.driveSyncStatus !== "LOCAL") { res.status(409).json({ error: "Queued or published files are retained. Manage the published document in Google Drive." }); return; }
   const filePath = await resolveJobFilePath(file);
   await fs.unlink(filePath).catch((err: NodeJS.ErrnoException) => {
     if (err.code !== "ENOENT") throw err;

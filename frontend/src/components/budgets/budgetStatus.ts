@@ -25,6 +25,7 @@ export const COST_LINE_BACKGROUNDS: Record<SubCostLineType, string> = {
   BILL: "#f5f9ff",
   PENDING_RECEIPT: "#fffbeb",
   RECEIPT: "#f5fcf7",
+  IN_HOUSE: "#eefbf8",
 };
 
 export function getDotState(lineItem: BudgetLineItem): DotState {

@@ -4,3 +4,11 @@ dist/
 *.log
 .DS_Store
 backend/.env
+backend/storage/
+frontend/dist/
+
+# Private business exports and local source/reference documents
+/exports/
+/*.pdf
+/*.xlsx
+/build references/

@@ -1,0 +1,13 @@
+{
+  "startedAt": "2026-09-16T12:04:59.628Z",
+  "api": [],
+  "browser": {},
+  "drive": null,
+  "redirectUri": "https://agent.unlimited.bond/api/email/oauth/google/callback",
+  "sharedCallback": true,
+  "prefixedState": true,
+  "googleRedirectMismatch": false,
+  "googleSignInPage": true,
+  "completedAt": "2026-09-16T12:05:01.103Z",
+  "passed": true
+}

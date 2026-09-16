@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ArrowLeft, BookOpen, ChevronDown, Copy, Download, ExternalLink, EyeOff, FileText, Filter, Globe, Image as ImageIcon, Layers3, Mail, Maximize2, Menu, PaintBucket, Phone, Plus, Search, Share2, Trash2, Upload, X } from "lucide-react";
@@ -1343,16 +1343,16 @@ export default function OptionsBoardView({ productionId, onBack, embedded = fals
   const [candidateFilters, setCandidateFilters] = useState<CandidateFilters>(DEFAULT_CANDIDATE_FILTERS);
   const [activeSavedViewId, setActiveSavedViewId] = useState<string | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       setMatrix(await api.get<MatrixResponse>(`/api/options/production/${productionId}/matrix`));
     } finally {
       setLoading(false);
     }
-  }
+  }, [productionId]);
 
-  useEffect(() => { void load(); }, [productionId]);
+  useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
     if (!matrix) return;
@@ -2789,7 +2789,7 @@ function DeckDesigner({ matrix, group, dates, onClose }: {
       document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", up);
     };
-  }, [drag]);
+  }, [drag, snapEnabled]);
 
   useEffect(() => {
     function keyDown(event: globalThis.KeyboardEvent) {

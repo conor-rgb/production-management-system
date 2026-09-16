@@ -1,7 +1,9 @@
+import { reservePurchaseOrderNumber } from "../utils/purchaseOrderNumber";
 import { Router, Request, Response } from "express";
+import { randomUUID } from "node:crypto";
 import multer from "multer";
 import mime from "mime-types";
-import { AdvanceCalcType, BlackbookCategory, BlackbookEntryType, BlackbookLifecycleStatus, Prisma, PurchaseOrderStatus, RevisionStatus, SubCostLineType, SubCostStatus } from "@prisma/client";
+import { AdvanceCalcType, Prisma, PurchaseOrderStatus, RevisionStatus, SubCostLineType, SubCostStatus } from "@prisma/client";
 import prisma from "../prisma";
 import {
   applyTemplate,
@@ -20,8 +22,10 @@ import {
   updateLineItem,
 } from "../services/budgetService";
 import { exportRevisionPdf } from "../services/budgetPdf";
+import { createPurchaseOrderEmailDraft, createSupplierOnboardingDraft, exportPurchaseOrderPdf, publicBaseUrl } from "../services/purchaseOrderPdf";
 import { autoFileDocument } from "../services/fileStorage";
 import { ParsedReceiptLineItem, parseReceiptImage } from "../services/receiptParser";
+import { supplierOnboardingComplete } from "../services/supplierOnboarding";
 
 const router = Router();
 const invoiceUpload = multer({
@@ -54,7 +58,7 @@ function normalizeLineType(value: unknown): SubCostLineType {
 }
 
 function lineTypeLifecycle(lineType: SubCostLineType): Pick<Prisma.SubCostUncheckedCreateInput, "status" | "isAgreed" | "isInvoiced" | "isPaid" | "datePaid"> {
-  if (lineType === SubCostLineType.RECEIPT || lineType === SubCostLineType.PENDING_RECEIPT) {
+  if (lineType === SubCostLineType.RECEIPT || lineType === SubCostLineType.PENDING_RECEIPT || lineType === SubCostLineType.IN_HOUSE) {
     return { status: SubCostStatus.PAID, isAgreed: true, isInvoiced: true, isPaid: true, datePaid: new Date() };
   }
   if (lineType === SubCostLineType.BILL) {
@@ -94,7 +98,7 @@ function decoratePurchaseOrder(po: PurchaseOrderWithRelations) {
 
 async function purchaseOrdersForProduction(productionId: string) {
   const purchaseOrders = await prisma.purchaseOrderGroup.findMany({
-    where: { productionId },
+    where: { productionId, financeManaged: false },
     orderBy: [{ createdAt: "desc" }, { poNumber: "desc" }],
     include: purchaseOrderInclude,
   });
@@ -219,6 +223,8 @@ function budgetPatch(body: Record<string, unknown>): Prisma.BudgetUpdateInput {
     usages: body.usages as string | null | undefined,
     productionFeePercent: numberOrUndefined(body.productionFeePercent),
     insurancePercent: numberOrUndefined(body.insurancePercent),
+    productionFeeEnabled: body.productionFeeEnabled as boolean | undefined,
+    insuranceEnabled: body.insuranceEnabled as boolean | undefined,
     currencyBase: body.currencyBase as string | undefined,
     currencySecondary: body.currencySecondary as string | null | undefined,
     currencyRate: numberOrNull(body.currencyRate),
@@ -272,16 +278,15 @@ async function generatePoNumber(lineItemId: string): Promise<string> {
     },
   });
   const production = lineItem?.section.revision.budget.production;
-  const jobCode = production?.jobCode ?? "OPP";
+  if (production) return prisma.$transaction(tx => reservePurchaseOrderNumber(tx, production.id));
+  const jobCode = "OPP";
   const existingPOCount = await prisma.subCost.count({
     where: {
       lineType: SubCostLineType.PO,
       lineItem: {
         section: {
           revision: {
-            budget: production
-              ? { productionId: production.id }
-              : { id: lineItem?.section.revision.budgetId },
+            budget: { id: lineItem?.section.revision.budgetId },
           },
         },
       },
@@ -414,6 +419,8 @@ router.patch("/revisions/:revisionId", async (req: Request, res: Response): Prom
     || body.notes !== undefined
     || body.productionFeePercent !== undefined
     || body.insurancePercent !== undefined
+    || body.productionFeeEnabled !== undefined
+    || body.insuranceEnabled !== undefined
     || body.estimateDescription !== undefined
     || body.includedNotes !== undefined
     || body.notIncludedNotes !== undefined
@@ -444,6 +451,8 @@ router.patch("/revisions/:revisionId", async (req: Request, res: Response): Prom
       changeSummary: body.changeSummary as string | null | undefined,
       productionFeePercent: numberOrUndefined(body.productionFeePercent),
       insurancePercent: numberOrUndefined(body.insurancePercent),
+      productionFeeEnabled: body.productionFeeEnabled as boolean | undefined,
+      insuranceEnabled: body.insuranceEnabled as boolean | undefined,
     },
   });
   const totals = await calculateRevisionTotals(revision.id);
@@ -637,6 +646,42 @@ router.patch("/lines/:lineItemId/reorder", async (req: Request, res: Response): 
   res.json({ line, revision: await lineRevision(line.id) });
 });
 
+router.patch("/sections/:sectionId/lines/reorder", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { lineItemIds?: unknown };
+  if (!Array.isArray(body.lineItemIds) || body.lineItemIds.some((id) => typeof id !== "string")) {
+    res.status(400).json({ error: "lineItemIds must be an array of line item ids" });
+    return;
+  }
+
+  const source = await prisma.budgetSection.findUniqueOrThrow({
+    where: { id: req.params.sectionId },
+    include: { revision: true },
+  });
+  const clone = isRevisionImmutable(source.revision) ? await cloneRevisionForEdit(source.revisionId, "Line items reordered") : null;
+  const sectionId = clone?.sectionMap.get(source.id) ?? source.id;
+  const lineItemIds = (body.lineItemIds as string[]).map((id) => clone?.lineMap.get(id) ?? id);
+  const section = await prisma.budgetSection.findUniqueOrThrow({
+    where: { id: sectionId },
+    include: {
+      lineItems: true,
+      revision: { select: { id: true, budget: { select: { productionId: true } } } },
+    },
+  });
+  const topLevelIds = section.lineItems.filter((line) => !line.parentId).map((line) => line.id);
+  const expected = new Set(topLevelIds);
+  const received = new Set(lineItemIds);
+  if (received.size !== lineItemIds.length || received.size !== expected.size || lineItemIds.some((id) => !expected.has(id))) {
+    res.status(400).json({ error: "lineItemIds must include each top-level line item in this section once" });
+    return;
+  }
+
+  await prisma.$transaction(lineItemIds.map((id, index) => (
+    prisma.budgetLineItem.update({ where: { id }, data: { order: index + 1 } })
+  )));
+  if (section.revision.budget.productionId) await syncProductionTotals(section.revision.budget.productionId);
+  res.json({ revision: await getRevision(section.revision.id) });
+});
+
 router.post("/lines/:lineItemId/sub-item", async (req: Request, res: Response): Promise<void> => {
   const lineItemId = await editableLineItemId(req.params.lineItemId, "Sub-item added");
   const parent = await prisma.budgetLineItem.findUnique({ where: { id: lineItemId } });
@@ -664,7 +709,7 @@ router.post("/lines/:lineItemId/subcosts", async (req: Request, res: Response): 
       purchaseOrderGroupId,
       lineType,
       poNumber,
-      description: body.description as string || `${lineType === SubCostLineType.PO ? "PO" : lineType === SubCostLineType.BILL ? "Bill" : lineType === SubCostLineType.PENDING_RECEIPT ? "Quick cost" : "Receipt"} cost line`,
+      description: body.description as string || `${lineType === SubCostLineType.PO ? "PO" : lineType === SubCostLineType.BILL ? "Bill" : lineType === SubCostLineType.PENDING_RECEIPT ? "Quick cost" : lineType === SubCostLineType.IN_HOUSE ? "In-house" : "Receipt"} cost line`,
       supplierName: (body.supplierName as string | null | undefined) ?? purchaseOrder?.supplierName,
       amount: Number(body.amount ?? 0),
       amountGross: numberOrNull(body.amountGross),
@@ -866,6 +911,8 @@ router.post("/production/:productionId/purchase-orders", async (req: Request, re
     return;
   }
 
+  if (production.workspaceVersion === 2) { res.status(409).json({ error: "Create this project’s POs in Costs → Purchase orders using live costs." }); return; }
+
   let effectiveAllocations = allocations;
   let lineItems = await prisma.budgetLineItem.findMany({
     where: { id: { in: allocations.map((allocation) => allocation.lineItemId) } },
@@ -897,40 +944,16 @@ router.post("/production/:productionId/purchase-orders", async (req: Request, re
     return;
   }
 
+  const selectedBlackbookEntryId = body.blackbookEntryId ?? candidate?.blackbookEntryId ?? null;
+  const selectedBlackbookEntry = selectedBlackbookEntryId
+    ? await prisma.blackbookEntry.findUnique({ where: { id: selectedBlackbookEntryId } })
+    : null;
+  const shouldOnboardSupplier = !supplierOnboardingComplete(selectedBlackbookEntry);
   const budgetId = lineItems[0]?.section.revision.budgetId ?? null;
   const created = await prisma.$transaction(async (tx) => {
-    let blackbookEntryId = body.blackbookEntryId ?? candidate?.blackbookEntryId ?? null;
-    if (!blackbookEntryId && body.createBlackbook) {
-      const entry = await tx.blackbookEntry.create({
-        data: {
-          entryType: BlackbookEntryType.COMPANY,
-          category: BlackbookCategory.SERVICE,
-          lifecycleStatus: BlackbookLifecycleStatus.SUPPLIER,
-          displayName: supplierName,
-          companyName: supplierName,
-          email: body.supplierEmail?.trim() || candidate?.contactEmail || null,
-          phone: body.supplierPhone?.trim() || candidate?.contactPhone || null,
-        },
-      });
-      blackbookEntryId = entry.id;
-    }
+    const blackbookEntryId = selectedBlackbookEntryId;
 
-    const updatedProduction = await tx.production.update({
-      where: { id: production.id },
-      data: { lastPoSequence: { increment: 1 } },
-      select: { lastPoSequence: true, jobCode: true },
-    });
-    const existingPOCount = await tx.subCost.count({
-      where: {
-        lineType: SubCostLineType.PO,
-        lineItem: { section: { revision: { budget: { productionId: production.id } } } },
-      },
-    });
-    const sequence = Math.max(updatedProduction.lastPoSequence, existingPOCount + 1);
-    if (sequence !== updatedProduction.lastPoSequence) {
-      await tx.production.update({ where: { id: production.id }, data: { lastPoSequence: sequence } });
-    }
-    const poNumber = `PO-${updatedProduction.jobCode ?? "OPP"}-${String(sequence).padStart(3, "0")}`;
+    const poNumber = await reservePurchaseOrderNumber(tx, production.id);
     const po = await tx.purchaseOrderGroup.create({
       data: {
         productionId: production.id,
@@ -983,7 +1006,42 @@ router.post("/production/:productionId/purchase-orders", async (req: Request, re
   }
   const decorated = decoratePurchaseOrder(await prisma.purchaseOrderGroup.findUniqueOrThrow({ where: { id: created.id }, include: purchaseOrderInclude }));
   const revision = lineItems[0]?.section.revisionId ? await getRevision(lineItems[0].section.revisionId) : null;
-  res.status(201).json({ ...decorated, revision });
+  let sendFlow: { mode: "onboarding"; onboardingUrl: string; draft: unknown } | { mode: "draft"; draft: unknown } | null = null;
+  let sendFlowError: string | null = null;
+  try {
+    if (shouldOnboardSupplier) {
+      const token = decorated.onboardingToken ?? randomUUID();
+      const onboardingUrl = `${publicBaseUrl()}/api/public/supplier-onboarding/${token}`;
+      await prisma.purchaseOrderGroup.update({
+        where: { id: decorated.id },
+        data: {
+          supplierEmail: decorated.supplierEmail || selectedBlackbookEntry?.email || body.supplierEmail?.trim() || null,
+          onboardingToken: token,
+          onboardingSentAt: new Date(),
+          onboardingExpiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        },
+      });
+      const draft = await createSupplierOnboardingDraft(decorated.id, onboardingUrl);
+      sendFlow = { mode: "onboarding", onboardingUrl, draft };
+    } else if (decorated.supplierEmail) {
+      const draft = await createPurchaseOrderEmailDraft(decorated.id);
+      sendFlow = { mode: "draft", draft };
+    }
+  } catch (err) {
+    sendFlowError = err instanceof Error ? err.message : "Failed to prepare PO email flow";
+    console.error("[PO SEND FLOW] Failed after PO creation:", sendFlowError);
+  }
+  const updatedDecorated = decoratePurchaseOrder(await prisma.purchaseOrderGroup.findUniqueOrThrow({ where: { id: created.id }, include: purchaseOrderInclude }));
+  res.status(201).json({ ...updatedDecorated, revision, sendFlow, sendFlowError });
+});
+
+// Live-register POs cannot be mutated through legacy estimate/SubCost actions.
+router.use("/purchase-orders/:purchaseOrderId", async (req, res, next) => {
+  try {
+    const po = await prisma.purchaseOrderGroup.findUnique({ where: { id: req.params.purchaseOrderId }, select: { financeManaged: true } });
+    if (po?.financeManaged) { res.status(409).json({ error: "Manage this purchase order in Costs → Purchase orders." }); return; }
+    next();
+  } catch (error) { next(error); }
 });
 
 router.patch("/purchase-orders/:purchaseOrderId", async (req: Request, res: Response): Promise<void> => {
@@ -1010,6 +1068,71 @@ router.patch("/purchase-orders/:purchaseOrderId", async (req: Request, res: Resp
     include: purchaseOrderInclude,
   });
   res.json(decoratePurchaseOrder(updated));
+});
+
+router.post("/purchase-orders/:purchaseOrderId/export-pdf", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const file = await exportPurchaseOrderPdf(req.params.purchaseOrderId);
+    res.json(file);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "PO PDF export failed" });
+  }
+});
+
+router.post("/purchase-orders/:purchaseOrderId/send-flow", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const body = req.body as { supplierEmail?: string | null; requireOnboarding?: boolean };
+    const supplierEmail = body.supplierEmail?.trim().toLowerCase();
+    const po = await prisma.purchaseOrderGroup.findUnique({
+      where: { id: req.params.purchaseOrderId },
+      include: { blackbookEntry: true },
+    });
+    if (!po) {
+      res.status(404).json({ error: "PO not found" });
+      return;
+    }
+    const effectiveEmail = supplierEmail || po.supplierEmail || po.blackbookEntry?.email || "";
+    if (!effectiveEmail) {
+      res.status(400).json({ error: "Supplier email is required" });
+      return;
+    }
+
+    const needsOnboarding = body.requireOnboarding || !supplierOnboardingComplete(po.blackbookEntry);
+
+    if (needsOnboarding) {
+      const token = po.onboardingToken ?? randomUUID();
+      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      const updated = await prisma.purchaseOrderGroup.update({
+        where: { id: po.id },
+        data: {
+          supplierEmail: effectiveEmail,
+          onboardingToken: token,
+          onboardingSentAt: new Date(),
+          onboardingExpiresAt: expiresAt,
+        },
+        include: purchaseOrderInclude,
+      });
+      const onboardingUrl = `${publicBaseUrl()}/api/public/supplier-onboarding/${token}`;
+      const draft = await createSupplierOnboardingDraft(po.id, onboardingUrl);
+      res.json({
+        mode: "onboarding",
+        purchaseOrder: decoratePurchaseOrder(updated),
+        onboardingUrl,
+        draft,
+      });
+      return;
+    }
+
+    await prisma.purchaseOrderGroup.update({
+      where: { id: po.id },
+      data: { supplierEmail: effectiveEmail },
+    });
+    const draft = await createPurchaseOrderEmailDraft(po.id);
+    const updated = await prisma.purchaseOrderGroup.findUniqueOrThrow({ where: { id: po.id }, include: purchaseOrderInclude });
+    res.json({ mode: "draft", purchaseOrder: decoratePurchaseOrder(updated), draft });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to prepare PO send flow" });
+  }
 });
 
 router.post("/purchase-orders/:purchaseOrderId/parse-bill", async (req: Request, res: Response): Promise<void> => {

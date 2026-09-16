@@ -1,73 +1,17 @@
-# React + TypeScript + Vite
+# Production hub frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React/TypeScript/Vite UI for Unlimited.Bond. Current product decisions live in [BRIEF.md](../BRIEF.md); this is not the starter-template README or a Next.js migration.
 
-Currently, two official plugins are available:
+## Navigation and data
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Main navigation: Home, Projects, People, Finance, Files & exports. Secondary tools preserve actions, enquiries, calendar, email and reporting. Project workspace keeps production modules accessible; avoid adding a new editor for an existing record owner.
 
-## React Compiler
+Use `/api/productions/summary` for project indexes, search and pickers where its contract fits. Fetch detailed modules on demand. Finance's current totals are saved project values, not an independent invoice/payment ledger. Drive workspace components show connection/link/publish failures explicitly.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Development and verification
 
-## Expanding the ESLint configuration
+`npm ci`, `npm run dev` (5173, API proxy 3000), `npm run build`, `npm run lint`. Configure the backend through its private environment file; never bundle OAuth secrets.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+Browser fixtures: run Vite on 127.0.0.1:5175, then `node scripts/tests/workspace-smoke.cjs` and `node scripts/tests/drive-ui-smoke.cjs` from the repository root. Fixtures are not live business data or proof of Google consent.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Built assets go to `dist`. Publishing them to `/var/www/agent` is a separate deployment action governed by [docs/deploy.md](../docs/deploy.md). Preserve previous hashed assets during a release so already-open sessions can load their chunks.

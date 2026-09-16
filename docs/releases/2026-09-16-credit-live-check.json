@@ -1,0 +1,84 @@
+{
+  "startedAt": "2026-09-16T15:06:07.648Z",
+  "api": [
+    {
+      "route": "/api/health",
+      "status": 200,
+      "bytes": 49,
+      "elapsedMs": 130
+    },
+    {
+      "route": "/api/project-workspace/templates",
+      "status": 200,
+      "bytes": 154,
+      "elapsedMs": 30
+    },
+    {
+      "route": "/api/project-finance",
+      "status": 200,
+      "bytes": 2,
+      "elapsedMs": 27
+    },
+    {
+      "route": "/api/project-finance/cmtvd9fsm000m111brx230zdb",
+      "status": 200,
+      "bytes": 600,
+      "elapsedMs": 54
+    },
+    {
+      "route": "/api/auth/me",
+      "status": 200,
+      "bytes": 39,
+      "elapsedMs": 14
+    },
+    {
+      "route": "/api/productions/summary?includeWrapped=true",
+      "status": 200,
+      "bytes": 4520,
+      "elapsedMs": 84,
+      "rows": 9
+    },
+    {
+      "route": "/api/project-actions",
+      "status": 200,
+      "bytes": 3422,
+      "elapsedMs": 53
+    },
+    {
+      "route": "/api/drive/status",
+      "status": 200,
+      "bytes": 128,
+      "elapsedMs": 25
+    },
+    {
+      "route": "/api/files/all?page=1",
+      "status": 200,
+      "bytes": 40459,
+      "elapsedMs": 57
+    }
+  ],
+  "browser": {
+    "home": "passed",
+    "finance": "passed",
+    "files": "passed",
+    "mobile": "passed",
+    "runtimeErrors": 0,
+    "draftsRestoreQuietly": "passed",
+    "newProjectWizard": "passed, no project submitted",
+    "purchaseOrders": "passed, no order created or issued",
+    "clientBilling": "passed desktop/mobile, refund balance summary and draft editor; no invoice, credit or cash entry created",
+    "financePilot": "passed",
+    "financePilotMobile": "passed"
+  },
+  "drive": {
+    "configured": true,
+    "connected": true,
+    "rootFolderId": "1-0gwnfN5lGiLa4WGbC_q2nQ50l3e-iSR"
+  },
+  "unauthenticatedDriveStatus": 401,
+  "projectDriveStatus": 200,
+  "unauthenticatedWorkspaceStatus": 401,
+  "unauthenticatedFinanceStatus": 401,
+  "completedAt": "2026-09-16T15:06:13.840Z",
+  "passed": true
+}

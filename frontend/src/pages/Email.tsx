@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import DOMPurify from "dompurify";
 import {
   Archive,
@@ -527,6 +527,7 @@ export default function Email() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const searchRef = useRef(search);
 
   async function loadAccounts() {
     const data = await api.get<EmailAccount[]>("/api/email/accounts");
@@ -534,7 +535,11 @@ export default function Email() {
     setActiveAccountId((current) => current || data.find((account) => account.isPrimary)?.id || data[0]?.id || "");
   }
 
-  async function loadThreads() {
+  useEffect(() => {
+    searchRef.current = search;
+  }, [search]);
+
+  const loadThreads = useCallback(async (searchValue = searchRef.current) => {
     if (folder === "drafts") {
       setThreads([]);
       return;
@@ -546,7 +551,7 @@ export default function Email() {
       if (activeAccountId) params.set("accountId", activeAccountId);
       params.set("folder", folder);
       if (autoFilter !== "all") params.set("category", autoFilter);
-      if (search) params.set("search", search);
+      if (searchValue) params.set("search", searchValue);
       if (filter === "unread") params.set("unread", "true");
       if (filter === "flagged") params.set("flagged", "true");
       const data = await api.get<EmailThreadsResponse>(`/api/email/threads?${params.toString()}`);
@@ -556,7 +561,7 @@ export default function Email() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [activeAccountId, autoFilter, filter, folder]);
 
   async function loadThread(id: string, messageId?: string | null, options: { keepUnsubscribeResult?: boolean } = {}) {
     if (!options.keepUnsubscribeResult) setUnsubscribeResult(null);
@@ -630,12 +635,12 @@ export default function Email() {
       refreshDrafts().catch(console.error);
       return;
     }
-    loadThreads().catch(console.error);
-  }, [activeAccountId, folder, filter, autoFilter, refreshDrafts]);
+    loadThreads(searchRef.current).catch(console.error);
+  }, [activeAccountId, folder, filter, autoFilter, refreshDrafts, loadThreads]);
   useEffect(() => {
-    const timer = setTimeout(() => { loadThreads().catch(console.error); }, 250);
+    const timer = setTimeout(() => { loadThreads(search).catch(console.error); }, 250);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [loadThreads, search]);
   useEffect(() => {
     if (selectedThreadId) loadThread(selectedThreadId, selectedMessageId).catch(console.error);
     else setThread(null);

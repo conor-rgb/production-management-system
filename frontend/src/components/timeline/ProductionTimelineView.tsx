@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Mail, Plus, X } from "lucide-react";
 import { api } from "../../lib/api";
 import type { ProductionDate, ProjectAction, ProjectActionStatus, ProjectActionType, ProjectWorkstream } from "../../lib/types";
@@ -95,14 +95,14 @@ export default function ProductionTimelineView({ productionId }: { productionId:
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  async function load() {
+  const load = useCallback(async () => {
     const next = await api.get<TimelineResponse>(`/api/project-actions/production/${productionId}`);
     setData(next);
-  }
+  }, [productionId]);
 
   useEffect(() => {
     load().catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load timeline"));
-  }, [productionId]);
+  }, [load]);
 
   const days = useMemo(() => Array.from({ length: 14 }, (_, index) => {
     const date = new Date(start);
@@ -129,7 +129,7 @@ export default function ProductionTimelineView({ productionId }: { productionId:
     return map;
   }, [data?.dates]);
 
-  const workstreams = data?.workstreams ?? [];
+  const workstreams = useMemo(() => data?.workstreams ?? [], [data?.workstreams]);
   const allOptionGroups = useMemo(() => {
     const grouped = workstreams.flatMap((lane) => lane.optionGroups ?? []);
     return [...grouped, ...(data?.unassignedOptionGroups ?? [])].filter((group, index, list) => list.findIndex((item) => item.id === group.id) === index);

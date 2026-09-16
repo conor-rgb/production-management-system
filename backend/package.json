@@ -9,13 +9,17 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
-    "db:seed": "ts-node src/seed.ts"
+    "db:seed": "ts-node src/seed.ts",
+    "legacy:export:dry": "ts-node --transpile-only --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\"}' ../scripts/legacy-export/export.ts --dry-run",
+    "legacy:export": "ts-node --transpile-only --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\"}' ../scripts/legacy-export/export.ts",
+    "legacy:validate": "ts-node --transpile-only --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\"}' ../scripts/legacy-export/validate.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",
     "@prisma/client": "^5.22.0",
     "@types/mailparser": "^3.4.6",
     "@types/nodemailer": "^8.0.0",
+    "archiver": "^8.0.0",
     "bcryptjs": "^2.4.3",
     "connect-pg-simple": "^9.0.1",
     "cors": "^2.8.5",
@@ -36,6 +40,7 @@
     "sharp": "^0.34.5"
   },
   "devDependencies": {
+    "@types/archiver": "^8.0.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/connect-pg-simple": "^7.0.3",
     "@types/cors": "^2.8.17",

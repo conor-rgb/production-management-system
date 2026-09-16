@@ -1,0 +1,73 @@
+{
+  "startedAt": "2026-09-16T13:00:51.903Z",
+  "api": [
+    {
+      "route": "/api/health",
+      "status": 200,
+      "bytes": 49,
+      "elapsedMs": 135
+    },
+    {
+      "route": "/api/project-finance",
+      "status": 200,
+      "bytes": 2,
+      "elapsedMs": 33
+    },
+    {
+      "route": "/api/project-finance/cmtvd9fsm000m111brx230zdb",
+      "status": 200,
+      "bytes": 281,
+      "elapsedMs": 45
+    },
+    {
+      "route": "/api/auth/me",
+      "status": 200,
+      "bytes": 39,
+      "elapsedMs": 15
+    },
+    {
+      "route": "/api/productions/summary?includeWrapped=true",
+      "status": 200,
+      "bytes": 4520,
+      "elapsedMs": 33,
+      "rows": 9
+    },
+    {
+      "route": "/api/project-actions",
+      "status": 200,
+      "bytes": 3422,
+      "elapsedMs": 23
+    },
+    {
+      "route": "/api/drive/status",
+      "status": 200,
+      "bytes": 128,
+      "elapsedMs": 21
+    },
+    {
+      "route": "/api/files/all?page=1",
+      "status": 200,
+      "bytes": 39609,
+      "elapsedMs": 99
+    }
+  ],
+  "browser": {
+    "home": "passed",
+    "finance": "passed",
+    "files": "passed",
+    "mobile": "passed",
+    "runtimeErrors": 0,
+    "financePilot": "passed",
+    "financePilotMobile": "passed"
+  },
+  "drive": {
+    "configured": true,
+    "connected": true,
+    "rootFolderId": "1-0gwnfN5lGiLa4WGbC_q2nQ50l3e-iSR"
+  },
+  "unauthenticatedDriveStatus": 401,
+  "projectDriveStatus": 200,
+  "unauthenticatedFinanceStatus": 401,
+  "completedAt": "2026-09-16T13:00:56.552Z",
+  "passed": true
+}

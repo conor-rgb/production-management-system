@@ -1,0 +1,981 @@
+{
+  "release": "20260916T125527Z",
+  "codeSha256": "fda1df941a01b0086867a3f35230a57c08aecd73405ad3a9cb15c92f6645b97e",
+  "files": [
+    {
+      "path": "backend/.env.example",
+      "bytes": 890,
+      "sha256": "2fcf85b493385f223559076060aaae9c4a8c166c97d054688de2fa3d171ffa03"
+    },
+    {
+      "path": "backend/package-lock.json",
+      "bytes": 158024,
+      "sha256": "e215a0e25c814ed0fc46f0bdd54fa384359d51cc6cdec5106ebe95027cb720b2"
+    },
+    {
+      "path": "backend/package.json",
+      "bytes": 2053,
+      "sha256": "37162b4c8eee3850de3e37c6a08f5cca5352b89ad88d006ebf2bf744cae95c59"
+    },
+    {
+      "path": "backend/prisma/migrations/20260506000000_phase1_init/migration.sql",
+      "bytes": 10399,
+      "sha256": "0ecec542f2e635502290345a6ffd9c7e22b98d1157bfea26fb668e60db209412"
+    },
+    {
+      "path": "backend/prisma/migrations/20260506120000_phase2_contacts_opportunities/migration.sql",
+      "bytes": 4334,
+      "sha256": "b5e4ad3b4e10b01deddaaa0ade34317f9706f5198dacb4dbcbf695231d901217"
+    },
+    {
+      "path": "backend/prisma/migrations/20260506150000_phase3_production_status_enum/migration.sql",
+      "bytes": 255,
+      "sha256": "7bc00ca85616058b4b921599d85bc3d1150b8a1a7b301b91711a180c7aff492f"
+    },
+    {
+      "path": "backend/prisma/migrations/20260506151000_phase3_productions_crew_dates/migration.sql",
+      "bytes": 3547,
+      "sha256": "ecbb0bd01965a8d20ce65675f52c2bf994efa1081050a809dec71a26b308c48f"
+    },
+    {
+      "path": "backend/prisma/migrations/20260506170000_phase4_file_storage/migration.sql",
+      "bytes": 1516,
+      "sha256": "75380a4cfd45a9130cad2da48f2d694fdb78478ab5d4f42734542b19ce27dae7"
+    },
+    {
+      "path": "backend/prisma/migrations/20260506180000_phase5_budgets_catalog_revisions/migration.sql",
+      "bytes": 6431,
+      "sha256": "4ae8ca710aa85b7044c07e57b54caf4ca92ba9cc2b5b6a22afffc49c19f9e8e4"
+    },
+    {
+      "path": "backend/prisma/migrations/20260506200000_budget_purchase_orders_financial_stack/migration.sql",
+      "bytes": 2075,
+      "sha256": "fd3664b86b77431d9b149f7f3df367c9d9a1cfa48a8c9634d42eac313a98661d"
+    },
+    {
+      "path": "backend/prisma/migrations/20260506220000_phase6_email_client/migration.sql",
+      "bytes": 5803,
+      "sha256": "65491642ec59eb74f9ed357c6a991dc3a6937514cc4bd6ccbcf89dea507f260a"
+    },
+    {
+      "path": "backend/prisma/migrations/20260507092000_email_attachment_imap_metadata/migration.sql",
+      "bytes": 241,
+      "sha256": "afff12f7b80071806c8e980ebba990b79b85868c554d6a3aea63b6ceb78f7875"
+    },
+    {
+      "path": "backend/prisma/migrations/20260507100000_mail_attachment_file_links/migration.sql",
+      "bytes": 935,
+      "sha256": "78998ff914bd21a1c64b3d99b939b3a33285dbfd439e2741250914cc7015c442"
+    },
+    {
+      "path": "backend/prisma/migrations/20260507102000_email_message_thread_sent_index/migration.sql",
+      "bytes": 116,
+      "sha256": "ad17ce858eb042d2c16e7b6c7fc9642b531e0d23bf9346aed9c1d432a282cd61"
+    },
+    {
+      "path": "backend/prisma/migrations/20260507110500_unlinked_mail_attachments/migration.sql",
+      "bytes": 380,
+      "sha256": "022887831a6c3bd2417712272edc58aff2f9ddf555875d020a3512e51ff14c4d"
+    },
+    {
+      "path": "backend/prisma/migrations/20260507120000_phase7_receipt_capture/migration.sql",
+      "bytes": 2146,
+      "sha256": "3f3e8346e50a15e840802c33835d18b28eaf7a94f45dea6e853272308f1d32ae"
+    },
+    {
+      "path": "backend/prisma/migrations/20260507143000_receipt_net_gross_vat/migration.sql",
+      "bytes": 226,
+      "sha256": "15b006ee0a62f137024f6c0802b5e8c317ad611d1844f9ce1f6e037c23c6a76c"
+    },
+    {
+      "path": "backend/prisma/migrations/20260507150000_phase76_calendar_events/migration.sql",
+      "bytes": 2102,
+      "sha256": "cc0c3cedb2c241b6ac2393a23f0ca2fdb0de9ee4b5e34a11a42b843f6549c933"
+    },
+    {
+      "path": "backend/prisma/migrations/20260511120000_add_email_drafts/migration.sql",
+      "bytes": 2208,
+      "sha256": "c36fcd5f8f7c0a96b8379e452a3ad719b56ff9dfce32f998ef3dd71aa2e44991"
+    },
+    {
+      "path": "backend/prisma/migrations/20260511120000_budget_rebuild/migration.sql",
+      "bytes": 8860,
+      "sha256": "9ac9f5a1feaf1a50265db8fdad3d8a5969b91d12f913be9253b225873602ec2e"
+    },
+    {
+      "path": "backend/prisma/migrations/20260511133000_sub_cost_line_type/migration.sql",
+      "bytes": 456,
+      "sha256": "327f08b89832fcc7e09beaa3186cb73cb7dd286cc96c392b486be4083ae62145"
+    },
+    {
+      "path": "backend/prisma/migrations/20260511143000_sub_cost_po_number_freeagent/migration.sql",
+      "bytes": 120,
+      "sha256": "64e3ac21816ba65ca3b3e83836c088ebfdb182abcbc988f086a18ff8ac9f42c8"
+    },
+    {
+      "path": "backend/prisma/migrations/20260511153000_simplified_budget_line_columns/migration.sql",
+      "bytes": 1491,
+      "sha256": "d2c7a9c5d3ee01bd977c8517f055956129f9f0e9ed45178991993f15ebe69e81"
+    },
+    {
+      "path": "backend/prisma/migrations/20260511170000_gmail_api_foundation/migration.sql",
+      "bytes": 2415,
+      "sha256": "10c7277552582eb2172b98780953bf2c65aa090697d50e9b8db3a0facbe6e43d"
+    },
+    {
+      "path": "backend/prisma/migrations/20260512100000_options_board/migration.sql",
+      "bytes": 2961,
+      "sha256": "9658c3237122c4ee74d56d30f88b0afc1e259bdcb32da0df17746256d27d2739"
+    },
+    {
+      "path": "backend/prisma/migrations/20260512120000_option_status_researched/migration.sql",
+      "bytes": 85,
+      "sha256": "173eff7c2974a1efc75a9f26985c0d7fb40cc2995849318585e903469adcdd5f"
+    },
+    {
+      "path": "backend/prisma/migrations/20260522100000_options_matrix/migration.sql",
+      "bytes": 6117,
+      "sha256": "094f8747f5f80d27c54d4d76050099f4b486999843293367fc8f1954dbe1e42d"
+    },
+    {
+      "path": "backend/prisma/migrations/20260522110000_production_date_status/migration.sql",
+      "bytes": 260,
+      "sha256": "c67a20c02269a4a9410c2f43d32b42d5a13973e14212de6ea4d0196412e28746"
+    },
+    {
+      "path": "backend/prisma/migrations/20260522120000_option_slot_assignments/migration.sql",
+      "bytes": 1445,
+      "sha256": "7ee89fcdbca4137aaa57b46674a4ce08c95b6219e6141e9e127e1d77b5ed0737"
+    },
+    {
+      "path": "backend/prisma/migrations/20260522150000_blackbook_foundation/migration.sql",
+      "bytes": 2631,
+      "sha256": "ac8c2e4224844750355b610db43ecfc07d8b758342234980ee63387bae75c1e4"
+    },
+    {
+      "path": "backend/prisma/migrations/20260522162000_blackbook_crm_config/migration.sql",
+      "bytes": 2255,
+      "sha256": "a200f6c79bc0a121e9e0116e0e08fa61b13e6d9a71c4b70cab1fbd7d5b8646ca"
+    },
+    {
+      "path": "backend/prisma/migrations/20260522170500_option_candidate_deck_links/migration.sql",
+      "bytes": 454,
+      "sha256": "6ffefc1f6c85f9c3dff511e21e9f5753406a630160801f479f7b60fe6e4c831d"
+    },
+    {
+      "path": "backend/prisma/migrations/20260522174000_blackbook_unified_crm/migration.sql",
+      "bytes": 2549,
+      "sha256": "2621ca45d4755e41c4579ab1b2c5c279475a76c4c1b73dfd1362f2d762976066"
+    },
+    {
+      "path": "backend/prisma/migrations/20260522192000_option_candidate_photos/migration.sql",
+      "bytes": 826,
+      "sha256": "90e7c0987d75d0d5f56dedb86d7f434ac16888955c13fa7383ad475fcb64cc7a"
+    },
+    {
+      "path": "backend/prisma/migrations/20260522192000_option_candidate_structured_address/migration.sql",
+      "bytes": 279,
+      "sha256": "141dac115a2fb5bc77b078dc85f2d66642955a2893a5509a10131945817129d1"
+    },
+    {
+      "path": "backend/prisma/migrations/20260522203000_blackbook_addresses_google_places/migration.sql",
+      "bytes": 1764,
+      "sha256": "7c247b7fb399987ba88223376cc75491e5bf7ec2eaba8615a60d5b60019e48d6"
+    },
+    {
+      "path": "backend/prisma/migrations/20260527072000_purchase_order_groups/migration.sql",
+      "bytes": 2722,
+      "sha256": "cd46fc7327e2d08d9a8635dce17c010beff2da8a35916e84dabf2053d5483f31"
+    },
+    {
+      "path": "backend/prisma/migrations/20260527084000_option_deck_templates/migration.sql",
+      "bytes": 695,
+      "sha256": "f6816a77eb309123d8de4f8536c73052325a83c7bb63bf74dcc918fd4e13a8be"
+    },
+    {
+      "path": "backend/prisma/migrations/20260527091000_option_candidate_static_maps/migration.sql",
+      "bytes": 302,
+      "sha256": "6418c434971187cc105f365fb57c6bd34f9cf7fa71d4ef1b8ee9a3d45d59df29"
+    },
+    {
+      "path": "backend/prisma/migrations/20260528120000_option_custom_columns/migration.sql",
+      "bytes": 2129,
+      "sha256": "41fa62e707570c51e2b634ab4109db8dfd0203c44c5fcc3a6d8f600bd10e2f04"
+    },
+    {
+      "path": "backend/prisma/migrations/20260528132000_option_saved_views/migration.sql",
+      "bytes": 852,
+      "sha256": "966fa7504145acaf2146b3770a4e2b1017aa0245bde64e2b9349d2ad97d2db27"
+    },
+    {
+      "path": "backend/prisma/migrations/20260528135000_budget_revision_immutability/migration.sql",
+      "bytes": 705,
+      "sha256": "76a060c2d17578c433f5ee5ad6833a013036b2e3c1c71c0ac2f36c52931f727a"
+    },
+    {
+      "path": "backend/prisma/migrations/20260529100000_sub_cost_pending_receipt/migration.sql",
+      "bytes": 79,
+      "sha256": "2f893854eedc9189d317ab212de91bbeb82ffeafed6c4ece21c40b70eea6cb97"
+    },
+    {
+      "path": "backend/prisma/migrations/20260529110000_budget_transfers_revision_metadata/migration.sql",
+      "bytes": 1743,
+      "sha256": "499d51dd623bd60965af59a3c2082fe7f0cb6a4fcde172d617416dfa1818d5ab"
+    },
+    {
+      "path": "backend/prisma/migrations/20260529140000_project_workstreams_actions/migration.sql",
+      "bytes": 5145,
+      "sha256": "6cd133fa52455d348338484c5af0275dd2456e8192b94e456dba1d5abe1c2a98"
+    },
+    {
+      "path": "backend/prisma/migrations/20260529200000_workstream_option_group_assignment/migration.sql",
+      "bytes": 401,
+      "sha256": "e6e0876ca38dd1eb62b037da2bb0b12554072511fe3537b26f75006251d22e0c"
+    },
+    {
+      "path": "backend/prisma/migrations/20260529231000_email_duplicate_suppression/migration.sql",
+      "bytes": 1018,
+      "sha256": "cd9ec68da02360f856bbfd8667badfe9b8909cf5781aaa729387ff0b3bb2a1ed"
+    },
+    {
+      "path": "backend/prisma/migrations/20260529233000_gmail_draft_sync/migration.sql",
+      "bytes": 1126,
+      "sha256": "026ddf0950c1a9afa28ca973782e3cc6627df2d4e1243ca79c13aec522ce492f"
+    },
+    {
+      "path": "backend/prisma/migrations/20260530001000_email_auto_categories_unsubscribe/migration.sql",
+      "bytes": 724,
+      "sha256": "e0ca78be0722a4fd993bf6b8d22e6ec6b6e139ec58db8f03e8ee92082173a248"
+    },
+    {
+      "path": "backend/prisma/migrations/20260530002000_email_category_overrides/migration.sql",
+      "bytes": 306,
+      "sha256": "779d589b1746f74d4618b8e226aab8818b1d5b9872e363c3f7176faf0da248f5"
+    },
+    {
+      "path": "backend/prisma/migrations/20260601090000_email_category_rules/migration.sql",
+      "bytes": 936,
+      "sha256": "7d24afe56ed6cafedc1b26ca295b2d0504b1564823f27ee263564b2257e883b9"
+    },
+    {
+      "path": "backend/prisma/migrations/20260601114500_email_draft_attachments/migration.sql",
+      "bytes": 750,
+      "sha256": "95e4acfa29aa5b275523c03d04c2139c955360200a2035bb80bb60a868f0eac6"
+    },
+    {
+      "path": "backend/prisma/migrations/20260601115000_restore_sessions_table/migration.sql",
+      "bytes": 263,
+      "sha256": "03df4d712d1c0134b4bdd127c48f35f0c99ede7be49da3c02c4daa247bf97e11"
+    },
+    {
+      "path": "backend/prisma/migrations/20260601133000_universal_actions_crew_links/migration.sql",
+      "bytes": 2054,
+      "sha256": "4294c358896be5d878665a959ead0b5b7c8c83bf045fca092216d6544cb49be6"
+    },
+    {
+      "path": "backend/prisma/migrations/20260602120000_budget_fee_applicability/migration.sql",
+      "bytes": 370,
+      "sha256": "8f4ed21561587d97bf67ed49e7362cc83974a4b1f1bc9ce80fc70bed79e8f2eb"
+    },
+    {
+      "path": "backend/prisma/migrations/20260604181000_supplier_po_onboarding/migration.sql",
+      "bytes": 277,
+      "sha256": "b3f66f8c2cdfa5c7f55e696ab39a4295c9dbd078ac3e82a7db94ce083246e568"
+    },
+    {
+      "path": "backend/prisma/migrations/20260604193000_supplier_bank_fields/migration.sql",
+      "bytes": 328,
+      "sha256": "50c1ee2cdf196d1cfaa7f174585f47faab465e6f3967b3fae7a49d4dd31f39fe"
+    },
+    {
+      "path": "backend/prisma/migrations/20260608120000_stills_selects_portal/migration.sql",
+      "bytes": 5814,
+      "sha256": "d709a6666b3fda09fe3b9a3f6ea93566ae94b3d7354759b25ea7b7b78a460fdf"
+    },
+    {
+      "path": "backend/prisma/migrations/20260608131000_selects_activity_retouch_versions/migration.sql",
+      "bytes": 2551,
+      "sha256": "ceb731d0d6fb5af174fd0b54e323cc6f46744cb13106d361c76f7755ca9daeac"
+    },
+    {
+      "path": "backend/prisma/migrations/20260608133000_sku_thumbnails/migration.sql",
+      "bytes": 385,
+      "sha256": "dbb306fad6458e52b72f94dc09b6f7dcceeb25a949406d40282d3bb5db7c7dfb"
+    },
+    {
+      "path": "backend/prisma/migrations/20260608143000_sku_excel_import_optional_codes/migration.sql",
+      "bytes": 647,
+      "sha256": "c8554dbe3410e59213bb47fd4bfb84edcaa97f5613cf8a33cf8b27813ca984b5"
+    },
+    {
+      "path": "backend/prisma/migrations/20260608150000_still_image_thumbnails/migration.sql",
+      "bytes": 376,
+      "sha256": "9196f4682c796112e46394b25102b3aebac17e98cee02d6d18e7609e640a5fa1"
+    },
+    {
+      "path": "backend/prisma/migrations/20260622142000_budget_line_in_house_costs/migration.sql",
+      "bytes": 98,
+      "sha256": "3b1cda0180736f32a077c659526fcf7d1dd3117722240858fa0216bc625a78ca"
+    },
+    {
+      "path": "backend/prisma/migrations/20260622145500_in_house_cost_line_type/migration.sql",
+      "bytes": 72,
+      "sha256": "80785788b5ddaac91233c1b9fe43cb8a594a9687d7e9221138992fca97302c4c"
+    },
+    {
+      "path": "backend/prisma/migrations/20260622150500_drop_budget_line_in_house_cost_column/migration.sql",
+      "bytes": 73,
+      "sha256": "48b6a93da58cea42fb89db0e75e1122b46343d592d8fc3e4399564023b426904"
+    },
+    {
+      "path": "backend/prisma/migrations/20260626120000_crew_itineraries/migration.sql",
+      "bytes": 4307,
+      "sha256": "22c12213b08ae16373b89fd1afbc651ae562d672fbd1a3dba04cb1907c635f6d"
+    },
+    {
+      "path": "backend/prisma/migrations/20260626133000_crew_list_visibility/migration.sql",
+      "bytes": 192,
+      "sha256": "13ed9c22349b2ebffd54e0daa2b9a94cc1b4514ea3964227f9abbcb091d33b2c"
+    },
+    {
+      "path": "backend/prisma/migrations/20260626143000_itinerary_hotel_details/migration.sql",
+      "bytes": 566,
+      "sha256": "08d6f4edc96846d079dc025b8419a8015a1c9774b504616eb70272073d72d873"
+    },
+    {
+      "path": "backend/prisma/migrations/20260626152000_itinerary_file_export_visibility/migration.sql",
+      "bytes": 102,
+      "sha256": "5a62b74ddc6d75c753bad0153ce6207e41ad4cd777b6516355a212018dcf5eef"
+    },
+    {
+      "path": "backend/prisma/migrations/20260702172000_share_link_passwords/migration.sql",
+      "bytes": 68,
+      "sha256": "d621eaada5694c34e4b6c95fb0b92b49b36c60b01c613968154d86956a9649e5"
+    },
+    {
+      "path": "backend/prisma/migrations/20260703103000_retouch_source_assets_markup/migration.sql",
+      "bytes": 1307,
+      "sha256": "d65e3ac59b271551ef752988ccecd1ec9fab129d3cb50ae807cfa2633763b443"
+    },
+    {
+      "path": "backend/prisma/migrations/20260819120000_production_workbooks/migration.sql",
+      "bytes": 4992,
+      "sha256": "9b098602f535ae3f0221fc1901ccf2e48f75477b0721c467325a9a2b5229a964"
+    },
+    {
+      "path": "backend/prisma/migrations/20260819133000_production_workbook_v2/migration.sql",
+      "bytes": 868,
+      "sha256": "82fc9c1a467bcbe71e69357c9c51272f0afc20f6b80ea8e8174e67f744677427"
+    },
+    {
+      "path": "backend/prisma/migrations/20260819160000_scope_dates_build_strike/migration.sql",
+      "bytes": 131,
+      "sha256": "2284d84fe6376546063857591dbcef0a081b8d1745b5e3567850d6faa763dbaf"
+    },
+    {
+      "path": "backend/prisma/migrations/20260916130000_project_drive_storage/migration.sql",
+      "bytes": 968,
+      "sha256": "f2bc6fb21a5ada16f1018255a9c03f91a5ac87aaa06f12f30f5849ad32e278a5"
+    },
+    {
+      "path": "backend/prisma/migrations/20260916140000_project_finance_ledger/migration.sql",
+      "bytes": 5924,
+      "sha256": "2d1279d3b2a50b714db5f44511cc8df4bb41be5f99e9f22f09508e7d87e7af3f"
+    },
+    {
+      "path": "backend/prisma/migrations/migration_lock.toml",
+      "bytes": 24,
+      "sha256": "1db17a8d051aa136110736752c5e1f8b7ed92b6ea8e803112fbbe2497047c210"
+    },
+    {
+      "path": "backend/prisma/schema.prisma",
+      "bytes": 78738,
+      "sha256": "1862f38b33d7d9bcac347d1c99861d82b301ac87289fd332361b7125bcf82d77"
+    },
+    {
+      "path": "backend/src/assets/unlimited-bond-wordmark.svg",
+      "bytes": 380,
+      "sha256": "13d09b55636923134a199ab4a3b0bd72f28406c6c0ef5ec6cbe0a479a83b0227"
+    },
+    {
+      "path": "backend/src/index.ts",
+      "bytes": 7145,
+      "sha256": "4c567f51947eacb798005700d5cc20062a7f361ff32e35a4f63494492c3bacf4"
+    },
+    {
+      "path": "backend/src/middleware/auth.ts",
+      "bytes": 255,
+      "sha256": "9518cb90c8b948685ad9592b6e033e9cb8ad8e71a96aeb884e90986456b8e5c0"
+    },
+    {
+      "path": "backend/src/prisma.ts",
+      "bytes": 107,
+      "sha256": "c374b5aefaf966755880e18faee66c5adda1c4855888ef8c00926d13651de409"
+    },
+    {
+      "path": "backend/src/routes/auth.ts",
+      "bytes": 1392,
+      "sha256": "00dfb0f83e15fb7b0c7f573b615697ba024e154703201d9fefd04cb04a98c847"
+    },
+    {
+      "path": "backend/src/routes/budgets.ts",
+      "bytes": 62908,
+      "sha256": "b0ea09cef1bd6d826d9106a72886dd8eb799ebc33a869e501a8deffeecc1d6c5"
+    },
+    {
+      "path": "backend/src/routes/calendar.ts",
+      "bytes": 9670,
+      "sha256": "ad68bc3b5eb59a8f6ca737ae5460cffbe5d5c7f11bd8045cd97d075cefdbc492"
+    },
+    {
+      "path": "backend/src/routes/catalog.ts",
+      "bytes": 275,
+      "sha256": "532040f4083ea631cca3771aadf6094ffcb26ce6899f8bec222cf2dcbbb1b1fe"
+    },
+    {
+      "path": "backend/src/routes/companies.ts",
+      "bytes": 2052,
+      "sha256": "4d4f383f5f545480aecb6432a5aa1eb62ad3544b3e9a6407b3374c4d9dfc26fa"
+    },
+    {
+      "path": "backend/src/routes/contacts.ts",
+      "bytes": 2945,
+      "sha256": "5d0981b88909495fb9061d073b8ee43c8346d1f6a900ddf96451a05d551eee02"
+    },
+    {
+      "path": "backend/src/routes/dashboard.ts",
+      "bytes": 3773,
+      "sha256": "44dfe7d10f26bf2b27c4bf1d672602ffa934559e44a4c64618084e0fc2a06359"
+    },
+    {
+      "path": "backend/src/routes/drive.ts",
+      "bytes": 9963,
+      "sha256": "419fce042fca0f7dbafcfaf6a826ce067bbbcd243fa7404e490aad1a1237f69a"
+    },
+    {
+      "path": "backend/src/routes/email.ts",
+      "bytes": 73099,
+      "sha256": "f42bee37e21d0df6b1351a9ff9f857a4603e149a6015804dbfe118607c41838e"
+    },
+    {
+      "path": "backend/src/routes/files.ts",
+      "bytes": 11777,
+      "sha256": "80f36d1044bf823b4fac62f982a7c0285d0089e03c2c7c1ec8c61c9b9b603a7e"
+    },
+    {
+      "path": "backend/src/routes/opportunities.ts",
+      "bytes": 12698,
+      "sha256": "b0087953e6373d5c97b3ea0f6403cb0f00205a7661385c56fc18c0dbc2eb82e5"
+    },
+    {
+      "path": "backend/src/routes/options.ts",
+      "bytes": 124601,
+      "sha256": "d333b9df62546aca9b308673b9505f3efb8a2ae9df2cab349724f2b2cf778ef7"
+    },
+    {
+      "path": "backend/src/routes/productions.ts",
+      "bytes": 52491,
+      "sha256": "b5927a940470dba29839a789aeb3f7f1cf81ec5d2f3b006ba776890734e8c915"
+    },
+    {
+      "path": "backend/src/routes/productionWorkbooks.ts",
+      "bytes": 89945,
+      "sha256": "8cb88f64f7ad264a528b01875d88adc736c67cbec422deb8b22f033df7413d93"
+    },
+    {
+      "path": "backend/src/routes/projectActions.ts",
+      "bytes": 16509,
+      "sha256": "966002e864b7f998c95491ad6dc312c2c8b5316dcf76f8fae462e09a30e9fe6d"
+    },
+    {
+      "path": "backend/src/routes/projectFinance.ts",
+      "bytes": 1538,
+      "sha256": "9ab8d7347bbb35a9b82b1c5c255bd4ab71e162bc44adf98a2bb89078b8f68cc7"
+    },
+    {
+      "path": "backend/src/routes/publicOptions.ts",
+      "bytes": 1032,
+      "sha256": "7187874bfd9463446339f4f1eb5d79455a4ad702facddefdfc551495704ddbe5"
+    },
+    {
+      "path": "backend/src/routes/publicSelects.ts",
+      "bytes": 37335,
+      "sha256": "f7545f7a2fb6474a3b6c192f8a0f773509bad052b8039ff50713217c2d714912"
+    },
+    {
+      "path": "backend/src/routes/publicSupplierOnboarding.ts",
+      "bytes": 12716,
+      "sha256": "e9135808284fd86dedc0b834aa968cb24f7fdaa9788bb2f3e0806b43d90d0a81"
+    },
+    {
+      "path": "backend/src/routes/receipts.ts",
+      "bytes": 13761,
+      "sha256": "231435706d45c99bb25c9871204ea193b11dfe5b0e4ed8e1381c4bfd5ba34bea"
+    },
+    {
+      "path": "backend/src/routes/selects.ts",
+      "bytes": 68930,
+      "sha256": "6deecd8fc79cd78fddffcaa8983940fa803f6fbdfd6ff2d76381ede2a6622259"
+    },
+    {
+      "path": "backend/src/routes/settings.ts",
+      "bytes": 9545,
+      "sha256": "cadcf305a6464e1a7c69d6a48c61b49c025c2622c7035d96695dc2aaf91ac0ce"
+    },
+    {
+      "path": "backend/src/server.ts",
+      "bytes": 3868,
+      "sha256": "fa3433e94c58cae32ba152095ba04a2e97c58785163ffb93e1146d61ddce715a"
+    },
+    {
+      "path": "backend/src/services/aicp.ts",
+      "bytes": 3796,
+      "sha256": "6b6a15ae527b3ddb7479c4c3f285f19be90aa3e7983c3d275b34a86222f529ac"
+    },
+    {
+      "path": "backend/src/services/budgetPdf.ts",
+      "bytes": 12172,
+      "sha256": "bbe9702706d78a768a04c7d2259de2954b6b9a01d54059eb9574a861b347c94f"
+    },
+    {
+      "path": "backend/src/services/budgetService.ts",
+      "bytes": 35825,
+      "sha256": "ee211079e38ae0c880a4651a6faaca2584686dd31ee15272f7dc97d70422c9de"
+    },
+    {
+      "path": "backend/src/services/calendarSyncService.ts",
+      "bytes": 12040,
+      "sha256": "e5fb0603049fee1dccb465120a07abc852d6cc882e9d638b12a35b0cfd4b9000"
+    },
+    {
+      "path": "backend/src/services/catalogSeed.ts",
+      "bytes": 122,
+      "sha256": "f34de01e91dbf09567b6c5ba4a6f56e45ddcccfc74cc66953bf798c870492f96"
+    },
+    {
+      "path": "backend/src/services/crewItineraryPdf.ts",
+      "bytes": 29038,
+      "sha256": "b91871aaf37782aab8b95e83223b021ad0734f26e57509cfc7949b4045032d92"
+    },
+    {
+      "path": "backend/src/services/driveClient.ts",
+      "bytes": 8087,
+      "sha256": "deb4190669eb53ff5bead5cfbc4d14f9a20e7b6906125994ed75d022f2ebb73b"
+    },
+    {
+      "path": "backend/src/services/driveStorage.ts",
+      "bytes": 5073,
+      "sha256": "7b732c90bd231201aba765417b8aead94b2442e34270620193f39c41af86b64a"
+    },
+    {
+      "path": "backend/src/services/emailDraftService.ts",
+      "bytes": 5507,
+      "sha256": "e3fd0506060167c35e18d6551e3c0cf78f8fb235b3c941bfe84e5ceb8ac0e7c7"
+    },
+    {
+      "path": "backend/src/services/emailService.ts",
+      "bytes": 48320,
+      "sha256": "d4eb5ddd5e6fe235d740dc9da88f91555fd69460ae0c1ad720ed1df8b08ea434"
+    },
+    {
+      "path": "backend/src/services/encryptionService.ts",
+      "bytes": 1009,
+      "sha256": "87b71f9368cf1387d0dd8ed401726fa67f292160387c06972c218c75efac084e"
+    },
+    {
+      "path": "backend/src/services/fileStorage.ts",
+      "bytes": 7531,
+      "sha256": "171f5f1fdece27ee9baf68fc9c80d9d7f3513c6ee15df93832bda335870e7d11"
+    },
+    {
+      "path": "backend/src/services/gmailService.ts",
+      "bytes": 23387,
+      "sha256": "30a7ff3ffec2feddac3c3b1f38dae111e7eb00073b87851e1d8042f75f79a1be"
+    },
+    {
+      "path": "backend/src/services/gmailSyncService.ts",
+      "bytes": 16577,
+      "sha256": "5a40a84e05e98b962f4443451c352795e4897ac3691a41812ac24fb7eebfcba4"
+    },
+    {
+      "path": "backend/src/services/googleCalendarService.ts",
+      "bytes": 401,
+      "sha256": "e0eda9183a45ee830190be7505d6a6a5f4674b28759457de538c28ba745ccf6a"
+    },
+    {
+      "path": "backend/src/services/googlePlacesService.ts",
+      "bytes": 5351,
+      "sha256": "059289017ee560f696185e625d8ec8ea9b494b3f684255a3f7d7d75945653072"
+    },
+    {
+      "path": "backend/src/services/optionMapService.ts",
+      "bytes": 2905,
+      "sha256": "9f6740357e801e81370ada11857a81d23acc689b0880bed7e839ab7c01a6e739"
+    },
+    {
+      "path": "backend/src/services/optionsDeckPdf.ts",
+      "bytes": 21737,
+      "sha256": "5507bda3d6a53cbe0a7a282fcb1336f63767cfeab4a68de92f3d231dc9b90c74"
+    },
+    {
+      "path": "backend/src/services/optionsPdf.ts",
+      "bytes": 6405,
+      "sha256": "8edae57e3c1e7a177d77c1a7b99ae7d67e8c24212f9877d9fd444856469baa1a"
+    },
+    {
+      "path": "backend/src/services/pdfBrand.ts",
+      "bytes": 930,
+      "sha256": "3affa879b80c017982420494bc8da87ab4338885e9b2c9b08178186e0281575a"
+    },
+    {
+      "path": "backend/src/services/projectFinance.ts",
+      "bytes": 16228,
+      "sha256": "a34dfedfa9c82ed356500e8cdc1bf73811d9357c2a84819c2d1496b831d59fff"
+    },
+    {
+      "path": "backend/src/services/purchaseOrderPdf.ts",
+      "bytes": 15363,
+      "sha256": "05ba3dae749b61f9248fa572c782d7a52ce66613434515b4a9fef247c551a59a"
+    },
+    {
+      "path": "backend/src/services/receiptParser.ts",
+      "bytes": 9181,
+      "sha256": "cdee930bac15ba9a2c53cc34faa84e2820d4a33990e767b76bba61bce3577bd1"
+    },
+    {
+      "path": "backend/src/services/selectsRealtime.ts",
+      "bytes": 1402,
+      "sha256": "fe248259ba33ee0365de9d506c9f268b793b1560b4f991d2caebdf936d96459d"
+    },
+    {
+      "path": "backend/src/services/supplierOnboarding.ts",
+      "bytes": 1578,
+      "sha256": "0439dd65bb66b90e433b3ddc49de6335fe09257a359610670215311de09a48e4"
+    },
+    {
+      "path": "backend/src/services/travelItineraryParser.ts",
+      "bytes": 10026,
+      "sha256": "03896cb745e8e7d006e8dc9d0e7a7512e207f05890f2517e572f931c6600a4e9"
+    },
+    {
+      "path": "backend/src/types/session.d.ts",
+      "bytes": 230,
+      "sha256": "35e87f832b3e7a53000c02aa4cd499ba21a70bc3b78ad05e867dca22b5a6f708"
+    },
+    {
+      "path": "backend/src/utils/jobCode.ts",
+      "bytes": 810,
+      "sha256": "c2f786177b86c28c42b429cb638cf875409e1fdc625fd609d73386ac7d4d2ea0"
+    },
+    {
+      "path": "backend/src/utils/validation.ts",
+      "bytes": 3806,
+      "sha256": "1ddd8cdb2cc55cd960b30dcee0042806eb36085a6d9e64fb6e6a4f03039af8aa"
+    },
+    {
+      "path": "backend/tsconfig.json",
+      "bytes": 445,
+      "sha256": "d49bdb658f222bf369488db5a7ef7f7193b692a31fc4f8d4fc979122df280caf"
+    },
+    {
+      "path": "frontend/eslint.config.js",
+      "bytes": 1025,
+      "sha256": "fef655c37914c5e872cbe7d6240172251d512065d34b40b308c23cca73701f33"
+    },
+    {
+      "path": "frontend/index.html",
+      "bytes": 360,
+      "sha256": "c489ca10e39dee2c944678c7cbe29c05c1464f0d3ad331829be0616dfe292ada"
+    },
+    {
+      "path": "frontend/package-lock.json",
+      "bytes": 151064,
+      "sha256": "0d044bb230b5ea97eade7965882bdb6d26fe3dbcb819e5f7d708dc9f06c64235"
+    },
+    {
+      "path": "frontend/package.json",
+      "bytes": 1341,
+      "sha256": "f9ab73d0599d8cd823828734a7fff75079dd3a25b5583cb6dd1f9ada7ccdf101"
+    },
+    {
+      "path": "frontend/public/favicon.svg",
+      "bytes": 9522,
+      "sha256": "61bc9a161de58248288e6905425d7180f0624c2865007b97d763fdac12043a66"
+    },
+    {
+      "path": "frontend/public/icons.svg",
+      "bytes": 5031,
+      "sha256": "b45fa506195cfcdef406ba9f0c77b36ddc1a7c224040926ec70abc2fdea7b93a"
+    },
+    {
+      "path": "frontend/src/App.css",
+      "bytes": 2891,
+      "sha256": "6e25a776d3e8102da5bacb3cb99f4a5fc662a2e01e6143140671a556d28c3d5c"
+    },
+    {
+      "path": "frontend/src/App.tsx",
+      "bytes": 2803,
+      "sha256": "abfcd68ccf1b069ee9df1b9e5cca646480d55e60f2e6d49b96565af98d33aeb0"
+    },
+    {
+      "path": "frontend/src/assets/hero.png",
+      "bytes": 13057,
+      "sha256": "881ffbcaafc212e49addad08846a5b82761355fa20624253af3477ba33262c5c"
+    },
+    {
+      "path": "frontend/src/assets/react.svg",
+      "bytes": 4126,
+      "sha256": "35ef61ed53b323ae94a16a8ec659b3d0af3880698791133f23b084085ab1c2e5"
+    },
+    {
+      "path": "frontend/src/assets/vite.svg",
+      "bytes": 8709,
+      "sha256": "5be21acd42eb7b896e517f4e0f0f11eb5c5d9e54fbbcebe9453f033008fcca6f"
+    },
+    {
+      "path": "frontend/src/components/AppLayout.tsx",
+      "bytes": 6364,
+      "sha256": "09f510db6566f45492f82d9a00b2f41e3d8a0396885831b6cf47259088bfef46"
+    },
+    {
+      "path": "frontend/src/components/blackbook/BlackbookOverlay.tsx",
+      "bytes": 56399,
+      "sha256": "c5f07b31edb71655b0128d59170c77e27fda60079bef53193788361913ac481e"
+    },
+    {
+      "path": "frontend/src/components/budgets/budgetLayout.ts",
+      "bytes": 293,
+      "sha256": "02725249fbd7c3a0b55180cbdd9d11e8db8f8e69faac82b349c19b6c7e7e48e0"
+    },
+    {
+      "path": "frontend/src/components/budgets/budgetStatus.ts",
+      "bytes": 1874,
+      "sha256": "01b47555f2eb66b389a8a517843d9e5b16d8c74a990757f39a2145ffff40317a"
+    },
+    {
+      "path": "frontend/src/components/budgets/BudgetView.tsx",
+      "bytes": 144092,
+      "sha256": "fa7f631cdb5f6ac96287d73d63526e7ce36fca1253626ede74d61b102aa2efbd"
+    },
+    {
+      "path": "frontend/src/components/budgets/ProjectCosts.tsx",
+      "bytes": 23252,
+      "sha256": "025749496d9a6ae9f568d93a88ac846e255e00fefdedfcf2ae749858425d40a8"
+    },
+    {
+      "path": "frontend/src/components/calendar/CalendarView.tsx",
+      "bytes": 27565,
+      "sha256": "1078da0ba098f5a9d0427c564d1e5b5baadee724ae27708ca537122164e87ece"
+    },
+    {
+      "path": "frontend/src/components/CommandMenu.tsx",
+      "bytes": 3513,
+      "sha256": "6629ecbdf702ec796791657ce4ee97f4a58e10921b67c5083471dfccebc38dbb"
+    },
+    {
+      "path": "frontend/src/components/contacts/CompanyModal.tsx",
+      "bytes": 3628,
+      "sha256": "1bc79f22d84c4a2f3ce54ffc62e21cb78c57c526c738973c5dee27bef6e0e6ad"
+    },
+    {
+      "path": "frontend/src/components/contacts/ContactDetail.tsx",
+      "bytes": 6467,
+      "sha256": "0b8e0244b782aba1626584383715adb62318243eaaaafc4b7da4970c2b296b3d"
+    },
+    {
+      "path": "frontend/src/components/contacts/ContactModal.tsx",
+      "bytes": 7021,
+      "sha256": "f817e7024b054766335838dd5ecb1849b64ffa9aebf959c87e40eb2b4518e808"
+    },
+    {
+      "path": "frontend/src/components/email/ComposerTray.tsx",
+      "bytes": 21748,
+      "sha256": "f182541581ab0c5bfd893256b399364dd204d79d83cf7146a30ab9b6f5c39d20"
+    },
+    {
+      "path": "frontend/src/components/files/DriveWorkspace.tsx",
+      "bytes": 11420,
+      "sha256": "0073bf208637087b2feafe7f847dd8e78a160f1a6fa16c82f88d25b3722aff30"
+    },
+    {
+      "path": "frontend/src/components/files/FileBrowser.tsx",
+      "bytes": 21666,
+      "sha256": "1764ed89febe8079fc2d1ec286b175fb438fc02c5be37853e48805de2fabf7e6"
+    },
+    {
+      "path": "frontend/src/components/opportunities/LostModal.tsx",
+      "bytes": 3538,
+      "sha256": "231544ad8bf07a296cd9e6bb88dabd42fb7eb43fa989ff25b0ee18e7e2026600"
+    },
+    {
+      "path": "frontend/src/components/opportunities/OpportunityDetail.tsx",
+      "bytes": 23418,
+      "sha256": "a2e71b750ff7475b18b2af016334ad6ab189368956930fc63979ea2f863a930d"
+    },
+    {
+      "path": "frontend/src/components/opportunities/OpportunityModal.tsx",
+      "bytes": 8022,
+      "sha256": "d01e93aa2c4d79d04c5d5189e7143fc08d6bba09738cb9419ec986bb393fe5af"
+    },
+    {
+      "path": "frontend/src/components/options/OptionsBoardView.tsx",
+      "bytes": 259989,
+      "sha256": "88a2a7065d5df9f47a8a33c3f277afdaa7e4d883b63861256e4a89d7b98e1445"
+    },
+    {
+      "path": "frontend/src/components/productions/ProductionWorkbookView.tsx",
+      "bytes": 114161,
+      "sha256": "1afa7932fcc318ade17c8e852d7ea22fda0e39a0e5ae11b347a1bd4623610c34"
+    },
+    {
+      "path": "frontend/src/components/productions/ProjectOverview.tsx",
+      "bytes": 4285,
+      "sha256": "d013db89ff72002c57b473d5622c7a0bf946e5063b26a7b7ff5e3ef8ebe1279a"
+    },
+    {
+      "path": "frontend/src/components/ProtectedRoute.tsx",
+      "bytes": 564,
+      "sha256": "df88b5d1b1ce857865ee98059f8c387b6ef99a812d67b9d0264689fd7163973d"
+    },
+    {
+      "path": "frontend/src/components/selects/SelectsPortal.tsx",
+      "bytes": 170893,
+      "sha256": "d2220343c1a1eab496822668d8e02792b3ad475360bd25ae7436735748095455"
+    },
+    {
+      "path": "frontend/src/components/selects/SkuSheetBuilder.tsx",
+      "bytes": 20919,
+      "sha256": "57de53d38b758f0b625a832540a22ae64aa30d34ff63fdc6f8ed3c90eed996c7"
+    },
+    {
+      "path": "frontend/src/components/timeline/ProductionTimelineView.tsx",
+      "bytes": 21755,
+      "sha256": "53a4afbc6f42c996b8cbe9bd9a977dcd622a32be985e919d876144f778ba13ca"
+    },
+    {
+      "path": "frontend/src/context/AuthContext.tsx",
+      "bytes": 1282,
+      "sha256": "4d1185aea2da3beacee6c5e0b285a7de8a24958b99f7a0bdf043b4c8980e53e6"
+    },
+    {
+      "path": "frontend/src/hooks/useEmailUnreadCount.ts",
+      "bytes": 637,
+      "sha256": "a3a9081d1418f26e1216e29129c682ed77e2dbc7101ee7aff3772f245bc944e5"
+    },
+    {
+      "path": "frontend/src/index.css",
+      "bytes": 3927,
+      "sha256": "b732a3d0b367e87435b2637263f16c05ac1c89aad98073b61446e4456ac4a4d6"
+    },
+    {
+      "path": "frontend/src/lib/api.ts",
+      "bytes": 1125,
+      "sha256": "8a2ebb98c108fb464b3f92f888e38b8cb06f04e22a0b86555504c1f6f2d570b2"
+    },
+    {
+      "path": "frontend/src/lib/countries.ts",
+      "bytes": 916,
+      "sha256": "c45c772e246b84e9d523342e5038694ac0548c6ee2dbc4e89ff537e87c07b7c5"
+    },
+    {
+      "path": "frontend/src/lib/types.ts",
+      "bytes": 34433,
+      "sha256": "1f79d99a8b3566d55cd2bb9b4e1d8bbcd2eaae26b1e06968af332d0cf3f7ed83"
+    },
+    {
+      "path": "frontend/src/lib/workspace.ts",
+      "bytes": 1269,
+      "sha256": "87a40b5a006e00d17d91f7a1dd57543f30efdae00e84a7baca886ce481bc93e6"
+    },
+    {
+      "path": "frontend/src/main.tsx",
+      "bytes": 328,
+      "sha256": "3dca94741a6e78890232ef1c549032d7b2947f4070f367f4908bb4e21b1f0c61"
+    },
+    {
+      "path": "frontend/src/pages/Actions.tsx",
+      "bytes": 11727,
+      "sha256": "e7d6b9becea6d2425e53fc234665f3f57e971c2a3b2c96d5f100115f3eab1af6"
+    },
+    {
+      "path": "frontend/src/pages/Budgets.tsx",
+      "bytes": 5226,
+      "sha256": "fa0c275fad38b8ed971c1265cdf741e7e71b61ec4fd653709ea3014a4c7974da"
+    },
+    {
+      "path": "frontend/src/pages/CalendarPage.tsx",
+      "bytes": 324,
+      "sha256": "d460f32dd77676980a749ae9405ebab6062c3a57e63b01b0a0bf864a4c42d086"
+    },
+    {
+      "path": "frontend/src/pages/Contacts.tsx",
+      "bytes": 24229,
+      "sha256": "1b3cea800e6db8915e94d70f18a35e06f7c8ae95a3445eebc89bab4268378243"
+    },
+    {
+      "path": "frontend/src/pages/Dashboard.tsx",
+      "bytes": 33598,
+      "sha256": "2b7567f8296a380514ddbe16c42f5c1cb3dcda5591a9a87a37040f5ba7d08e29"
+    },
+    {
+      "path": "frontend/src/pages/Email.tsx",
+      "bytes": 101237,
+      "sha256": "95fc745a5595ea842babc3e669a865b1ee735419a32d47c0141cf6abb2d3cf5b"
+    },
+    {
+      "path": "frontend/src/pages/Files.tsx",
+      "bytes": 7532,
+      "sha256": "9ff2046944f5d901da92e67dd7d885ad70c78b95afb507b2b58fd004d8f884c6"
+    },
+    {
+      "path": "frontend/src/pages/Home.tsx",
+      "bytes": 4986,
+      "sha256": "7fed4a5ca505ea9137db6d9f59473fd7113c2aa238a9f4198858fd64bf618b79"
+    },
+    {
+      "path": "frontend/src/pages/Login.tsx",
+      "bytes": 2700,
+      "sha256": "f3d59f83ebe2a88be62e46c715931cfa76ee52c9aca4ccbf49ffa5336c3a5196"
+    },
+    {
+      "path": "frontend/src/pages/Opportunities.tsx",
+      "bytes": 18591,
+      "sha256": "ef63ee8922bcb026bf17c6e556a9aadfde42faf2f786307554c3947ee0d8445a"
+    },
+    {
+      "path": "frontend/src/pages/Productions.tsx",
+      "bytes": 218662,
+      "sha256": "4ddb7bb6dce9f921fe76a6386d95661ae0d8af04e9e00aadb2ba8b6e38319912"
+    },
+    {
+      "path": "frontend/src/pages/SettingsPage.tsx",
+      "bytes": 30469,
+      "sha256": "a1b704e0c8048db0b666dbbbcf1baa65f64a9141340d1828483d81cfa97702a5"
+    },
+    {
+      "path": "frontend/src/store/draftStore.tsx",
+      "bytes": 13506,
+      "sha256": "46889072e7d068fee7e0164c12c5a1dd8d76b9c24da70c94b62e558c69ab4428"
+    },
+    {
+      "path": "frontend/tsconfig.app.json",
+      "bytes": 617,
+      "sha256": "b1eac9ba6cd1c01d59ebca159805e052c798d9d4ab904680b79ce3e306ea0bbd"
+    },
+    {
+      "path": "frontend/tsconfig.json",
+      "bytes": 119,
+      "sha256": "770b4140bbb581e2dfd9ea9946ffc9c75a1d86ba7d2db5f77c83e37cbdf9d808"
+    },
+    {
+      "path": "frontend/tsconfig.node.json",
+      "bytes": 591,
+      "sha256": "90a22c920cbc14624fb4658b58f15c875abf3234224f3933f211849c3ada3242"
+    },
+    {
+      "path": "frontend/vite.config.ts",
+      "bytes": 343,
+      "sha256": "e3e9e74c04ca6209bc3bb962ce1b02d953e0280ceebb050ed9b7c2e60fab1a30"
+    }
+  ]
+}

@@ -111,15 +111,17 @@ export default function CalendarView({ mode, initialView = "month", productionId
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | "new" | null>(null);
 
   const range = useMemo(() => rangeForView(focusDate, view), [focusDate, view]);
+  const rangeStartMs = range.start.getTime();
+  const rangeEndMs = range.end.getTime();
 
   useEffect(() => {
     const params = new URLSearchParams({
-      start: range.start.toISOString(),
-      end: range.end.toISOString(),
+      start: new Date(rangeStartMs).toISOString(),
+      end: new Date(rangeEndMs).toISOString(),
     });
     if (productionId) params.set("productionId", productionId);
     api.get<CalendarEvent[]>(`/api/calendar/events?${params.toString()}`).then(setEvents).catch(console.error);
-  }, [range.start.getTime(), range.end.getTime(), productionId]);
+  }, [rangeStartMs, rangeEndMs, productionId]);
 
   const rbcEvents = useMemo<RbcEvent[]>(() => events.map((event) => ({
     id: event.id,

@@ -542,7 +542,7 @@ export async function upsertGmailDraft(account: EmailAccount, options: GmailSend
 }
 
 export async function sendGmailDraft(account: EmailAccount, gmailDraftId: string): Promise<{ gmailMessageId: string; gmailThreadId: string }> {
-  const result = await gmailPost<{ id: string; threadId: string }>(account, `drafts/${gmailDraftId}/send`, {});
+  const result = await gmailPost<{ id: string; threadId: string }>(account, "drafts/send", { id: gmailDraftId });
   console.log(`[GMAIL] Sent draft ${gmailDraftId} as message ${result.id} in thread ${result.threadId}`);
   return { gmailMessageId: result.id, gmailThreadId: result.threadId };
 }

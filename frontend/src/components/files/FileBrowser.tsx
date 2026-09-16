@@ -1,3 +1,4 @@
+import DriveWorkspace from "./DriveWorkspace";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -58,6 +59,8 @@ async function uploadFiles(productionId: string, folder: JobFolder, files: FileL
 }
 
 export default function FileBrowser({ productionId }: Props) {
+  const [error, setError] = useState("");
+  const showError = useCallback((error: unknown) => setError(error instanceof Error ? error.message : "File operation failed."), []);
   const [tree, setTree] = useState<FileTree | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<JobFolder>("Briefs");
   const [selectedFile, setSelectedFile] = useState<JobFile | null>(null);
@@ -73,13 +76,14 @@ export default function FileBrowser({ productionId }: Props) {
     setTree(data);
   }, [productionId]);
 
-  useEffect(() => { load().catch(console.error); }, [load]);
+  useEffect(() => { load().catch(showError); }, [load, showError]);
 
   const folders = tree?.folders ?? JOB_FOLDERS.map((name) => ({ name, files: [] }));
   const current = folders.find((folder) => folder.name === selectedFolder) ?? folders[0];
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
+    setError("");
     try {
       await uploadFiles(productionId, selectedFolder, files, (name) => setUploading((items) => [...items, name]));
       await load();
@@ -128,6 +132,7 @@ export default function FileBrowser({ productionId }: Props) {
   }
 
   return (
+    <div className="space-y-4">{error && <p role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}<DriveWorkspace key={productionId} productionId={productionId}/>
     <div className="flex h-full min-h-[520px] flex-col md:flex-row">
       <div className="border-b border-gray-200 md:w-40 md:border-b-0 md:border-r">
         <div className="flex gap-2 overflow-x-auto p-2 md:block md:space-y-1">
@@ -153,7 +158,7 @@ export default function FileBrowser({ productionId }: Props) {
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          handleFiles(e.dataTransfer.files).catch(console.error);
+          handleFiles(e.dataTransfer.files).catch(showError);
         }}
       >
         <div className="flex items-center justify-between gap-3 border-b border-gray-200 p-3">
@@ -169,9 +174,9 @@ export default function FileBrowser({ productionId }: Props) {
           </button>
         </div>
 
-        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => handleFiles(e.target.files).catch(console.error)} />
-        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleFiles(e.target.files).catch(console.error)} />
-        <input ref={photosInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={(e) => handleFiles(e.target.files).catch(console.error)} />
+        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => handleFiles(e.target.files).catch(showError)} />
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleFiles(e.target.files).catch(showError)} />
+        <input ref={photosInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={(e) => handleFiles(e.target.files).catch(showError)} />
 
         {uploading.length > 0 && (
           <div className="border-b border-indigo-100 bg-indigo-50 p-3 text-xs text-indigo-700">
@@ -197,9 +202,9 @@ export default function FileBrowser({ productionId }: Props) {
                 file={file}
                 selected={selectedFile?.id === file.id}
                 onOpen={() => setSelectedFile(file)}
-                onRename={() => renameFile(file)}
-                onMove={() => moveFile(file)}
-                onDelete={() => deleteFile(file)}
+                onRename={() => void renameFile(file).catch(showError)}
+                onMove={() => void moveFile(file).catch(showError)}
+                onDelete={() => void deleteFile(file).catch(showError)}
               />
             ))}
           </div>
@@ -219,10 +224,10 @@ export default function FileBrowser({ productionId }: Props) {
           productionId={productionId}
           folders={JOB_FOLDERS}
           onClose={() => setSelectedFile(null)}
-          onPatch={(patch) => patchFile(selectedFile, patch)}
+          onPatch={(patch) => patchFile(selectedFile, patch).catch(showError)}
         />
       )}
-    </div>
+    </div></div>
   );
 }
 
@@ -234,6 +239,7 @@ function FileRow({ file, selected, onOpen, onRename, onMove, onDelete }: {
   onMove: () => void;
   onDelete: () => void;
 }) {
+  const editable = !file.driveSyncStatus || file.driveSyncStatus === "LOCAL";
   const [actionsOpen, setActionsOpen] = useState(false);
   const touchStart = useRef<number | null>(null);
 
@@ -258,15 +264,17 @@ function FileRow({ file, selected, onOpen, onRename, onMove, onDelete }: {
                 ? `${file.receiptVendor ?? "Unknown vendor"} · ${file.receiptAmount ? `£${(file.receiptAmount / 100).toFixed(2)}` : "Amount pending"}`
                 : `${formatBytes(file.sizeBytes)} · ${new Date(file.uploadedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`}
             </span>
+            {file.driveSyncStatus && file.driveSyncStatus !== "LOCAL" && <span className="block text-[11px] text-stone-500">{file.driveSyncStatus === "SYNCED" ? "Saved to Drive" : file.driveSyncStatus === "ERROR" ? "Drive needs attention" : "Waiting for Drive"}</span>}
           </span>
         </button>
+        {file.driveWebViewLink && <a href={file.driveWebViewLink} target="_blank" rel="noreferrer" className="text-xs text-emerald-800 underline">Drive ↗</a>}
         <div className="hidden items-center gap-1 group-hover:flex">
-          <ActionButton label="Rename" onClick={onRename}><Pencil size={15} /></ActionButton>
-          <ActionButton label="Move" onClick={onMove}><Folder size={15} /></ActionButton>
+          {editable && <ActionButton label="Rename" onClick={onRename}><Pencil size={15} /></ActionButton>}
+          {editable && <ActionButton label="Move" onClick={onMove}><Folder size={15} /></ActionButton>}
           <a className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500 hover:bg-gray-100" href={`/api/files/${file.id}/download`}>
             <Download size={15} />
           </a>
-          <ActionButton label="Delete" danger onClick={onDelete}><Trash2 size={15} /></ActionButton>
+          {editable && <ActionButton label="Delete" danger onClick={onDelete}><Trash2 size={15} /></ActionButton>}
         </div>
         <button onClick={() => setActionsOpen(!actionsOpen)} className="grid min-h-11 min-w-11 place-items-center rounded-lg text-gray-500 md:hidden">
           <MoreHorizontal size={17} />
@@ -274,10 +282,10 @@ function FileRow({ file, selected, onOpen, onRename, onMove, onDelete }: {
       </div>
       {actionsOpen && (
         <div className="flex justify-end gap-2 bg-gray-50 p-2 md:hidden">
-          <button onClick={onRename} className="min-h-11 rounded-lg bg-gray-200 px-3 text-sm text-gray-700">Rename</button>
-          <button onClick={onMove} className="min-h-11 rounded-lg bg-gray-200 px-3 text-sm text-gray-700">Move</button>
+          {editable && <button onClick={onRename} className="min-h-11 rounded-lg bg-gray-200 px-3 text-sm text-gray-700">Rename</button>}
+          {editable && <button onClick={onMove} className="min-h-11 rounded-lg bg-gray-200 px-3 text-sm text-gray-700">Move</button>}
           <a href={`/api/files/${file.id}/download`} className="grid min-h-11 place-items-center rounded-lg bg-gray-200 px-3 text-sm text-gray-700">Download</a>
-          <button onClick={onDelete} className="min-h-11 rounded-lg bg-red-600 px-3 text-sm text-white">Delete</button>
+          {editable && <button onClick={onDelete} className="min-h-11 rounded-lg bg-red-600 px-3 text-sm text-white">Delete</button>}
         </div>
       )}
     </div>
@@ -394,7 +402,7 @@ export function PreviewPanel({ file, productionId, folders, onClose, onPatch }: 
           <select
             value={file.folder}
             onChange={(e) => onPatch({ folder: e.target.value as JobFolder })}
-            disabled={!productionId}
+            disabled={!productionId || Boolean(file.driveSyncStatus && file.driveSyncStatus !== "LOCAL")}
             className="min-h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm"
           >
             {folders.map((folder) => <option key={folder} value={folder}>{folder}</option>)}

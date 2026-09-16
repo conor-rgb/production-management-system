@@ -1,15 +1,26 @@
-import { DollarSign } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { ArrowUpRight, Search } from "lucide-react";
+import { api } from "../lib/api";
+import { projectLink, type ProjectSummary } from "../lib/workspace";
+import { PRODUCTION_STATUS_LABELS } from "../lib/types";
 
+function money(value: number, currency: string) { return new Intl.NumberFormat("en-GB", { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value); }
 export default function Budgets() {
-  return (
-    <div className="p-6">
-      <h1 className="text-2xl font-semibold text-gray-900 mb-2">Budgets</h1>
-      <p className="text-gray-500 mb-8">Estimate, track spend, and manage invoices per production.</p>
-      <div className="bg-white rounded-xl border border-gray-200 p-12 flex flex-col items-center text-center text-gray-400">
-        <DollarSign size={40} className="mb-3 opacity-30" />
-        <p className="text-lg font-medium mb-1">Coming soon</p>
-        <p className="text-sm">Budget sections, line items, and invoice tracking will appear here.</p>
-      </div>
-    </div>
-  );
+  const [projects, setProjects] = useState<ProjectSummary[]>();
+  const [registers, setRegisters] = useState<Record<string, { currency: string; forecastMinor: number; outstandingGrossMinor: number; refundDueGrossMinor:number; clientBilling?: {outstandingGrossMinor:number;overdueGrossMinor:number;refundDueGrossMinor:number} }>>({});
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("active");
+  useEffect(() => {
+    let active = true; setError("");
+    Promise.all([api.get<ProjectSummary[]>("/api/productions/summary?includeWrapped=true"), api.get<({ productionId: string; currency: string; forecastMinor: number; outstandingGrossMinor: number; refundDueGrossMinor:number; clientBilling?: {outstandingGrossMinor:number;overdueGrossMinor:number;refundDueGrossMinor:number} })[]>("/api/project-finance")]).then(([data, finance]) => { if (active) { setProjects(data); setRegisters(Object.fromEntries(finance.map(item=>[item.productionId,item]))); } }).catch(() => { if (active) setError("Could not load project finances."); });
+    return () => { active = false; };
+  }, [attempt]);
+  const visible = projects?.filter(p => `${p.jobCode} ${p.title} ${p.clientName}`.toLowerCase().includes(query.toLowerCase()) && (filter === "all" || filter === "over" ? filter !== "over" || p.overBudget : filter === "missing" ? !p.budget : !["CLOSED", "WRAPPED"].includes(p.status)));
+  return <div className="workspace-page"><p className="eyebrow">Project finances</p><div className="mt-3 flex flex-wrap items-center justify-between gap-3"><h1 className="text-3xl font-medium tracking-tight">Finance</h1><Link className="flex items-center gap-2 text-sm text-stone-500 hover:text-stone-900" to="/receipts">Receipts & reporting <ArrowUpRight size={15}/></Link></div><p className="mt-3 text-sm text-stone-500">Open a job to work on its estimate, supplier costs and purchase orders.</p>
+    <div className="mt-9 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-1">{[["active", "Active jobs"], ["over", "Over budget"], ["missing", "No estimate"], ["all", "All jobs"]].map(([id, label]) => <button key={id} onClick={() => setFilter(id)} className={`rounded-md px-3 py-2 text-xs ${filter === id ? "bg-stone-900 text-white" : "text-stone-500 hover:bg-stone-100"}`}>{label}</button>)}</div><label className="flex items-center gap-2 text-stone-400"><Search size={15}/><input aria-label="Search project finances" className="bg-transparent text-sm text-stone-800 outline-none" placeholder="Find a job…" value={query} onChange={e => setQuery(e.target.value)}/></label></div>
+    {error ? <p role="alert" className="mt-8 text-red-700">{error} <button className="underline" onClick={() => setAttempt(a => a + 1)}>Retry</button></p> : !projects ? <p role="status" className="mt-8 text-sm text-stone-500">Loading finances…</p> : <><div className="mt-5 overflow-x-auto"><table className="workspace-table"><thead><tr><th>Project</th><th>Estimate</th><th>Quoted</th><th>Recorded cost</th><th>Remaining</th><th>New register forecast</th><th>Supplier balance</th><th>Client balance</th><th>Work on</th></tr></thead><tbody>{visible?.map(p => { const currency = p.budget?.currencyBase || "GBP"; return <tr key={p.id}><td><Link className="font-medium hover:underline" to={projectLink(p.id)}>{p.jobCode || "—"} · {p.title}</Link><p className="mt-1 text-xs text-stone-500">{p.clientName} · {PRODUCTION_STATUS_LABELS[p.status]}</p></td><td className="text-xs">{p.budget ? `${p.budget.currentRevision?.status || p.budget.status} · v${p.budget.currentRevision?.revisionNumber || 1}` : "Not started"}</td><td className="tabular-nums">{money(p.quotedValue, currency)}</td><td className="tabular-nums">{money(p.actualSpend, currency)}</td><td className={`tabular-nums ${p.overBudget ? "text-red-700" : "text-stone-600"}`}>{money(p.variance, currency)}</td><td className="tabular-nums">{registers[p.id] ? money(registers[p.id].forecastMinor / 100, registers[p.id].currency) : "Not started"}</td><td className="tabular-nums">{registers[p.id] ? money(registers[p.id].outstandingGrossMinor / 100, registers[p.id].currency) : "—"}{(registers[p.id]?.refundDueGrossMinor||0)>0&&<p className="text-xs text-amber-700">Refund due {money(registers[p.id].refundDueGrossMinor/100,registers[p.id].currency)}</p>}</td><td className="tabular-nums">{registers[p.id]?.clientBilling ? money(registers[p.id].clientBilling!.outstandingGrossMinor / 100, registers[p.id].currency) : "—"}{(registers[p.id]?.clientBilling?.overdueGrossMinor||0)>0&&<p className="text-xs text-amber-700">{money(registers[p.id].clientBilling!.overdueGrossMinor / 100,registers[p.id].currency)} overdue</p>}{(registers[p.id]?.clientBilling?.refundDueGrossMinor||0)>0&&<p className="text-xs text-amber-700">Refund due {money(registers[p.id].clientBilling!.refundDueGrossMinor / 100,registers[p.id].currency)}</p>}</td><td><div className="flex gap-3 text-xs"><Link className="underline underline-offset-4" to={projectLink(p.id, "Budget")}>Costs</Link><Link className="underline underline-offset-4" to={projectLink(p.id, "POs")}>POs</Link><Link className="underline underline-offset-4" to={projectLink(p.id, "Files")}>Documents</Link></div></td></tr>; })}</tbody></table></div>{!visible?.length && <p className="empty-state">No projects match this view.</p>}<p className="mt-4 text-xs text-stone-400">Quoted, recorded cost and remaining are existing estimate-workflow totals. New register forecast and supplier balance cover the independent cost register only; existing rows are not automatically migrated. Open Costs for detail.</p></>}
+  </div>;
 }

@@ -163,6 +163,13 @@ type BlackbookFieldBody = {
   website?: string | null;
   tags?: string[];
   notes?: string | null;
+  supplierBillingEmail?: string | null;
+  supplierBankAccountName?: string | null;
+  supplierBankAccountNumber?: string | null;
+  supplierBankSortCode?: string | null;
+  supplierBankIban?: string | null;
+  supplierBankSwift?: string | null;
+  supplierVatNumber?: string | null;
   defaultRate?: number | string | null;
   rateUnit?: string | null;
   currency?: string;
@@ -498,6 +505,13 @@ function blackbookDataFromBody(body: BlackbookFieldBody): Prisma.BlackbookEntryU
   if (body.website !== undefined) data.website = optionalText(body.website);
   if (body.tags !== undefined) data.tags = body.tags;
   if (body.notes !== undefined) data.notes = optionalText(body.notes);
+  if (body.supplierBillingEmail !== undefined) data.supplierBillingEmail = optionalText(body.supplierBillingEmail)?.toLowerCase() ?? null;
+  if (body.supplierBankAccountName !== undefined) data.supplierBankAccountName = optionalText(body.supplierBankAccountName);
+  if (body.supplierBankAccountNumber !== undefined) data.supplierBankAccountNumber = optionalText(body.supplierBankAccountNumber);
+  if (body.supplierBankSortCode !== undefined) data.supplierBankSortCode = optionalText(body.supplierBankSortCode);
+  if (body.supplierBankIban !== undefined) data.supplierBankIban = optionalText(body.supplierBankIban);
+  if (body.supplierBankSwift !== undefined) data.supplierBankSwift = optionalText(body.supplierBankSwift);
+  if (body.supplierVatNumber !== undefined) data.supplierVatNumber = optionalText(body.supplierVatNumber);
   if (body.defaultRate !== undefined) data.defaultRate = asNumber(body.defaultRate);
   if (body.rateUnit !== undefined) data.rateUnit = optionalText(body.rateUnit);
   if (body.currency !== undefined) data.currency = body.currency;
@@ -1783,7 +1797,7 @@ router.patch("/matrix/workstreams/:workstreamId", async (req: Request, res: Resp
 });
 
 router.patch("/matrix/groups/:groupId", async (req: Request, res: Response): Promise<void> => {
-  const body = req.body as { name?: string; type?: OptionRequirementType; order?: number; workstreamId?: string | null };
+  const body = req.body as { name?: string; type?: OptionRequirementType; order?: number; workstreamId?: string | null; hiddenFromCrewList?: boolean };
   const group = await prisma.optionGroup.findUnique({ where: { id: req.params.groupId }, select: { id: true, productionId: true } });
   if (!group) {
     res.status(404).json({ error: "Group not found" });
@@ -1803,6 +1817,7 @@ router.patch("/matrix/groups/:groupId", async (req: Request, res: Response): Pro
       type: body.type,
       order: body.order,
       workstreamId: body.workstreamId,
+      hiddenFromCrewList: body.hiddenFromCrewList,
     },
   });
   res.json(await matrixResponse(group.productionId));
@@ -1956,64 +1971,100 @@ router.post("/production/:productionId/sync-crew-list", async (req: Request, res
     return;
   }
 
-  const assignments = await prisma.optionSlotAssignment.findMany({
-    where: { requirement: { productionId: production.id } },
+  const groups = await prisma.optionGroup.findMany({
+    where: { productionId: production.id },
     include: {
-      requirement: true,
-      candidate: { include: { blackbookEntry: true } },
-      date: true,
+      requirements: {
+        include: { dateNeeds: true, assignments: true },
+        orderBy: [{ order: "asc" }, { slotNumber: "asc" }],
+      },
+      candidates: {
+        include: { blackbookEntry: true, dateStatuses: true },
+        orderBy: [{ order: "asc" }, { name: "asc" }],
+      },
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: { order: "asc" },
   });
 
   let created = 0;
   let updated = 0;
-  for (const assignment of assignments) {
-    const candidate = assignment.candidate;
-    const blackbook = candidate.blackbookEntry;
-    const roleName = assignment.requirement.displayLabel || assignment.requirement.name;
-    const role = await prisma.crewRole.upsert({
-      where: { name: roleName },
-      update: {},
-      create: { name: roleName },
-    });
-    const existing = await prisma.crewMember.findFirst({
-      where: {
-        productionId: production.id,
-        optionCandidateId: candidate.id,
-        roleRequirementId: assignment.requirementId,
-      },
-      select: { id: true },
-    });
-    const data = {
-      roleId: role.id,
-      name: blackbook?.displayName ?? candidate.name,
-      email: blackbook?.email ?? candidate.contactEmail,
-      phone: blackbook?.phone ?? candidate.contactPhone,
-      status: CrewStatus.CONFIRMED,
-      dayRate: candidate.rate != null ? new Prisma.Decimal(candidate.rate) : null,
-      notes: [assignment.requirement.notes, candidate.internalNotes].filter(Boolean).join("\n") || null,
-      blackbookEntryId: blackbook?.id ?? null,
-      optionCandidateId: candidate.id,
-      roleRequirementId: assignment.requirementId,
-      dietaryNotes: blackbook?.dietaryNotes ?? null,
-      dietaryFlags: blackbook?.dietaryFlags ?? [],
-    };
-    if (existing) {
-      await prisma.crewMember.update({ where: { id: existing.id }, data });
-      updated += 1;
-    } else {
-      await prisma.crewMember.create({
-        data: {
-          productionId: production.id,
-          ...data,
-        },
-      });
-      created += 1;
+  const seenPairs = new Set<string>();
+
+  for (const group of groups) {
+    const dateIds = Array.from(new Set([
+      ...group.requirements.flatMap((requirement) => requirement.dateNeeds.map((need) => need.dateId)),
+      ...group.requirements.flatMap((requirement) => requirement.assignments.map((assignment) => assignment.dateId)),
+      ...group.candidates.flatMap((candidate) => candidate.dateStatuses.map((status) => status.dateId)),
+    ]));
+
+    for (const dateId of dateIds) {
+      const requiredRequirements = group.requirements
+        .filter((requirement) => requirement.activeState === OptionRequirementState.ACTIVE && requirement.dateNeeds.some((need) => need.dateId === dateId && need.isRequired))
+        .sort((a, b) => a.order - b.order || a.slotNumber - b.slotNumber);
+      if (requiredRequirements.length === 0) continue;
+
+      const confirmedCandidates = group.candidates
+        .filter((candidate) => candidate.activeState === OptionCandidateState.ACTIVE && candidate.dateStatuses.some((status) => status.dateId === dateId && status.status === CandidateDateHoldStatus.CONFIRMED))
+        .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+
+      for (let index = 0; index < requiredRequirements.length; index += 1) {
+        const requirement = requiredRequirements[index];
+        const explicitCandidateId = requirement.assignments.find((assignment) => assignment.dateId === dateId)?.candidateId;
+        const candidate = explicitCandidateId
+          ? group.candidates.find((item) => item.id === explicitCandidateId)
+          : confirmedCandidates[index];
+        if (!candidate) continue;
+
+        const pairKey = `${requirement.id}:${candidate.id}`;
+        if (seenPairs.has(pairKey)) continue;
+        seenPairs.add(pairKey);
+
+        const blackbook = candidate.blackbookEntry;
+        const roleName = requirement.displayLabel || requirement.name;
+        const role = await prisma.crewRole.upsert({
+          where: { name: roleName },
+          update: {},
+          create: { name: roleName },
+        });
+        const existing = await prisma.crewMember.findFirst({
+          where: {
+            productionId: production.id,
+            optionCandidateId: candidate.id,
+            roleRequirementId: requirement.id,
+          },
+          select: { id: true },
+        });
+        const data = {
+          roleId: role.id,
+          name: blackbook?.displayName ?? candidate.name,
+          email: blackbook?.email ?? candidate.contactEmail,
+          phone: blackbook?.phone ?? candidate.contactPhone,
+          status: CrewStatus.CONFIRMED,
+          dayRate: candidate.rate != null ? new Prisma.Decimal(candidate.rate) : null,
+          notes: [requirement.notes, candidate.internalNotes].filter(Boolean).join("\n") || null,
+          blackbookEntryId: blackbook?.id ?? null,
+          optionCandidateId: candidate.id,
+          roleRequirementId: requirement.id,
+          dietaryNotes: blackbook?.dietaryNotes ?? null,
+          dietaryFlags: blackbook?.dietaryFlags ?? [],
+        };
+        if (existing) {
+          await prisma.crewMember.update({ where: { id: existing.id }, data });
+          updated += 1;
+        } else {
+          await prisma.crewMember.create({
+            data: {
+              productionId: production.id,
+              ...data,
+            },
+          });
+          created += 1;
+        }
+      }
     }
   }
 
-  res.json({ synced: true, created, updated, totalAssignments: assignments.length });
+  res.json({ synced: true, created, updated, totalAssignments: seenPairs.size });
 });
 
 router.post("/matrix/groups/:groupId/columns", async (req: Request, res: Response): Promise<void> => {

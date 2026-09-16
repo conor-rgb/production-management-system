@@ -1,0 +1,233 @@
+[
+  {
+    "original": "BRIEF.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/BRIEF.md",
+    "source": "working tree before reset",
+    "bytes": 27361,
+    "sha256": "37a4bd1448f52cbe929d93dfe9c443d16617f1b61f96bbf100afdbb3efc1fcc6"
+  },
+  {
+    "original": "CLAUDE.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/CLAUDE.previous.md",
+    "source": "working tree before reset",
+    "bytes": 7073,
+    "sha256": "cbd1de0e2262b1d89b3f40e74c1131edb99395e5870aac2cb04c16c41bd7a580"
+  },
+  {
+    "original": "HANDOVER.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/HANDOVER.md",
+    "source": "working tree before reset",
+    "bytes": 176074,
+    "sha256": "18f66c973c8e1a43d03e2f99f48d2a37013582a2f4dc42734a5c3371c0261445"
+  },
+  {
+    "original": "README.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/README.original.md",
+    "source": "working tree before reset",
+    "bytes": 1190,
+    "sha256": "b5140ea1bc17a80fb1ab1785b7f51c34c2c3372e396adc46120cf3081b4d7925"
+  },
+  {
+    "original": "SECURITY.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/SECURITY.md",
+    "source": "working tree before reset",
+    "bytes": 634,
+    "sha256": "883c526a64f00de5b3cd3bad5715de432aa709eef2a38c0d06ea553180bc5374"
+  },
+  {
+    "original": "docs/production-hub/AUDIT.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/production-hub/AUDIT.md",
+    "source": "working tree before reset",
+    "bytes": 11464,
+    "sha256": "ad8ee9ff6b32e0f06657d92d82235451d118b503601c02f8c122cc5e0723e892"
+  },
+  {
+    "original": "docs/production-hub/DRIVE-IMPLEMENTATION.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/production-hub/DRIVE-IMPLEMENTATION.md",
+    "source": "working tree before reset",
+    "bytes": 9546,
+    "sha256": "329fcb782d96051b84c4e011cfa21d1601bd374ade160109ea12f1e86a8a6aab"
+  },
+  {
+    "original": "docs/production-hub/PLAN.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/production-hub/PLAN.md",
+    "source": "working tree before reset",
+    "bytes": 19196,
+    "sha256": "c1556b26f26542f594fb0e6cfe64fc579bb14152f34fd0248384d0c225fd6352"
+  },
+  {
+    "original": "docs/rebuild-audit/API_ROUTES.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/API_ROUTES.md",
+    "source": "working tree before reset",
+    "bytes": 2924,
+    "sha256": "3d2c631e000cc84304429d06a15caa6bd5d595de1af44d7dd3546d1c9bf0d4f8"
+  },
+  {
+    "original": "docs/rebuild-audit/ARCHITECTURE.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/ARCHITECTURE.md",
+    "source": "working tree before reset",
+    "bytes": 2340,
+    "sha256": "8e4cdd045b503156fc2599ddc096bf0e9e73d5e13b7f3d3e1daec59cb5c0b0a3"
+  },
+  {
+    "original": "docs/rebuild-audit/DATA_MODEL.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/DATA_MODEL.md",
+    "source": "working tree before reset",
+    "bytes": 7106,
+    "sha256": "528c04b25b1df4c85fe2f4a3b866635a3939ba5b6048574ade066fa027b6cda1"
+  },
+  {
+    "original": "docs/rebuild-audit/DATA_QUALITY_ISSUES.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/DATA_QUALITY_ISSUES.md",
+    "source": "working tree before reset",
+    "bytes": 1877,
+    "sha256": "d476d31fb92705598b24938cde1295683705f48503e49aa27a122d85c7af238e"
+  },
+  {
+    "original": "docs/rebuild-audit/DEPLOYMENT.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/DEPLOYMENT.md",
+    "source": "working tree before reset",
+    "bytes": 1369,
+    "sha256": "0ee44f5eb1a45a74df7d5075fc7d84228e8d8f60e538df20b9d2326164c3b878"
+  },
+  {
+    "original": "docs/rebuild-audit/ENTITY_INVENTORY.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/ENTITY_INVENTORY.md",
+    "source": "working tree before reset",
+    "bytes": 2822,
+    "sha256": "68fdf869b3e59d74d011a1f2cc719feb09b544a69da515252ff4a11713ca6d91"
+  },
+  {
+    "original": "docs/rebuild-audit/ENV_VARIABLES.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/ENV_VARIABLES.md",
+    "source": "working tree before reset",
+    "bytes": 1293,
+    "sha256": "15e925322623bb76800c6958668f3c9b2e0077f31208bf81449938c2b29e46d6"
+  },
+  {
+    "original": "docs/rebuild-audit/EXPORT_PLAN.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/EXPORT_PLAN.md",
+    "source": "working tree before reset",
+    "bytes": 1648,
+    "sha256": "c831c6d29e6dcc890f49c353368c52e68b23ba8383c7f5262646d5595f0534f9"
+  },
+  {
+    "original": "docs/rebuild-audit/INTEGRATIONS.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/INTEGRATIONS.md",
+    "source": "working tree before reset",
+    "bytes": 2818,
+    "sha256": "2e9acd144a59384870bf12a47b6bd17703f7d94cf13e8610c03f5af5e5b716cb"
+  },
+  {
+    "original": "docs/rebuild-audit/MIGRATION_RISKS.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/MIGRATION_RISKS.md",
+    "source": "working tree before reset",
+    "bytes": 1438,
+    "sha256": "8cbe6eaa6cfe449cbbd0e2ec76c4237d138c2694914fe232c68300830f70086c"
+  },
+  {
+    "original": "docs/rebuild-audit/STORAGE_AND_ASSETS.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/rebuild-audit/STORAGE_AND_ASSETS.md",
+    "source": "working tree before reset",
+    "bytes": 1856,
+    "sha256": "fe4135d5bb2bcf06ac4fddad4d17f3f952444755e54f18cac313d72635180cbb"
+  },
+  {
+    "original": "docs/status-doc-workflow.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/status-doc-workflow.md",
+    "source": "working tree before reset",
+    "bytes": 5344,
+    "sha256": "be853840a1fb2c84bdd6bee5b68818752f906aaff3b00b9870fd80f0d56ac9a8"
+  },
+  {
+    "original": "docs/v1-cleanup.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/docs/v1-cleanup.md",
+    "source": "working tree before reset",
+    "bytes": 3422,
+    "sha256": "a608f99054925ac2c4afa0f49b979f0725dc8890838fe9d1cef42f4cb7846066"
+  },
+  {
+    "original": "exports/VALIDATION_REPORT.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/exports/VALIDATION_REPORT.md",
+    "source": "working tree before reset",
+    "bytes": 3863,
+    "sha256": "5cfbcf7d77f0e2de59892803241c1bcbc2ac45a9565dad2449d4a2d1aa768d59"
+  },
+  {
+    "original": "frontend/README.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/frontend/README.md",
+    "source": "working tree before reset",
+    "bytes": 2425,
+    "sha256": "8dc9e0ee2281acb3324624fbe6eb7e1377cc626f616ea4dc90e3a90ae094374d"
+  },
+  {
+    "original": "scripts/legacy-export/README.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/scripts/legacy-export/README.md",
+    "source": "working tree before reset",
+    "bytes": 1570,
+    "sha256": "0cb5c2eb50f4da5c9ad9ecbd5e65c3e4f2a549b2f3b402bc9754123099c079bf"
+  },
+  {
+    "original": ".github/ISSUE_TEMPLATE/bug_report.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/.github/ISSUE_TEMPLATE/bug_report.md",
+    "source": "HEAD (already deleted before this release)",
+    "bytes": 181,
+    "sha256": "9088589d05e968e2c3782af6ebebd219dbc2df67c90be5878f3a6c5636c3b276"
+  },
+  {
+    "original": ".github/ISSUE_TEMPLATE/feature_request.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/.github/ISSUE_TEMPLATE/feature_request.md",
+    "source": "HEAD (already deleted before this release)",
+    "bytes": 153,
+    "sha256": "81ed35a6a74516480898f35e238685f632073fd416f84145929b870364de94e2"
+  },
+  {
+    "original": ".github/PULL_REQUEST_TEMPLATE.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/.github/PULL_REQUEST_TEMPLATE.md",
+    "source": "HEAD (already deleted before this release)",
+    "bytes": 98,
+    "sha256": "695dcd65532a48eb834f8d6dd8768c1ad16b9a31b88cf3f0dc48b92b82ff2e00"
+  },
+  {
+    "original": "AGENTS.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/AGENTS.previous.md",
+    "source": "HEAD (already deleted before this release)",
+    "bytes": 115671,
+    "sha256": "55de1c19b8e44096b8b7df73c30f544a28356d5b5451a5e08e252561432c1daa"
+  },
+  {
+    "original": "CHANGELOG.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/CHANGELOG.md",
+    "source": "HEAD (already deleted before this release)",
+    "bytes": 137,
+    "sha256": "5591003f8c1578a87b863b501825682f04ca4027325ecdd84e1e05540c4d19fb"
+  },
+  {
+    "original": "CODE_OF_CONDUCT.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/CODE_OF_CONDUCT.md",
+    "source": "HEAD (already deleted before this release)",
+    "bytes": 284,
+    "sha256": "8dc835fb3e8068539b3b640c30ad6024b48abc148d70de44018381b27524501e"
+  },
+  {
+    "original": "CONTRIBUTING.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/CONTRIBUTING.md",
+    "source": "HEAD (already deleted before this release)",
+    "bytes": 342,
+    "sha256": "89b98a4a921457ba0b8851f09c2287b2e1f731991a6a7c874c836a88a95c9e17"
+  },
+  {
+    "original": "TODO.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/TODO.md",
+    "source": "HEAD (already deleted before this release)",
+    "bytes": 558,
+    "sha256": "c71fae33a661c0bdfd0128d48e8bb7e84e8e568aba38eb6b0c1fb0f661c22ff7"
+  },
+  {
+    "original": "docs/deploy.md",
+    "archive": "docs/archive/2026-09-16-before-direction-reset/previously-deleted/docs/deploy.md",
+    "source": "HEAD (already deleted before this release)",
+    "bytes": 713,
+    "sha256": "9d76f2f1237310d40036f3b619aed5ddfd264294dde92b79142b05360cc06963"
+  }
+]

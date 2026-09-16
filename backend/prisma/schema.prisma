@@ -154,8 +154,10 @@ enum ProductionDateType {
   PPM
   RECCE
   FITTING
+  BUILD
   MEETING
   SHOOT_DAY
+  STRIKE
   POST_DELIVERY
   OTHER
 }
@@ -176,6 +178,20 @@ enum CrewStatus {
   SECOND_OPTION
   CONFIRMED
   RELEASED
+}
+
+enum CrewItineraryStatus {
+  DRAFT
+  READY
+  SENT
+}
+
+enum CrewItineraryItemType {
+  CAR
+  TRAIN
+  FLIGHT
+  HOTEL
+  EVENT
 }
 
 enum ActivityEntityType {
@@ -217,11 +233,13 @@ enum SubCostLineType {
   BILL
   PENDING_RECEIPT
   RECEIPT
+  IN_HOUSE
 
   @@map("pms_sub_cost_line_type")
 }
 
 enum PurchaseOrderStatus {
+  ISSUED
   DRAFT
   SENT
   ACCEPTED
@@ -231,6 +249,57 @@ enum PurchaseOrderStatus {
   CANCELLED
 
   @@map("pms_purchase_order_status")
+}
+
+enum StillStatus {
+  UPLOADED
+  SHORTLIST
+  CLIENT_SELECT
+  TO_RETOUCH
+  RETOUCHING
+  CHANGES_REQUESTED
+  APPROVED
+  DELIVERED
+  REJECTED
+
+  @@map("pms_still_status")
+}
+
+enum StillAnnotationVisibility {
+  INTERNAL
+  CLIENT
+
+  @@map("pms_still_annotation_visibility")
+}
+
+enum StillSourceAssetType {
+  RAW
+  TIFF
+  EIP
+  PSD
+  DRIVE_FOLDER
+  OTHER
+
+  @@map("pms_still_source_asset_type")
+}
+
+enum StillShareRole {
+  CLIENT
+  RETOUCHER
+
+  @@map("pms_still_share_role")
+}
+
+enum StillActivityAction {
+  VIEWED
+  STATUS_CHANGED
+  RATING_CHANGED
+  COMMENTED
+  NOTE_RESOLVED
+  REVIEW_SUBMITTED
+  VERSION_UPLOADED
+
+  @@map("pms_still_activity_action")
 }
 
 enum AdvanceCalcType {
@@ -299,6 +368,52 @@ enum ProjectActionVisibility {
   CLIENT
 
   @@map("pms_project_action_visibility")
+}
+
+enum ProductionWorkbookSheetType {
+  DASHBOARD
+  SCOPE_DATES
+  ROLE_PLAN
+  OPTIONS_HOLDS
+  CONFIRMED_TEAM
+  LOCATIONS
+  ARTISTS_TALENT
+  CATERING
+  TODO
+  TIMELINE
+  RUN_OF_SHOW
+  CREW
+  HOLDS
+  TRAVEL
+  HOTELS
+  CARS
+  EQUIPMENT
+  DELIVERIES
+  TASKS_CHASES
+  FILES_COMMS
+
+  @@map("pms_production_workbook_sheet_type")
+}
+
+enum ProductionWorkbookRowStatus {
+  TODO
+  IN_PROGRESS
+  WAITING
+  BLOCKED
+  DONE
+  CANCELLED
+  REQUESTED
+  FIRST_OPTION
+  SECOND_OPTION
+  CONFIRMED
+  RELEASED
+  PARKED
+  NEEDS_CHASE
+  SENT
+  READY
+  INTERNAL
+
+  @@map("pms_production_workbook_row_status")
 }
 
 // ─── Settings ────────────────────────────────────────────────────────────────
@@ -419,23 +534,32 @@ model BlackbookTargetListEntry {
 }
 
 model BlackbookEntry {
-  id               String                   @id @default(uuid())
-  entryType        BlackbookEntryType       @default(PERSON)
-  category         BlackbookCategory        @default(OTHER)
-  categoryConfigId String?
-  typeIds          String[]                 @default([])
-  lifecycleStatus  BlackbookLifecycleStatus @default(IN_TOUCH)
-  companyEntryId   String?
-  displayName      String
-  firstName        String?
-  lastName         String?
-  companyName      String?
-  jobTitle         String?
-  email            String?
-  phone            String?
-  website          String?
-  tags             String[]                 @default([])
-  notes            String?
+  id                            String                   @id @default(uuid())
+  entryType                     BlackbookEntryType       @default(PERSON)
+  category                      BlackbookCategory        @default(OTHER)
+  categoryConfigId              String?
+  typeIds                       String[]                 @default([])
+  lifecycleStatus               BlackbookLifecycleStatus @default(IN_TOUCH)
+  companyEntryId                String?
+  displayName                   String
+  firstName                     String?
+  lastName                      String?
+  companyName                   String?
+  jobTitle                      String?
+  email                         String?
+  phone                         String?
+  website                       String?
+  tags                          String[]                 @default([])
+  notes                         String?
+  supplierOnboarding            Json?
+  supplierOnboardingCompletedAt DateTime?
+  supplierBillingEmail          String?
+  supplierBankAccountName       String?
+  supplierBankAccountNumber     String?
+  supplierBankSortCode          String?
+  supplierBankIban              String?
+  supplierBankSwift             String?
+  supplierVatNumber             String?
 
   // Commercial defaults
   defaultRate Float?
@@ -614,6 +738,16 @@ model Production {
   value                  Decimal?               @db.Decimal(12, 2)
   freeAgentInvoiceStatus FreeAgentInvoiceStatus @default(NOT_RAISED)
   notes                  String?
+  driveFolderId          String?                @unique
+  driveFolderName        String?
+  workspaceVersion       Int @default(1)
+  creationRequestId       String? @unique
+  creationHash            String?
+  starterTemplate         String?
+  driveSetupStatus        String @default("NOT_REQUESTED")
+  driveSetupError         String?
+  driveFolders            ProjectDriveFolder[]
+  estimateApprovals       ProjectEstimateApproval[]
   storagePath            String?
   lastPoSequence         Int                    @default(0)
   actualSpend            Float                  @default(0)
@@ -623,6 +757,7 @@ model Production {
   contactId              String?
   dates                  ProductionDate[]
   crewMembers            CrewMember[]
+  crewItineraries         CrewItinerary[]
   budgets                Budget[]
   jobFiles               JobFile[]
   emailThreads           EmailThread[]
@@ -636,10 +771,101 @@ model Production {
   optionRequirements     OptionRequirement[]
   optionCandidates       OptionCandidate[]
   purchaseOrders         PurchaseOrderGroup[]
+  productionSkus         ProductionSku[]
+  stillFolders           StillFolder[]
+  stillImages            StillImage[]
+  stillShareLinks        StillShareLink[]
+  stillImageActivities   StillImageActivity[]
+  financeLedger          ProjectFinanceLedger?
+  workbook               ProductionWorkbook?
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 
   @@map("pms_productions")
+}
+
+model ProductionWorkbook {
+  id           String                    @id @default(uuid())
+  productionId String                    @unique
+  title        String
+  metadata     Json                      @default("{}")
+  sheets       ProductionSheet[]
+  rows         ProductionSheetRow[]
+  cells        ProductionSheetCell[]
+  production   Production                @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+
+  @@map("pms_production_workbooks")
+}
+
+model ProductionSheet {
+  id         String                      @id @default(uuid())
+  workbookId String
+  type       ProductionWorkbookSheetType
+  title      String
+  order      Int                         @default(0)
+  config     Json                        @default("{}")
+  workbook   ProductionWorkbook          @relation(fields: [workbookId], references: [id], onDelete: Cascade)
+  rows       ProductionSheetRow[]
+  cells      ProductionSheetCell[]
+  createdAt  DateTime                    @default(now())
+  updatedAt  DateTime                    @updatedAt
+
+  @@unique([workbookId, type])
+  @@index([workbookId, order])
+  @@map("pms_production_sheets")
+}
+
+model ProductionSheetRow {
+  id               String                       @id @default(uuid())
+  workbookId       String
+  sheetId          String
+  sheetType        ProductionWorkbookSheetType
+  order            Int                          @default(0)
+  status           ProductionWorkbookRowStatus?
+  title            String?
+  date             DateTime?                    @db.Date
+  startAt          DateTime?
+  endAt            DateTime?
+  workstream       String?
+  owner            String?
+  location         String?
+  notes            String?
+  data             Json                         @default("{}")
+  sourceEntityType String?
+  sourceEntityId   String?
+  workbook         ProductionWorkbook           @relation(fields: [workbookId], references: [id], onDelete: Cascade)
+  sheet            ProductionSheet              @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  cells            ProductionSheetCell[]
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+
+  @@unique([workbookId, sheetType, sourceEntityType, sourceEntityId])
+  @@index([workbookId, sheetType, order])
+  @@index([sheetId, order])
+  @@index([sourceEntityType, sourceEntityId])
+  @@map("pms_production_sheet_rows")
+}
+
+model ProductionSheetCell {
+  id         String             @id @default(uuid())
+  workbookId String
+  sheetId    String
+  rowId      String
+  key        String
+  value      Json?
+  updatedBy  String?
+  workbook   ProductionWorkbook @relation(fields: [workbookId], references: [id], onDelete: Cascade)
+  sheet      ProductionSheet    @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  row        ProductionSheetRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@unique([rowId, key])
+  @@index([workbookId])
+  @@index([sheetId])
+  @@map("pms_production_sheet_cells")
 }
 
 model OptionsBoard {
@@ -656,22 +882,23 @@ model OptionsBoard {
 }
 
 model OptionGroup {
-  id           String                @id @default(uuid())
-  productionId String
-  workstreamId String?
-  name         String
-  type         OptionRequirementType @default(OTHER)
-  order        Int                   @default(0)
-  requirements OptionRequirement[]
-  candidates   OptionCandidate[]
-  columns      OptionColumn[]
-  savedViews   OptionSavedView[]
-  deckTemplate OptionDeckTemplate?
-  legacyWorkstreams ProjectWorkstream[] @relation("LegacyWorkstreamOptionGroup")
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  id                String                @id @default(uuid())
+  productionId      String
+  workstreamId      String?
+  name              String
+  type              OptionRequirementType @default(OTHER)
+  order             Int                   @default(0)
+  hiddenFromCrewList Boolean               @default(false)
+  requirements      OptionRequirement[]
+  candidates        OptionCandidate[]
+  columns           OptionColumn[]
+  savedViews        OptionSavedView[]
+  deckTemplate      OptionDeckTemplate?
+  legacyWorkstreams ProjectWorkstream[]   @relation("LegacyWorkstreamOptionGroup")
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
 
-  production Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  production Production         @relation(fields: [productionId], references: [id], onDelete: Cascade)
   workstream ProjectWorkstream? @relation("WorkstreamOptionGroups", fields: [workstreamId], references: [id], onDelete: SetNull)
 
   @@index([productionId, order])
@@ -713,22 +940,22 @@ model OptionSavedView {
 }
 
 model OptionRequirement {
-  id           String                 @id @default(uuid())
-  productionId String
-  groupId      String
-  name         String
-  displayLabel String
-  type         OptionRequirementType  @default(OTHER)
-  slotNumber   Int                    @default(1)
-  activeState  OptionRequirementState @default(ACTIVE)
-  notes        String?
-  order        Int                    @default(0)
-  dateNeeds    RequirementDateNeed[]
-  assignments  OptionSlotAssignment[]
+  id             String                 @id @default(uuid())
+  productionId   String
+  groupId        String
+  name           String
+  displayLabel   String
+  type           OptionRequirementType  @default(OTHER)
+  slotNumber     Int                    @default(1)
+  activeState    OptionRequirementState @default(ACTIVE)
+  notes          String?
+  order          Int                    @default(0)
+  dateNeeds      RequirementDateNeed[]
+  assignments    OptionSlotAssignment[]
   projectActions ProjectAction[]
-  crewMembers CrewMember[]
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
+  crewMembers    CrewMember[]
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
 
   production Production  @relation(fields: [productionId], references: [id], onDelete: Cascade)
   group      OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
@@ -796,7 +1023,7 @@ model OptionCandidate {
   dateStatuses      CandidateDateStatusRecord[]
   assignments       OptionSlotAssignment[]
   photos            OptionCandidatePhoto[]
-  columnValues       OptionColumnValue[]
+  columnValues      OptionColumnValue[]
   purchaseOrders    PurchaseOrderGroup[]
   projectActions    ProjectAction[]
   crewMembers       CrewMember[]
@@ -816,19 +1043,19 @@ model OptionCandidate {
 }
 
 model OptionColumn {
-  id        String           @id @default(uuid())
+  id        String              @id @default(uuid())
   groupId   String
   key       String
   label     String
-  type      OptionColumnType @default(SINGLE_LINE_TEXT)
-  width     Int              @default(160)
-  order     Int              @default(0)
-  hidden    Boolean          @default(false)
-  locked    Boolean          @default(false)
+  type      OptionColumnType    @default(SINGLE_LINE_TEXT)
+  width     Int                 @default(160)
+  order     Int                 @default(0)
+  hidden    Boolean             @default(false)
+  locked    Boolean             @default(false)
   config    Json?
   values    OptionColumnValue[]
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
 
   group OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
@@ -1124,8 +1351,8 @@ model ProjectWorkstream {
   createdAt               DateTime        @default(now())
   updatedAt               DateTime        @updatedAt
 
-  production  Production   @relation(fields: [productionId], references: [id], onDelete: Cascade)
-  optionGroup OptionGroup? @relation("LegacyWorkstreamOptionGroup", fields: [optionGroupId], references: [id], onDelete: SetNull)
+  production   Production    @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  optionGroup  OptionGroup?  @relation("LegacyWorkstreamOptionGroup", fields: [optionGroupId], references: [id], onDelete: SetNull)
   optionGroups OptionGroup[] @relation("WorkstreamOptionGroups")
 
   @@unique([productionId, optionGroupId])
@@ -1190,34 +1417,36 @@ model CrewRole {
 }
 
 model CrewMember {
-  id           String     @id @default(cuid())
-  productionId String
-  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
-  contactId    String?
-  contact      Contact?   @relation(fields: [contactId], references: [id])
-  blackbookEntryId String?
-  blackbookEntry   BlackbookEntry? @relation(fields: [blackbookEntryId], references: [id], onDelete: SetNull)
-  optionCandidateId String?
-  optionCandidate   OptionCandidate? @relation(fields: [optionCandidateId], references: [id], onDelete: SetNull)
-  roleRequirementId String?
-  roleRequirement   OptionRequirement? @relation(fields: [roleRequirementId], references: [id], onDelete: SetNull)
-  roleId       String?
-  role         CrewRole?  @relation(fields: [roleId], references: [id])
-  name         String
-  email        String?
-  phone        String?
-  status       CrewStatus @default(REQUESTED)
-  dayRate      Decimal?   @db.Decimal(10, 2)
-  numberOfDays Decimal    @default(1) @db.Decimal(6, 2)
-  dietaryNotes String?
-  dietaryFlags String[] @default([])
+  id                 String             @id @default(cuid())
+  productionId       String
+  production         Production         @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  contactId          String?
+  contact            Contact?           @relation(fields: [contactId], references: [id])
+  blackbookEntryId   String?
+  blackbookEntry     BlackbookEntry?    @relation(fields: [blackbookEntryId], references: [id], onDelete: SetNull)
+  optionCandidateId  String?
+  optionCandidate    OptionCandidate?   @relation(fields: [optionCandidateId], references: [id], onDelete: SetNull)
+  roleRequirementId  String?
+  roleRequirement    OptionRequirement? @relation(fields: [roleRequirementId], references: [id], onDelete: SetNull)
+  roleId             String?
+  role               CrewRole?          @relation(fields: [roleId], references: [id])
+  name               String
+  email              String?
+  phone              String?
+  status             CrewStatus         @default(REQUESTED)
+  dayRate            Decimal?           @db.Decimal(10, 2)
+  numberOfDays       Decimal            @default(1) @db.Decimal(6, 2)
+  dietaryNotes       String?
+  dietaryFlags       String[]           @default([])
   detailsRequestedAt DateTime?
-  detailsReceivedAt DateTime?
-  callTime     String?
-  wrapTime     String?
-  notes        String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  detailsReceivedAt  DateTime?
+  callTime           String?
+  wrapTime           String?
+  notes              String?
+  hiddenFromCrewList Boolean            @default(false)
+  itinerary          CrewItinerary?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([blackbookEntryId])
   @@index([optionCandidateId])
@@ -1225,12 +1454,108 @@ model CrewMember {
   @@map("pms_crew_members")
 }
 
+model CrewItinerary {
+  id            String                       @id @default(cuid())
+  productionId  String
+  production    Production                   @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  crewMemberId  String                       @unique
+  crewMember    CrewMember                   @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+  title         String
+  introNotes    String?
+  status        CrewItineraryStatus          @default(DRAFT)
+  generatedAt   DateTime?
+  exportedAt    DateTime?
+  items         CrewItineraryItem[]
+  appendixPages CrewItineraryAppendixPage[]
+  createdAt     DateTime                     @default(now())
+  updatedAt     DateTime                     @updatedAt
+
+  @@index([productionId])
+  @@map("pms_crew_itineraries")
+}
+
+model CrewItineraryItem {
+  id               String                    @id @default(cuid())
+  itineraryId      String
+  itinerary        CrewItinerary             @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  type             CrewItineraryItemType
+  order            Int                       @default(0)
+  date             DateTime?                 @db.Date
+  endDate          DateTime?                 @db.Date
+  startTime        String?
+  endTime          String?
+  startTimezone    String?
+  endTimezone      String?
+  origin           String?
+  destination      String?
+  provider         String?
+  bookingReference String?
+  bookingUrl       String?
+  address          String?
+  terminal         String?
+  platform         String?
+  gate             String?
+  flightNumber     String?
+  trainNumber      String?
+  seat             String?
+  coach            String?
+  baggage          String?
+  passengerName    String?
+  roomType         String?
+  roomNumber       String?
+  checkInDetails   String?
+  checkOutDetails  String?
+  cancellationPolicy String?
+  contactName      String?
+  contactPhone     String?
+  contactEmail     String?
+  cost             Decimal?                  @db.Decimal(10, 2)
+  paidBy           String?
+  notes            String?
+  exportVisible    Boolean                   @default(true)
+  files            CrewItineraryItemFile[]
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  @@index([itineraryId, order])
+  @@map("pms_crew_itinerary_items")
+}
+
+model CrewItineraryAppendixPage {
+  id            String        @id @default(cuid())
+  itineraryId   String
+  itinerary     CrewItinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  title         String
+  bodyHtml      String        @default("")
+  order         Int           @default(0)
+  exportVisible Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([itineraryId, order])
+  @@map("pms_crew_itinerary_appendix_pages")
+}
+
+model CrewItineraryItemFile {
+  id            String            @id @default(cuid())
+  itemId        String
+  item          CrewItineraryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  fileId        String
+  file          JobFile           @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  exportVisible Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+
+  @@unique([itemId, fileId])
+  @@index([fileId])
+  @@map("pms_crew_itinerary_item_files")
+}
+
 // ─── Budgets ──────────────────────────────────────────────────────────────────
 
 model Budget {
-  id                   String           @id @default(uuid())
-  productionId         String?          @unique
-  opportunityId        String?          @unique
+  id                   String               @id @default(uuid())
+  productionId         String?              @unique
+  opportunityId        String?              @unique
   jobName              String?
   jobLocation          String?
   shotCount            String?
@@ -1241,38 +1566,43 @@ model Budget {
   comments             String?
   caveats              String?
   usages               String?
-  productionFeePercent Float            @default(10)
-  insurancePercent     Float            @default(0)
-  currencyBase         String           @default("GBP")
+  productionFeePercent Float                @default(10)
+  insurancePercent     Float                @default(0)
+  productionFeeEnabled Boolean              @default(true)
+  insuranceEnabled     Boolean              @default(true)
+  currencyBase         String               @default("GBP")
   currencySecondary    String?
   currencyRate         Float?
-  status               BudgetStatus     @default(DRAFT)
-  version              Int              @default(1)
-  currentRevisionId    String?          @unique
-  currentRevision      BudgetRevision?  @relation("CurrentBudgetRevision", fields: [currentRevisionId], references: [id])
-  revisions            BudgetRevision[] @relation("BudgetRevisions")
+  status               BudgetStatus         @default(DRAFT)
+  version              Int                  @default(1)
+  currentRevisionId    String?              @unique
+  currentRevision      BudgetRevision?      @relation("CurrentBudgetRevision", fields: [currentRevisionId], references: [id])
+  revisions            BudgetRevision[]     @relation("BudgetRevisions")
   advanceInvoices      AdvanceInvoice[]
   purchaseOrders       PurchaseOrderGroup[]
-  production           Production?      @relation(fields: [productionId], references: [id], onDelete: SetNull)
-  opportunity          Opportunity?     @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  production           Production?          @relation(fields: [productionId], references: [id], onDelete: SetNull)
+  opportunity          Opportunity?         @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
 
   @@map("pms_budgets")
 }
 
 model BudgetRevision {
-  id                   String          @id @default(uuid())
+  editVersion Int @default(1)
+  id                   String               @id @default(uuid())
   budgetId             String
-  budget               Budget          @relation("BudgetRevisions", fields: [budgetId], references: [id], onDelete: Cascade)
-  currentForBudget     Budget?         @relation("CurrentBudgetRevision")
+  budget               Budget               @relation("BudgetRevisions", fields: [budgetId], references: [id], onDelete: Cascade)
+  currentForBudget     Budget?              @relation("CurrentBudgetRevision")
   revisionNumber       Int
-  majorVersion         Int             @default(1)
-  minorVersion         Int             @default(0)
-  label                String          @default("Original")
-  status               RevisionStatus  @default(DRAFT)
-  productionFeePercent Float           @default(10)
-  insurancePercent     Float           @default(0)
+  majorVersion         Int                  @default(1)
+  minorVersion         Int                  @default(0)
+  label                String               @default("Original")
+  status               RevisionStatus       @default(DRAFT)
+  productionFeePercent Float                @default(10)
+  insurancePercent     Float                @default(0)
+  productionFeeEnabled Boolean              @default(true)
+  insuranceEnabled     Boolean              @default(true)
   notes                String?
   estimateDescription  String?
   includedNotes        String?
@@ -1282,13 +1612,13 @@ model BudgetRevision {
   validUntil           DateTime?
   representative       String?
   sourceRevisionId     String?
-  isLocked             Boolean         @default(false)
+  isLocked             Boolean              @default(false)
   lockedAt             DateTime?
   changeSummary        String?
   sections             BudgetSection[]
   transfers            BudgetLineTransfer[]
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
 
   @@unique([budgetId, revisionNumber])
   @@index([budgetId, majorVersion, minorVersion])
@@ -1312,36 +1642,39 @@ model BudgetSection {
 }
 
 model BudgetLineItem {
-  id               String           @id @default(uuid())
+  plannedUnitCost Float?
+  plannedSupplier String?
+  stableCostKey String @default(dbgenerated("gen_random_uuid()::text"))
+  id               String               @id @default(uuid())
   sectionId        String
   lineCode         String
   description      String
   clientNotes      String?
   internalNotes    String?
-  qty              Float            @default(1)
-  days             Float            @default(1)
-  rate             Float            @default(0)
-  unit             String           @default("Days")
-  agencyFeePercent Float?           @default(0)
-  estimatedTotal   Float            @default(0)
-  actualTotal      Float            @default(0)
-  variance         Float            @default(0)
-  isAgreed         Boolean          @default(false)
-  isClosed         Boolean          @default(false)
+  qty              Float                @default(1)
+  days             Float                @default(1)
+  rate             Float                @default(0)
+  unit             String               @default("Days")
+  agencyFeePercent Float?               @default(0)
+  estimatedTotal   Float                @default(0)
+  actualTotal      Float                @default(0)
+  variance         Float                @default(0)
+  isAgreed         Boolean              @default(false)
+  isClosed         Boolean              @default(false)
   subCosts         SubCost[]
-  order            Int              @default(0)
-  isSubItem        Boolean          @default(false)
+  order            Int                  @default(0)
+  isSubItem        Boolean              @default(false)
   parentId         String?
   reconNotes       String?
-  section          BudgetSection    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  parent           BudgetLineItem?  @relation("SubItems", fields: [parentId], references: [id])
-  children         BudgetLineItem[] @relation("SubItems")
+  section          BudgetSection        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  parent           BudgetLineItem?      @relation("SubItems", fields: [parentId], references: [id])
+  children         BudgetLineItem[]     @relation("SubItems")
   jobFiles         JobFile[]
   receiptCaptures  ReceiptCapture[]
   transfersOut     BudgetLineTransfer[] @relation("BudgetTransferFrom")
   transfersIn      BudgetLineTransfer[] @relation("BudgetTransferTo")
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 
   @@index([sectionId])
   @@index([parentId])
@@ -1349,17 +1682,17 @@ model BudgetLineItem {
 }
 
 model BudgetLineTransfer {
-  id             String         @id @default(uuid())
+  id             String   @id @default(uuid())
   revisionId     String
   fromLineItemId String
   toLineItemId   String
   amount         Float
   reason         String?
-  createdAt      DateTime       @default(now())
+  createdAt      DateTime @default(now())
 
-  revision       BudgetRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
-  fromLineItem   BudgetLineItem @relation("BudgetTransferFrom", fields: [fromLineItemId], references: [id], onDelete: Cascade)
-  toLineItem     BudgetLineItem @relation("BudgetTransferTo", fields: [toLineItemId], references: [id], onDelete: Cascade)
+  revision     BudgetRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  fromLineItem BudgetLineItem @relation("BudgetTransferFrom", fields: [fromLineItemId], references: [id], onDelete: Cascade)
+  toLineItem   BudgetLineItem @relation("BudgetTransferTo", fields: [toLineItemId], references: [id], onDelete: Cascade)
 
   @@index([revisionId])
   @@index([fromLineItemId])
@@ -1368,10 +1701,10 @@ model BudgetLineTransfer {
 }
 
 model SubCost {
-  id                     String          @id @default(uuid())
+  id                     String              @id @default(uuid())
   lineItemId             String
   purchaseOrderGroupId   String?
-  lineType               SubCostLineType @default(PO)
+  lineType               SubCostLineType     @default(PO)
   poNumber               String?
   description            String
   supplierName           String?
@@ -1379,24 +1712,24 @@ model SubCost {
   amountGross            Float?
   vatAmount              Float?
   vatRate                Float?
-  currency               String          @default("GBP")
-  status                 SubCostStatus   @default(PENDING)
+  currency               String              @default("GBP")
+  status                 SubCostStatus       @default(PENDING)
   invoiceNumber          String?
   invoiceDate            DateTime?
   datePaid               DateTime?
   invoiceFileId          String?
   proofOfPayment         String?
-  isAgreed               Boolean         @default(false)
-  isInvoiced             Boolean         @default(false)
-  isPaid                 Boolean         @default(false)
+  isAgreed               Boolean             @default(false)
+  isInvoiced             Boolean             @default(false)
+  isPaid                 Boolean             @default(false)
   freeAgentTransactionId String?
   receiptCaptureId       String?
-  lineItem               BudgetLineItem  @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+  lineItem               BudgetLineItem      @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
   purchaseOrderGroup     PurchaseOrderGroup? @relation(fields: [purchaseOrderGroupId], references: [id], onDelete: SetNull)
-  invoiceFile            JobFile?        @relation("InvoiceFile", fields: [invoiceFileId], references: [id])
-  popFile                JobFile?        @relation("POPFile", fields: [proofOfPayment], references: [id])
-  createdAt              DateTime        @default(now())
-  updatedAt              DateTime        @updatedAt
+  invoiceFile            JobFile?            @relation("InvoiceFile", fields: [invoiceFileId], references: [id])
+  popFile                JobFile?            @relation("POPFile", fields: [proofOfPayment], references: [id])
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
 
   @@index([lineItemId])
   @@index([purchaseOrderGroupId])
@@ -1406,29 +1739,46 @@ model SubCost {
 }
 
 model PurchaseOrderGroup {
-  id                String              @id @default(uuid())
-  productionId      String
-  budgetId          String?
-  poNumber          String
-  supplierName      String
-  supplierEmail     String?
-  supplierPhone     String?
-  blackbookEntryId  String?
-  optionCandidateId String?
-  status            PurchaseOrderStatus @default(DRAFT)
-  notes             String?
-  onboardingToken   String?             @unique
-  onboardingSentAt  DateTime?
-  sentAt            DateTime?
-  acceptedAt        DateTime?
-  cancelledAt       DateTime?
-  allocations       SubCost[]
-  production        Production          @relation(fields: [productionId], references: [id], onDelete: Cascade)
-  budget            Budget?             @relation(fields: [budgetId], references: [id], onDelete: SetNull)
-  blackbookEntry    BlackbookEntry?      @relation(fields: [blackbookEntryId], references: [id], onDelete: SetNull)
-  optionCandidate   OptionCandidate?     @relation(fields: [optionCandidateId], references: [id], onDelete: SetNull)
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  cancellationReason String?
+  financeManaged Boolean @default(false)
+  currency String @default("GBP")
+  version Int @default(1)
+  issuedAt DateTime?
+  issuedBy String?
+  supplierTerms String?
+  documentSnapshot Json?
+  documentStatus String @default("NOT_REQUESTED")
+  documentError String?
+  pdfJobFileId String? @unique
+  pdfJobFile JobFile? @relation("FinancePoDocument", fields: [pdfJobFileId], references: [id], onDelete: Restrict)
+  financeLines ProjectPurchaseOrderLine[]
+  reservedCosts ProjectFinanceCost[] @relation("ActiveFinancePo")
+
+  id                    String              @id @default(uuid())
+  productionId          String
+  budgetId              String?
+  poNumber              String
+  supplierName          String
+  supplierEmail         String?
+  supplierPhone         String?
+  blackbookEntryId      String?
+  optionCandidateId     String?
+  status                PurchaseOrderStatus @default(DRAFT)
+  notes                 String?
+  onboardingToken       String?             @unique
+  onboardingSentAt      DateTime?
+  onboardingExpiresAt   DateTime?
+  onboardingCompletedAt DateTime?
+  sentAt                DateTime?
+  acceptedAt            DateTime?
+  cancelledAt           DateTime?
+  allocations           SubCost[]
+  production            Production          @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  budget                Budget?             @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  blackbookEntry        BlackbookEntry?     @relation(fields: [blackbookEntryId], references: [id], onDelete: SetNull)
+  optionCandidate       OptionCandidate?    @relation(fields: [optionCandidateId], references: [id], onDelete: SetNull)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
 
   @@unique([productionId, poNumber])
   @@index([productionId, status])
@@ -1473,37 +1823,239 @@ model SectionTemplate {
 // ─── Files ────────────────────────────────────────────────────────────────────
 
 model JobFile {
-  id                         String           @id @default(cuid())
+  clientInvoice ProjectClientInvoice?
+  sourceKey String? @unique
+  financePurchaseOrder PurchaseOrderGroup? @relation("FinancePoDocument")
+
+  id                         String                @id @default(cuid())
   productionId               String?
-  production                 Production?      @relation(fields: [productionId], references: [id], onDelete: SetNull)
+  production                 Production?           @relation(fields: [productionId], references: [id], onDelete: SetNull)
   folder                     String
   originalFilename           String
   storedFilename             String
+  driveFileId                String?               @unique
+  driveWebViewLink            String?
+  driveSyncStatus            String                @default("LOCAL")
+  driveSyncError             String?
+  driveSyncedAt              DateTime?
+  driveLeaseUntil            DateTime?
   mimeType                   String
   sizeBytes                  Int
-  uploadedAt                 DateTime         @default(now())
+  uploadedAt                 DateTime              @default(now())
   linkedBudgetLineId         String?
-  linkedBudgetLine           BudgetLineItem?  @relation(fields: [linkedBudgetLineId], references: [id])
-  isReceipt                  Boolean          @default(false)
+  linkedBudgetLine           BudgetLineItem?       @relation(fields: [linkedBudgetLineId], references: [id])
+  isReceipt                  Boolean               @default(false)
   receiptVendor              String?
   receiptAmount              Int?
-  receiptDate                DateTime?        @db.Date
+  receiptDate                DateTime?             @db.Date
   notes                      String?
   sourceEmailThreadId        String?
-  sourceEmailThread          EmailThread?     @relation("JobFileSourceEmailThread", fields: [sourceEmailThreadId], references: [id], onDelete: SetNull)
+  sourceEmailThread          EmailThread?          @relation("JobFileSourceEmailThread", fields: [sourceEmailThreadId], references: [id], onDelete: SetNull)
   sourceEmailMessageId       String?
-  sourceEmailMessage         EmailMessage?    @relation("JobFileSourceEmailMessage", fields: [sourceEmailMessageId], references: [id], onDelete: SetNull)
+  sourceEmailMessage         EmailMessage?         @relation("JobFileSourceEmailMessage", fields: [sourceEmailMessageId], references: [id], onDelete: SetNull)
   sourceEmailAttachmentIndex Int?
   sourceEmailFilename        String?
-  subCostInvoiceFiles        SubCost[]        @relation("InvoiceFile")
-  subCostPopFiles            SubCost[]        @relation("POPFile")
+  subCostInvoiceFiles        SubCost[]             @relation("InvoiceFile")
+  subCostPopFiles            SubCost[]             @relation("POPFile")
   receiptCaptures            ReceiptCapture[]
+  stillImage                 StillImage?
+  stillImageThumbnails       StillImage[]           @relation("StillImageThumbnail")
+  stillRetouchVersions       StillRetouchVersion[]
+  stillSourceAssets          StillSourceAsset[]
+  skuThumbnails              ProductionSku[]       @relation("ProductionSkuThumbnail")
+  crewItineraryItemFiles     CrewItineraryItemFile[]
 
+  @@index([driveSyncStatus, uploadedAt])
   @@index([productionId, folder])
   @@index([originalFilename])
   @@index([sourceEmailThreadId])
   @@index([sourceEmailMessageId, sourceEmailAttachmentIndex])
   @@map("pms_job_files")
+}
+
+model ProductionSku {
+  id                 String          @id @default(cuid())
+  productionId       String
+  production         Production      @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  code               String?
+  name               String?
+  description        String?
+  colorway           String?
+  notes              String?
+  materialSupplier   String?
+  materialName       String?
+  composition        String?
+  hardware           String?
+  price              String?
+  sourceSheet        String?
+  thumbnailJobFileId String?
+  thumbnailJobFile   JobFile?        @relation("ProductionSkuThumbnail", fields: [thumbnailJobFileId], references: [id], onDelete: SetNull)
+  images             StillImageSku[]
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([productionId])
+  @@index([thumbnailJobFileId])
+  @@map("pms_production_skus")
+}
+
+model StillFolder {
+  id           String           @id @default(cuid())
+  productionId String
+  production   Production       @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  parentId     String?
+  parent       StillFolder?     @relation("StillFolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children     StillFolder[]    @relation("StillFolderTree")
+  name         String
+  sortOrder    Int              @default(0)
+  images       StillImage[]
+  shareLinks   StillShareLink[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([productionId, parentId, sortOrder])
+  @@map("pms_still_folders")
+}
+
+model StillImage {
+  id              String                @id @default(cuid())
+  productionId    String
+  production      Production            @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  jobFileId       String                @unique
+  jobFile         JobFile               @relation(fields: [jobFileId], references: [id], onDelete: Cascade)
+  thumbnailJobFileId String?
+  thumbnailJobFile   JobFile?           @relation("StillImageThumbnail", fields: [thumbnailJobFileId], references: [id], onDelete: SetNull)
+  folderId        String?
+  folder          StillFolder?          @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  status          StillStatus           @default(UPLOADED)
+  rating          Int?
+  isHero          Boolean               @default(false)
+  sortOrder       Int                   @default(0)
+  retouchSummary  String?
+  skuTags         StillImageSku[]
+  annotations     StillAnnotation[]
+  activities      StillImageActivity[]
+  retouchVersions StillRetouchVersion[]
+  sourceAssets    StillSourceAsset[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([productionId, folderId, status])
+  @@index([productionId, rating])
+  @@index([thumbnailJobFileId])
+  @@map("pms_still_images")
+}
+
+model StillImageSku {
+  id        String        @id @default(cuid())
+  imageId   String
+  image     StillImage    @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  skuId     String
+  sku       ProductionSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@unique([imageId, skuId])
+  @@index([skuId])
+  @@map("pms_still_image_skus")
+}
+
+model StillAnnotation {
+  id          String                    @id @default(cuid())
+  imageId     String
+  image       StillImage                @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  x           Float
+  y           Float
+  body        String
+  markup      Json?
+  visibility  StillAnnotationVisibility @default(INTERNAL)
+  resolved    Boolean                   @default(false)
+  authorName  String?
+  authorEmail String?
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  @@index([imageId, resolved])
+  @@map("pms_still_annotations")
+}
+
+model StillSourceAsset {
+  id          String               @id @default(cuid())
+  imageId     String
+  image       StillImage           @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  jobFileId   String?
+  jobFile     JobFile?             @relation(fields: [jobFileId], references: [id], onDelete: SetNull)
+  type        StillSourceAssetType @default(OTHER)
+  label       String?
+  externalUrl String?
+  sizeBytes   Int?
+  mimeType    String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([imageId, type])
+  @@index([jobFileId])
+  @@map("pms_still_source_assets")
+}
+
+model StillShareLink {
+  id             String         @id @default(cuid())
+  productionId   String
+  production     Production     @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  folderId       String?
+  folder         StillFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  token          String         @unique
+  label          String?
+  role           StillShareRole @default(CLIENT)
+  reviewerName   String?
+  reviewerEmail  String?
+  expiresAt      DateTime?
+  allowDownloads Boolean        @default(false)
+  watermark      Boolean        @default(true)
+  passwordHash   String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([productionId])
+  @@map("pms_still_share_links")
+}
+
+model StillImageActivity {
+  id           String              @id @default(cuid())
+  imageId      String?
+  image        StillImage?         @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  productionId String
+  production   Production          @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  shareLinkId  String?
+  action       StillActivityAction
+  actorName    String?
+  actorEmail   String?
+  actorRole    StillShareRole?
+  fromValue    String?
+  toValue      String?
+  metadata     Json?
+  createdAt    DateTime            @default(now())
+
+  @@index([productionId, createdAt])
+  @@index([imageId, createdAt])
+  @@index([shareLinkId])
+  @@map("pms_still_image_activities")
+}
+
+model StillRetouchVersion {
+  id         String     @id @default(cuid())
+  imageId    String
+  image      StillImage @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  jobFileId  String
+  jobFile    JobFile    @relation(fields: [jobFileId], references: [id], onDelete: Cascade)
+  version    Int
+  label      String?
+  notes      String?
+  uploadedBy String?
+  createdAt  DateTime   @default(now())
+
+  @@unique([imageId, version])
+  @@index([imageId, createdAt])
+  @@map("pms_still_retouch_versions")
 }
 
 model ReceiptCapture {
@@ -1550,7 +2102,7 @@ model ReceiptCapture {
 // ─── Email ────────────────────────────────────────────────────────────────────
 
 model EmailAccount {
-  id                    String        @id @default(uuid())
+  id                    String              @id @default(uuid())
   label                 String
   emailAddress          String
   provider              EmailProvider
@@ -1563,15 +2115,15 @@ model EmailAccount {
   encryptedAccessToken  String?
   encryptedRefreshToken String?
   tokenExpiry           DateTime?
-  isActive              Boolean       @default(true)
-  isPrimary             Boolean       @default(false)
+  isActive              Boolean             @default(true)
+  isPrimary             Boolean             @default(false)
   lastSyncedAt          DateTime?
   gmailHistoryId        String?
   threads               EmailThread[]
   drafts                EmailDraft[]
   categoryRules         EmailCategoryRule[]
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
 
   @@map("pms_email_accounts")
 }
@@ -1592,32 +2144,32 @@ model EmailCategoryRule {
 }
 
 model EmailDraft {
-  id                  String       @id @default(uuid())
+  id                  String                 @id @default(uuid())
   accountId           String
-  account             EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account             EmailAccount           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   gmailDraftId        String?
   gmailDraftMessageId String?
-  to                  String[]     @default([])
-  cc                  String[]     @default([])
-  bcc                 String[]     @default([])
-  subject             String       @default("")
-  bodyHtml            String       @default("")
+  to                  String[]               @default([])
+  cc                  String[]               @default([])
+  bcc                 String[]               @default([])
+  subject             String                 @default("")
+  bodyHtml            String                 @default("")
   replyToThreadId     String?
   gmailThreadId       String?
   inReplyToMsgId      String?
   references          String?
   linkedOpportunityId String?
-  linkedOpportunity   Opportunity? @relation(fields: [linkedOpportunityId], references: [id], onDelete: SetNull)
+  linkedOpportunity   Opportunity?           @relation(fields: [linkedOpportunityId], references: [id], onDelete: SetNull)
   linkedProductionId  String?
-  linkedProduction    Production?  @relation(fields: [linkedProductionId], references: [id], onDelete: SetNull)
+  linkedProduction    Production?            @relation(fields: [linkedProductionId], references: [id], onDelete: SetNull)
   linkedContactId     String?
-  linkedContact       Contact?     @relation(fields: [linkedContactId], references: [id], onDelete: SetNull)
+  linkedContact       Contact?               @relation(fields: [linkedContactId], references: [id], onDelete: SetNull)
   attachments         EmailDraftAttachment[]
-  isMinimized         Boolean      @default(false)
-  lastEditedAt        DateTime     @default(now())
+  isMinimized         Boolean                @default(false)
+  lastEditedAt        DateTime               @default(now())
   lastSyncedToGmailAt DateTime?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
 
   @@unique([accountId, gmailDraftId])
   @@index([accountId, lastEditedAt])
@@ -1630,42 +2182,42 @@ model EmailDraft {
 }
 
 model EmailDraftAttachment {
-  id               String     @id @default(uuid())
-  draftId          String
-  draft            EmailDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
-  filename         String
-  mimeType         String
-  sizeBytes        Int
-  storedPath       String
-  createdAt        DateTime   @default(now())
+  id         String     @id @default(uuid())
+  draftId    String
+  draft      EmailDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  filename   String
+  mimeType   String
+  sizeBytes  Int
+  storedPath String
+  createdAt  DateTime   @default(now())
 
   @@index([draftId])
   @@map("pms_email_draft_attachments")
 }
 
 model EmailThread {
-  id                  String         @id @default(uuid())
+  id                  String                  @id @default(uuid())
   accountId           String?
-  account             EmailAccount?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  externalThreadId    String         @default(uuid())
+  account             EmailAccount?           @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  externalThreadId    String                  @default(uuid())
   gmailThreadId       String?
   historyId           String?
   subject             String
   snippet             String?
-  participants        String[]       @default([])
-  participantNames    String[]       @default([])
-  lastMessageAt       DateTime       @default(now())
+  participants        String[]                @default([])
+  participantNames    String[]                @default([])
+  lastMessageAt       DateTime                @default(now())
   lastInboxMessageAt  DateTime?
   lastSentMessageAt   DateTime?
-  isRead              Boolean        @default(false)
-  isFlagged           Boolean        @default(false)
-  isArchived          Boolean        @default(false)
-  inInbox             Boolean        @default(false)
-  inSent              Boolean        @default(false)
-  isStarred           Boolean        @default(false)
-  isUnread            Boolean        @default(false)
-  isTrashed           Boolean        @default(false)
-  autoCategory        EmailAutoCategory @default(PEOPLE)
+  isRead              Boolean                 @default(false)
+  isFlagged           Boolean                 @default(false)
+  isArchived          Boolean                 @default(false)
+  inInbox             Boolean                 @default(false)
+  inSent              Boolean                 @default(false)
+  isStarred           Boolean                 @default(false)
+  isUnread            Boolean                 @default(false)
+  isTrashed           Boolean                 @default(false)
+  autoCategory        EmailAutoCategory       @default(PEOPLE)
   categoryOverride    EmailAutoCategory?
   categoryOverrideAt  DateTime?
   gmailCategory       String?
@@ -1674,16 +2226,16 @@ model EmailThread {
   unsubscribeMethod   EmailUnsubscribeMethod?
   unsubscribedAt      DateTime?
   linkedContactId     String?
-  linkedContact       Contact?       @relation(fields: [linkedContactId], references: [id], onDelete: SetNull)
+  linkedContact       Contact?                @relation(fields: [linkedContactId], references: [id], onDelete: SetNull)
   linkedOpportunityId String?
-  linkedOpportunity   Opportunity?   @relation(fields: [linkedOpportunityId], references: [id], onDelete: SetNull)
+  linkedOpportunity   Opportunity?            @relation(fields: [linkedOpportunityId], references: [id], onDelete: SetNull)
   linkedProductionId  String?
-  linkedProduction    Production?    @relation(fields: [linkedProductionId], references: [id], onDelete: SetNull)
+  linkedProduction    Production?             @relation(fields: [linkedProductionId], references: [id], onDelete: SetNull)
   messages            EmailMessage[]
   projectActions      ProjectAction[]
-  sourceJobFiles      JobFile[]      @relation("JobFileSourceEmailThread")
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  sourceJobFiles      JobFile[]               @relation("JobFileSourceEmailThread")
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
 
   @@unique([accountId, externalThreadId])
   @@unique([accountId, gmailThreadId])
@@ -1756,39 +2308,39 @@ model ActivityTask {
 }
 
 model EmailMessage {
-  id                 String      @id @default(uuid())
-  threadId           String
-  thread             EmailThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  externalMessageId  String      @unique
-  gmailMessageId     String?     @unique
-  gmailThreadId      String?
-  labelIds           String[]    @default([])
-  inInbox            Boolean     @default(false)
-  inSent             Boolean     @default(false)
-  isUnread           Boolean     @default(false)
-  isStarred          Boolean     @default(false)
-  fromAddress        String
-  fromName           String?
-  toAddresses        String[]    @default([])
-  ccAddresses        String[]    @default([])
-  bccAddresses       String[]    @default([])
-  subject            String
-  bodyHtml           String      @default("")
-  bodyText           String      @default("")
-  snippet            String?
-  sentAt             DateTime
-  isFromMe           Boolean     @default(false)
-  isDuplicateSuppressed Boolean     @default(false)
-  isDraftArtifact    Boolean     @default(false)
-  hasAttachments     Boolean     @default(false)
-  attachments        Json        @default("[]")
-  gmailAttachmentIds Json        @default("[]")
-  imapMailbox        String?
-  imapUid            Int?
-  sourceJobFiles     JobFile[]   @relation("JobFileSourceEmailMessage")
-  projectActions     ProjectAction[]
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  id                    String          @id @default(uuid())
+  threadId              String
+  thread                EmailThread     @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  externalMessageId     String          @unique
+  gmailMessageId        String?         @unique
+  gmailThreadId         String?
+  labelIds              String[]        @default([])
+  inInbox               Boolean         @default(false)
+  inSent                Boolean         @default(false)
+  isUnread              Boolean         @default(false)
+  isStarred             Boolean         @default(false)
+  fromAddress           String
+  fromName              String?
+  toAddresses           String[]        @default([])
+  ccAddresses           String[]        @default([])
+  bccAddresses          String[]        @default([])
+  subject               String
+  bodyHtml              String          @default("")
+  bodyText              String          @default("")
+  snippet               String?
+  sentAt                DateTime
+  isFromMe              Boolean         @default(false)
+  isDuplicateSuppressed Boolean         @default(false)
+  isDraftArtifact       Boolean         @default(false)
+  hasAttachments        Boolean         @default(false)
+  attachments           Json            @default("[]")
+  gmailAttachmentIds    Json            @default("[]")
+  imapMailbox           String?
+  imapUid               Int?
+  sourceJobFiles        JobFile[]       @relation("JobFileSourceEmailMessage")
+  projectActions        ProjectAction[]
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
 
   @@index([threadId, sentAt])
   @@index([gmailThreadId])
@@ -1809,4 +2361,218 @@ model EmailTemplate {
   updatedAt  DateTime @updatedAt
 
   @@map("pms_email_templates")
+}
+
+// One connection for the existing single-team workspace. Tokens never leave the server.
+model DriveConnection {
+  id              String   @id @default("workspace")
+  refreshToken    String
+  rootFolderId    String
+  connectedAt     DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("pms_drive_connection")
+}
+
+
+// Independent operational ledger. Estimate revisions are never mutated here.
+model ProjectFinanceLedger {
+  productionId String @id
+  currency String
+  production Production @relation(fields: [productionId], references: [id], onDelete: Restrict)
+  costs ProjectFinanceCost[]
+  clientInvoices ProjectClientInvoice[]
+  invoices ProjectSupplierInvoice[]
+  operations ProjectFinanceOperation[]
+  createdAt DateTime @default(now())
+  @@map("pms_project_finance_ledgers")
+}
+
+model ProjectFinanceCost {
+  activePurchaseOrderId String?
+  activePurchaseOrder PurchaseOrderGroup? @relation("ActiveFinancePo", fields: [activePurchaseOrderId], references: [id], onDelete: Restrict)
+  purchaseOrderLines ProjectPurchaseOrderLine[]
+
+  commitmentStatus String @default("COMMITTED")
+  estimateLineKey String?
+  id String @id @default(uuid())
+  productionId String
+  ledger ProjectFinanceLedger @relation(fields: [productionId], references: [productionId], onDelete: Restrict)
+  description String
+  supplier String
+  supplierKey String
+  committedMinor Int
+  remainingMinor Int?
+  version Int @default(1)
+  allocations ProjectInvoiceAllocation[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([productionId])
+  @@unique([productionId, estimateLineKey])
+  @@map("pms_project_finance_costs")
+}
+
+model ProjectSupplierInvoice {
+  kind String @default("INVOICE")
+  originalInvoiceId String?
+  originalInvoice ProjectSupplierInvoice? @relation("SupplierCredits", fields: [originalInvoiceId], references: [id], onDelete: Restrict)
+  credits ProjectSupplierInvoice[] @relation("SupplierCredits")
+  reviewNote String?
+  driveFileId String?
+  id String @id @default(uuid())
+  productionId String
+  ledger ProjectFinanceLedger @relation(fields: [productionId], references: [productionId], onDelete: Restrict)
+  supplier String
+  supplierKey String
+  number String
+  numberKey String
+  invoiceDate DateTime
+  dueDate DateTime?
+  netMinor Int
+  taxMinor Int
+  documentUrl String?
+  status String @default("DRAFT")
+  version Int @default(1)
+  allocations ProjectInvoiceAllocation[]
+  payments ProjectInvoicePayment[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([productionId, supplierKey, numberKey])
+  @@index([productionId, status])
+  @@unique([productionId, driveFileId])
+  @@index([originalInvoiceId])
+  @@map("pms_project_supplier_invoices")
+}
+
+model ProjectInvoiceAllocation {
+  id String @id @default(uuid())
+  invoiceId String
+  costId String
+  netMinor Int
+  invoice ProjectSupplierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  cost ProjectFinanceCost @relation(fields: [costId], references: [id], onDelete: Restrict)
+  @@unique([invoiceId, costId])
+  @@map("pms_project_invoice_allocations")
+}
+
+model ProjectInvoicePayment {
+  direction String @default("PAYMENT")
+  id String @id @default(uuid())
+  invoiceId String
+  invoice ProjectSupplierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  amountMinor Int
+  paidAt DateTime
+  reference String
+  reversedAt DateTime?
+  reversalReason String?
+  createdAt DateTime @default(now())
+  @@index([invoiceId])
+  @@map("pms_project_invoice_payments")
+}
+
+model ProjectFinanceOperation {
+  id String @id @default(uuid())
+  productionId String
+  ledger ProjectFinanceLedger @relation(fields: [productionId], references: [productionId], onDelete: Restrict)
+  requestId String
+  payloadHash String
+  action String
+  actorId String
+  detail Json
+  result Json
+  createdAt DateTime @default(now())
+  @@unique([productionId, requestId])
+  @@index([productionId, createdAt])
+  @@map("pms_project_finance_operations")
+}
+
+
+model ProjectDriveFolder {
+  id String @id @default(uuid())
+  productionId String
+  category String
+  driveFolderId String
+  production Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  @@unique([productionId, category])
+  @@map("pms_project_drive_folders")
+}
+
+model ProjectEstimateApproval {
+  id String @id @default(uuid())
+  productionId String
+  revisionId String @unique
+  revisionNumber Int
+  currency String
+  clientTotalMinor Int
+  plannedCostMinor Int
+  snapshot Json
+  approvedBy String
+  approvedAt DateTime @default(now())
+  production Production @relation(fields: [productionId], references: [id], onDelete: Restrict)
+  @@index([productionId, approvedAt])
+  @@map("pms_project_estimate_approvals")
+}
+
+model ProjectPurchaseOrderLine {
+  id String @id @default(uuid())
+  purchaseOrderId String
+  purchaseOrder PurchaseOrderGroup @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  costId String
+  cost ProjectFinanceCost @relation(fields: [costId], references: [id], onDelete: Restrict)
+  description String
+  netMinor Int
+  order Int @default(0)
+  @@unique([purchaseOrderId, costId])
+  @@index([costId])
+  @@map("pms_project_purchase_order_lines")
+}
+
+// Client billing is independent of supplier costs and immutable estimate approvals.
+model ProjectClientInvoice {
+  originalInvoiceId String?
+  originalInvoice ProjectClientInvoice? @relation("ClientCorrections", fields: [originalInvoiceId], references: [id], onDelete: Restrict)
+  adjustments ProjectClientInvoice[] @relation("ClientCorrections")
+  id String @id @default(uuid())
+  productionId String
+  ledger ProjectFinanceLedger @relation(fields: [productionId], references: [productionId], onDelete: Restrict)
+  number String @unique
+  kind String
+  clientName String
+  billingAddress String
+  description String
+  paymentInstructions String
+  invoiceDate DateTime
+  dueDate DateTime
+  netMinor Int
+  taxMinor Int
+  status String @default("DRAFT")
+  version Int @default(1)
+  issuedAt DateTime?
+  issuedBy String?
+  documentSnapshot Json?
+  documentStatus String @default("NOT_REQUESTED")
+  documentError String?
+  pdfJobFileId String? @unique
+  pdfJobFile JobFile? @relation(fields: [pdfJobFileId], references: [id], onDelete: Restrict)
+  receipts ProjectClientReceipt[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([productionId, status])
+  @@index([originalInvoiceId])
+  @@map("pms_project_client_invoices")
+}
+
+model ProjectClientReceipt {
+  direction String @default("RECEIPT")
+  id String @id @default(uuid())
+  invoiceId String
+  invoice ProjectClientInvoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  amountMinor Int
+  receivedAt DateTime
+  reference String
+  reversedAt DateTime?
+  reversalReason String?
+  createdAt DateTime @default(now())
+  @@index([invoiceId])
+  @@map("pms_project_client_receipts")
 }

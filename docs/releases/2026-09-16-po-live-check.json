@@ -1,0 +1,83 @@
+{
+  "startedAt": "2026-09-16T14:25:18.011Z",
+  "api": [
+    {
+      "route": "/api/health",
+      "status": 200,
+      "bytes": 49,
+      "elapsedMs": 114
+    },
+    {
+      "route": "/api/project-workspace/templates",
+      "status": 200,
+      "bytes": 154,
+      "elapsedMs": 38
+    },
+    {
+      "route": "/api/project-finance",
+      "status": 200,
+      "bytes": 2,
+      "elapsedMs": 27
+    },
+    {
+      "route": "/api/project-finance/cmtvd9fsm000m111brx230zdb",
+      "status": 200,
+      "bytes": 355,
+      "elapsedMs": 57
+    },
+    {
+      "route": "/api/auth/me",
+      "status": 200,
+      "bytes": 39,
+      "elapsedMs": 15
+    },
+    {
+      "route": "/api/productions/summary?includeWrapped=true",
+      "status": 200,
+      "bytes": 4520,
+      "elapsedMs": 46,
+      "rows": 9
+    },
+    {
+      "route": "/api/project-actions",
+      "status": 200,
+      "bytes": 3422,
+      "elapsedMs": 34
+    },
+    {
+      "route": "/api/drive/status",
+      "status": 200,
+      "bytes": 128,
+      "elapsedMs": 18
+    },
+    {
+      "route": "/api/files/all?page=1",
+      "status": 200,
+      "bytes": 40459,
+      "elapsedMs": 55
+    }
+  ],
+  "browser": {
+    "home": "passed",
+    "finance": "passed",
+    "files": "passed",
+    "mobile": "passed",
+    "runtimeErrors": 0,
+    "draftsRestoreQuietly": "passed",
+    "newProjectWizard": "passed, no project submitted",
+    "purchaseOrders": "passed, no order created or issued",
+    "financePilot": "passed",
+    "financePilotMobile": "passed"
+  },
+  "drive": {
+    "configured": true,
+    "connected": true,
+    "rootFolderId": "1-0gwnfN5lGiLa4WGbC_q2nQ50l3e-iSR"
+  },
+  "unauthenticatedDriveStatus": 401,
+  "projectDriveStatus": 200,
+  "unauthenticatedWorkspaceStatus": 401,
+  "unauthenticatedFinanceStatus": 401,
+  "completedAt": "2026-09-16T14:25:23.922Z",
+  "passed": true
+}
